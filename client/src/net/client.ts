@@ -1,0 +1,262 @@
+import { io, type Socket } from 'socket.io-client';
+import {
+  applyInteract,
+  applyMove,
+  createGame,
+  type ChatMessage,
+  type ClientToServer,
+  type GameEvent,
+  type GameState,
+  type RoomInfo,
+  type Seat,
+  type ServerInfo,
+  type ServerToClient,
+  type Side,
+  type TtsClip,
+  type VoiceChunk,
+} from '@cubic/shared';
+
+// Socket client + move prediction. The local player's input is applied at once to a
+// predicted copy of the state with the same /shared code the server runs; every server
+// update replaces the truth and replays whatever the server has not acknowledged yet.
+
+export const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
+const SEAT_KEY = 'cubic.seat';
+
+type Pending = { seq: number; kind: 'move'; dx: number; dy: number } | { seq: number; kind: 'interact' };
+
+export interface NetHandlers {
+  /** Connection, seat, room or game state changed. */
+  onChange(): void;
+  /** Things that just happened. `local` = predicted from our own input. */
+  onEvents(events: GameEvent[], local: boolean): void;
+  onChat(msg: ChatMessage): void;
+  onTyping(on: boolean): void;
+  onVoiceReady(): void;
+  onVoiceSignal(data: unknown): void;
+  onVoiceChunk(chunk: VoiceChunk): void;
+  onTts(clip: TtsClip): void;
+}
+
+export class Net {
+  online = false;
+  info: ServerInfo = { aiAvailable: false, ttsAvailable: false };
+  code: string | null = null;
+  side: Side | null = null;
+  room: RoomInfo | null = null;
+  chat: ChatMessage[] = [];
+  /** What we draw: server state + our unacknowledged input. */
+  state: GameState | null = null;
+  error: string | null = null;
+  busy = false;
+
+  private socket: Socket<ServerToClient, ClientToServer> | null = null;
+  private server: GameState | null = null;
+  private pending: Pending[] = [];
+  private seq = 0;
+
+  constructor(
+    private h: NetHandlers,
+    /** Offline: no server, a local game where you play `offlineSide` (for ?mock). */
+    private offlineSide: Side | null = null,
+  ) {}
+
+  start(): void {
+    if (this.offlineSide) {
+      this.online = true;
+      this.side = this.offlineSide;
+      this.code = 'MOCK';
+      this.state = createGame(Date.now());
+      this.state.players.out.connected = this.state.players.in.connected = true;
+      this.room = { code: 'MOCK', mode: 'friend', seats: { out: { taken: true, connected: true, isAI: false }, in: { taken: true, connected: true, isAI: false } } };
+      this.h.onChange();
+      return;
+    }
+    const socket = (this.socket = io(SERVER_URL, { transports: ['websocket', 'polling'] }));
+    socket.on('connect', () => {
+      this.online = true;
+      this.h.onChange();
+      this.tryRejoin();
+    });
+    socket.on('disconnect', () => {
+      this.online = false;
+      this.h.onChange();
+    });
+    socket.on('info', (info) => {
+      this.info = info;
+      this.h.onChange();
+    });
+    socket.on('room', (room) => {
+      this.room = room;
+      this.h.onChange();
+    });
+    socket.on('state', (u) => {
+      if (!this.side) return;
+      this.server = u.state;
+      const ack = u.acks[this.side];
+      this.pending = this.pending.filter((p) => p.seq > ack);
+      this.repredict();
+      this.h.onChange();
+      // Our own steps were already played when predicted; the rest is news.
+      const me = this.side;
+      const news = u.events.filter((e: GameEvent) => !('side' in e) || e.side !== me);
+      if (news.length) this.h.onEvents(news, false);
+    });
+    socket.on('chat', (msg) => {
+      this.chat = [...this.chat, msg];
+      this.h.onChat(msg);
+      this.h.onChange();
+    });
+    socket.on('typing', (t) => this.h.onTyping(t.on));
+    socket.on('voice:ready', () => this.h.onVoiceReady());
+    socket.on('voice:signal', (m) => this.h.onVoiceSignal(m.data));
+    socket.on('voice:chunk', (c) => this.h.onVoiceChunk(c));
+    socket.on('tts', (c) => this.h.onTts(c));
+  }
+
+  private repredict(): void {
+    if (!this.server || !this.side) return;
+    const s = structuredClone(this.server);
+    for (const p of this.pending) {
+      if (p.kind === 'move') applyMove(s, this.side, p.dx, p.dy);
+      else applyInteract(s, this.side);
+    }
+    this.state = s;
+  }
+
+  private adopt(res: ({ ok: true } & Seat) | { ok: false; error: string }): void {
+    this.busy = false;
+    if (!res.ok) {
+      this.error = res.error;
+      this.h.onChange();
+      return;
+    }
+    this.error = null;
+    this.code = res.code;
+    this.side = res.side;
+    this.room = res.room;
+    this.chat = res.chat;
+    this.server = res.state;
+    this.pending = [];
+    this.repredict();
+    // sessionStorage, not localStorage: two windows of one browser must be two players.
+    try {
+      sessionStorage.setItem(SEAT_KEY, JSON.stringify({ code: res.code, token: res.token }));
+    } catch {
+      // storage blocked: reconnect after a refresh will not work, the game still does
+    }
+    this.h.onChange();
+  }
+
+  private tryRejoin(): void {
+    const read = (): { code: string; token: string } | null => {
+      try {
+        return JSON.parse(sessionStorage.getItem(SEAT_KEY) ?? 'null');
+      } catch {
+        return null;
+      }
+    };
+    const saved = read();
+    if (!saved || !this.socket) return;
+    this.socket.emit('room:rejoin', saved, (res) => {
+      if (res.ok) this.adopt(res);
+      else this.forget();
+    });
+  }
+
+  private forget(): void {
+    try {
+      sessionStorage.removeItem(SEAT_KEY);
+    } catch {
+      // ignore
+    }
+    this.code = this.side = this.room = this.state = this.server = null;
+    this.chat = [];
+    this.pending = [];
+    this.h.onChange();
+  }
+
+  private begin(): boolean {
+    if (!this.socket || !this.online) {
+      this.error = 'Cannot reach the server.';
+      this.h.onChange();
+      return false;
+    }
+    this.busy = true;
+    this.error = null;
+    this.h.onChange();
+    return true;
+  }
+
+  createRoom(): void {
+    if (this.begin()) this.socket!.emit('room:create', (res) => this.adopt(res));
+  }
+
+  joinRoom(code: string): void {
+    if (!/^[A-Za-z]{4}$/.test(code.trim())) {
+      this.error = 'Room codes are 4 letters.';
+      this.h.onChange();
+      return;
+    }
+    if (this.begin()) this.socket!.emit('room:join', { code: code.trim().toUpperCase() }, (res) => this.adopt(res));
+  }
+
+  playWithAI(side: Side): void {
+    if (this.begin()) this.socket!.emit('room:createAI', { side }, (res) => this.adopt(res));
+  }
+
+  leave(): void {
+    this.socket?.emit('room:leave');
+    this.forget();
+  }
+
+  restart(): void {
+    if (this.offlineSide) {
+      this.state = createGame(Date.now());
+      this.h.onChange();
+    } else this.socket?.emit('room:restart');
+  }
+
+  /** Predict a step locally, then tell the server. */
+  move(dx: number, dy: number): void {
+    if (!this.state || !this.side) return;
+    const events = applyMove(this.state, this.side, dx, dy);
+    if (this.socket) {
+      const seq = ++this.seq;
+      this.pending.push({ seq, kind: 'move', dx, dy });
+      this.socket.emit('move', { dx, dy, seq });
+    }
+    this.finish(events);
+  }
+
+  interact(): void {
+    if (!this.state || !this.side) return;
+    const events = applyInteract(this.state, this.side);
+    if (this.socket) {
+      const seq = ++this.seq;
+      this.pending.push({ seq, kind: 'interact' });
+      this.socket.emit('interact', { seq });
+    }
+    this.finish(events);
+  }
+
+  private finish(events: GameEvent[]): void {
+    this.h.onChange();
+    // Online, events without a side (solve, win, puzzle) are announced by the server.
+    const me = this.side;
+    const mine = this.socket ? events.filter((e) => 'side' in e && e.side === me) : events;
+    if (mine.length) this.h.onEvents(mine, true);
+  }
+
+  sendChat(text: string): void {
+    this.socket?.emit('chat', { text });
+  }
+
+  voiceSignal(data: unknown): void {
+    this.socket?.emit('voice:signal', { data });
+  }
+
+  voiceChunk(chunk: VoiceChunk): void {
+    this.socket?.emit('voice:chunk', chunk);
+  }
+}

@@ -247,10 +247,9 @@ export class Rooms {
   }
 
   create(mode: RoomMode): Room {
-    let code = '';
-    do {
-      code = Array.from(randomBytes(CODE_LEN), (b) => CODE_LETTERS[b % CODE_LETTERS.length]).join('');
-    } while (this.rooms.has(code));
+    const roll = () => Array.from(randomBytes(CODE_LEN), (b) => CODE_LETTERS[b % CODE_LETTERS.length]).join('');
+    let code = roll();
+    while (this.rooms.has(code)) code = roll();
     const room = new Room(code, mode, (r) => this.rooms.delete(r.code));
     this.rooms.set(code, room);
     return room;

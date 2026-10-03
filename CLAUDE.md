@@ -87,7 +87,7 @@ Every owned folder has a README that says exactly what goes there.
   `plateDoor.ts`. Template: `_template.ts`. Register in `puzzles/index.ts`.
 - **UI:** `UIHost` / `UIState` / `UIActions` in `client/src/ui/hooks.ts`
   (`onCreateRoom`, `onJoinRoom(code)`, `onPlayWithAI(side)`, ...). Mock data in
-  `client/src/ui/mock.ts`, shown with `?mock=lobby` or `?mock=game`.
+  `client/src/ui/mock.ts`, shown with `?mock=lobby`, `?mock=hud` or `?mock=game`.
 - **Assets:** `client/public/assets/manifest.json` (schema in that folder's README).
 
 ## Cube and coordinates

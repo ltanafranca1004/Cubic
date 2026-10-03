@@ -33,8 +33,11 @@ game, not the UI. While a text input is focused the game ignores them.
 
 ## Working without the server
 
-Open `http://localhost:5173/?mock=lobby` or `?mock=game`. The UI is mounted with the states
-in `mock.ts` and actions that only log to the console. Edit `mock.ts` to try other states.
+- `http://localhost:5173/?mock=lobby` and `?mock=hud`: the UI mounted with the static
+  states in `mock.ts` and actions that only log to the console. Edit `mock.ts` to try
+  other states.
+- `?mock=game` (add `&side=in` for the inside player): a real playable game running
+  locally with no server, so you can see the HUD change as you walk.
 
 ## Shipping it
 

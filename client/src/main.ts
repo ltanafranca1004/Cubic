@@ -1,14 +1,20 @@
+import { startApp } from './app';
 import { ui } from './ui';
 import { mockActions, mockGameUIState, mockLobbyState } from './ui/mock';
 
-// Skeleton entry: mounts the UI against mock data. The networked game lands on branch
-// "core"; `?mock` keeps working after that so the UI can be built without a server.
-
 const root = document.querySelector<HTMLElement>('#app')!;
-const game = document.createElement('div');
-game.id = 'game';
-root.appendChild(game);
+const params = new URLSearchParams(location.search);
+const mock = params.get('mock');
 
-const mock = new URLSearchParams(location.search).get('mock');
-const handle = ui.mount(root, mockActions);
-handle.update(mock === 'game' ? mockGameUIState : mockLobbyState);
+if (mock === 'lobby' || mock === 'hud') {
+  // Static mock data for building UI without a server (see client/src/ui/README.md).
+  const game = document.createElement('div');
+  game.id = 'game';
+  root.appendChild(game);
+  ui.mount(root, mockActions).update(mock === 'hud' ? mockGameUIState : mockLobbyState);
+} else if (mock !== null) {
+  // ?mock=game (or ?mock): a playable local game with no server. &side=in for the inside.
+  startApp(root, ui, params.get('side') === 'in' ? 'in' : 'out');
+} else {
+  startApp(root, ui);
+}
