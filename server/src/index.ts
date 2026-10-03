@@ -1,4 +1,5 @@
 import { createApp } from './app';
+import { devCommandsEnabled } from './dev';
 import { AiPlayer } from './ai/aiPlayer';
 import { DEFAULT_GEMINI_MODEL, geminiBrain } from './ai/gemini';
 import { parsePersona } from './ai/prompt';
@@ -28,6 +29,7 @@ const app = createApp({
   origins: (env.CLIENT_ORIGIN ?? '').split(','),
   allowLocalhost: env.NODE_ENV !== 'production',
   info: () => ({ aiAvailable: !!brain, ttsAvailable: !!brain, ttsMode }),
+  devCommands: devCommandsEnabled(env),
   onAiRoom: (room, humanSide) => {
     if (!brain) return;
     new AiPlayer(room, humanSide === 'out' ? 'in' : 'out', brain, {
@@ -45,6 +47,8 @@ const app = createApp({
 });
 
 if (wanted === 'elevenlabs' && ttsMode === 'browser') console.warn('TTS_MODE=elevenlabs but ELEVENLABS_API_KEY is not set: using the browser voice.');
+
+if (env.DEV_COMMANDS === '1') console.warn(devCommandsEnabled(env) ? 'DEV_COMMANDS=1: dev commands (teleport, solve) are ON. Never use this on a public server.' : 'DEV_COMMANDS=1 ignored: NODE_ENV=production.');
 
 const port = await app.listen(Number(env.PORT) || 3001);
 console.log(`cubic server listening on :${port} (AI partner: ${fake ? 'scripted (AI_FAKE=1)' : brain ? model : 'off, no GEMINI_API_KEY'}, persona ${persona}; AI voice: ${ttsMode}${ttsMode === 'elevenlabs' ? ` ${ttsModel}` : ''}, ${tts.bankSize} bank lines)`);

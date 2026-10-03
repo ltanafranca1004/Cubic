@@ -2,6 +2,7 @@ import { createServer, type Server as HttpServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { Server, type Socket } from 'socket.io';
 import type { Ack, ClientToServer, Seat, ServerInfo, ServerToClient, Side } from '@cubic/shared';
+import { devCommandsEnabled, runDev } from './dev';
 import { Rooms, type Room } from './rooms';
 
 type Io = Server<ClientToServer, ServerToClient>;
@@ -17,6 +18,8 @@ export interface AppOptions {
   /** Hook for the AI partner: called when a room is created for an AI game. */
   onAiRoom?: (room: Room, humanSide: Side) => void;
   info?: () => ServerInfo;
+  /** Obey the `dev` socket message (DEV_COMMANDS=1). Ignored when NODE_ENV=production. */
+  devCommands?: boolean;
 }
 
 export interface App {
@@ -41,6 +44,8 @@ export function createApp(opts: AppOptions = {}): App {
   const origins = (opts.origins ?? []).map(trim).filter(Boolean).map(originPattern);
   const originAllowed = (origin: string | undefined) => !origin || origins.some((re) => re.test(trim(origin))) || (!!opts.allowLocalhost && isLocal(origin));
   const info = opts.info ?? (() => ({ aiAvailable: false, ttsAvailable: false, ttsMode: 'browser' as const }));
+
+  const devOn = devCommandsEnabled({ DEV_COMMANDS: opts.devCommands ? '1' : '', NODE_ENV: process.env.NODE_ENV });
 
   const http = createServer((req, res) => {
     if (req.url === '/health') {
@@ -195,6 +200,10 @@ export function createApp(opts: AppOptions = {}): App {
     socket.on('voice:chunk', (msg) => {
       const size = (msg?.data as ArrayBuffer | undefined)?.byteLength ?? 0;
       if (size > 0 && size <= VOICE_CHUNK_MAX) partner()?.emit('voice:chunk', msg);
+    });
+
+    socket.on('dev', (cmd, ack) => {
+      if (typeof ack === 'function') ack(runDev(devOn, room, cmd));
     });
 
     socket.on('disconnect', () => {
