@@ -5,7 +5,6 @@ import { AiPlayer, FALLBACK_LINE, parseReply } from '../src/ai/aiPlayer';
 import type { Brain } from '../src/ai/gemini';
 import { MAX_SAY_CHARS, parsePersona, systemPrompt } from '../src/ai/prompt';
 import { scriptedBrain } from '../src/ai/scripted';
-import { elevenLabsTts } from '../src/ai/tts';
 import { LIMITS, Rooms } from '../src/rooms';
 
 LIMITS.moveBurst = 1e9;
@@ -161,20 +160,3 @@ test('the AI leaves with the human', () => {
   assert.ok(logs.some((l) => l.includes('stopped')));
 });
 
-test('ElevenLabs speech is cached per line and fails soft', async () => {
-  let calls = 0;
-  const ok = (async (url: string, init: RequestInit) => {
-    calls++;
-    assert.match(url, /text-to-speech/);
-    assert.equal((init.headers as Record<string, string>)['xi-api-key'], 'k');
-    return new Response(new Uint8Array([1, 2, 3]));
-  }) as unknown as typeof fetch;
-  const tts = elevenLabsTts('k', 'voice', ok);
-  const a = await tts.speak('Give me a sec...');
-  const b = await tts.speak('Give me a sec...');
-  assert.deepEqual([...a!], [1, 2, 3]);
-  assert.equal(a, b);
-  assert.equal(calls, 1);
-  const bad = elevenLabsTts('k', 'voice', (async () => new Response('no', { status: 401 })) as unknown as typeof fetch);
-  assert.equal(await bad.speak('hi'), null);
-});

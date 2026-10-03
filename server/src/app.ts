@@ -33,7 +33,7 @@ const trim = (o: string) => o.trim().replace(/\/$/, '');
 export function createApp(opts: AppOptions = {}): App {
   const origins = (opts.origins ?? []).map(trim).filter(Boolean);
   const originAllowed = (origin: string | undefined) => !origin || origins.includes(trim(origin)) || (!!opts.allowLocalhost && isLocal(origin));
-  const info = opts.info ?? (() => ({ aiAvailable: false, ttsAvailable: false }));
+  const info = opts.info ?? (() => ({ aiAvailable: false, ttsAvailable: false, ttsMode: 'browser' as const }));
 
   const http = createServer((req, res) => {
     if (req.url === '/health') {

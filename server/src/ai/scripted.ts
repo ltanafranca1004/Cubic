@@ -8,7 +8,8 @@ import type { Persona } from './prompt';
 //    so the game never stalls.
 // Same contract as Gemini: it only reads its own observation and answers the same JSON.
 
-const LINES: Record<Persona, Record<string, string>> = {
+/** Everything the scripted partner can say. All of it is in the voice bank. */
+export const SCRIPTED_LINES: Record<Persona, Record<string, string>> = {
   default: {
     plateGo: 'I can see a plate on my floor. Standing on it now.',
     plateOn: 'I am on the plate. Tell me when you are through.',
@@ -30,7 +31,7 @@ const LINES: Record<Persona, Record<string, string>> = {
 };
 
 export function scriptedBrain(persona: Persona = 'default'): Brain {
-  const L = LINES[persona];
+  const L = SCRIPTED_LINES[persona];
   return {
     async think(turn) {
       const t = JSON.parse(turn) as { observation: Observation; chat: string[]; currentlyDoing: string | null };

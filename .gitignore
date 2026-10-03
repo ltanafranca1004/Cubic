@@ -149,3 +149,6 @@ vite.config.ts.timestamp-*
 .turbo
 
 cube.html
+
+# ElevenLabs audio cache (regenerate with: npm run tts:bank -w server)
+server/.tts-cache/

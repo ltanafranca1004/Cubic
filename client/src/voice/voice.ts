@@ -436,6 +436,21 @@ export class Voice {
     }
   }
 
+  /**
+   * Say an AI line with the browser's free speechSynthesis (TTS_MODE=browser, or the
+   * ElevenLabs call failed). It cannot be routed through Web Audio, so the proximity gain
+   * is applied as the utterance volume when the line starts.
+   */
+  speakText(text: string): void {
+    if (typeof speechSynthesis === 'undefined') return;
+    const volume = Math.min(1, Math.max(0, this.deps.proximity() * this.volume));
+    if (volume <= 0) return; // out of earshot
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.volume = volume;
+    utterance.rate = 1.05;
+    speechSynthesis.speak(utterance);
+  }
+
   destroy(): void {
     clearInterval(this.timer);
     this.closeCall();

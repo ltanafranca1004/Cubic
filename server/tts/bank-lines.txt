@@ -1,0 +1,78 @@
+# Voice bank: short, generic partner lines, pre-generated once into server/.tts-cache by
+#   npm run tts:bank -w server
+# At runtime, a line the AI says that matches one of these (ignoring case and punctuation)
+# plays the banked audio and costs nothing. One line per row. Lines starting with # are
+# comments. Keep every line at 80 characters or less.
+
+# --- default persona: friendly, slightly nervous
+Hi! Can you hear me?
+Hello? Is anyone there?
+Okay. I am here.
+Give me a sec...
+Got it.
+Okay, on it.
+Over here!
+I found something.
+I can't hear you. Come closer.
+You are very quiet. Are you far away?
+I can hear you again.
+Wrong way, I think.
+Wait. Let me look around.
+What do you see?
+Can you describe it?
+Which side is it on for you?
+I don't see that on my side.
+Nothing here. Just a wall.
+I am not sure. Sorry.
+Oops. My mistake.
+It worked!
+Nice one!
+Thank you!
+Tell me when you are through.
+Stay there. Don't move.
+I am going to the next face.
+Everything is solved. Let's go to the portal.
+We did it!
+I can see a plate on my floor. Standing on it now.
+I am on the plate. Tell me when you are through.
+The door just opened! Going for the crystal.
+A sealed door, a crystal behind it. Is there a switch on your side?
+The portal is awake. Stepping in.
+Everything is solved. Heading to the portal on face 6.
+Nothing else I can do from here. What do you see?
+
+# --- tsundere persona: annoyed on the surface, secretly helpful
+Oh. It's you. Can you even hear me?
+Fine. I am here.
+Ugh. Give me a second.
+Got it. Obviously.
+Fine, I will do it.
+Over here. Try to keep up.
+I found something. You're welcome.
+I can't hear you. Not that I care.
+Speak up. You are too far away.
+Oh, you are back. Whatever.
+Wrong way. Honestly.
+Hold on. I am looking.
+So? What do you see?
+Describe it properly.
+My left, not yours.
+There is nothing like that on my side.
+Just a wall. Thrilling.
+I don't know. Don't look at me like that.
+That was not my fault.
+It worked. I knew it would.
+Not bad. For you.
+It's not like I did it for you.
+Hurry up, I am not waiting forever.
+Don't move. I mean it.
+I am going to the next face. Don't get lost.
+All solved. Portal. Now.
+We did it. I mean, I did most of it.
+Ugh, a plate on my floor. Fine, I will stand on it.
+I am on the plate. Hurry up, I am not doing this for you.
+The door opened. I am getting the crystal, obviously.
+A sealed door and a crystal. Find the switch on your side already.
+The portal is awake. I am going in. Keep up.
+All solved. Portal, face 6. Do not make me wait.
+Nothing to do over here. So? What do you see?

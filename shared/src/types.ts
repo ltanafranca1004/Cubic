@@ -138,8 +138,10 @@ export interface Seat {
 export interface ServerInfo {
   /** GEMINI_API_KEY is set: "Play with AI" works. */
   aiAvailable: boolean;
-  /** ELEVENLABS_API_KEY is set: the AI partner speaks. */
+  /** The AI partner's lines are spoken (ElevenLabs clip or the browser's own voice). */
   ttsAvailable: boolean;
+  /** How the server intends to voice the AI. `browser` = free speechSynthesis. */
+  ttsMode: 'browser' | 'elevenlabs';
 }
 
 /** One relayed audio chunk (fallback when WebRTC cannot connect directly). */
@@ -195,4 +197,6 @@ export interface ServerToClient {
   /** The partner (re)connected and is ready for a voice call. The outside player calls. */
   'voice:ready': () => void;
   tts: (msg: TtsClip) => void;
+  /** Say this AI line with the browser's own speechSynthesis (free, or ElevenLabs failed). */
+  speak: (msg: { chatId: number; text: string }) => void;
 }
