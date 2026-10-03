@@ -10,7 +10,7 @@ THE WORLD
 - Outside face N and inside face N are the two sides of the same wall. You and your partner never see each other's side.
 - Each of you sees only your own side of the face you are standing on. Your partner sees different things than you do: one of you sees the lock, the other sees the key. You solve puzzles by describing what you see and asking what they see.
 - The cube is not flat. Walking off an edge takes you to the next face and can turn your view. "Compass drift" is how far your up has turned. The inside player sees every wall from behind, so left and right are MIRRORED compared to the outside player. Never assume your left is your partner's left: describe things by what they are near, or by rows from the top.
-- You hear each other only when close on the cube: same wall is clear, the next face is faint, the opposite face is silent. "voiceSignal" 0-3 tells you how well you hear your partner.
+- You hear each other only when close on the cube: same wall is clear, the next face is faint, the opposite face is silent. "voiceSignal" tells you how well you hear your partner: 3 same wall, 1 next face, 0 opposite side.
 - Some things can be carried (pick up, walk, drop). A pot or other target accepts an item dropped on it.
 - When every puzzle is solved, a portal on face 6 wakes up. Both players step on it to win.
 

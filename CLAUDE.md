@@ -134,11 +134,11 @@ block by themselves; a puzzle's `isBlocked` decides.
 
 No Discord: voice is part of the game. `voiceMix(state)` in `shared/src/voice.ts` returns
 `{ gain }` from the face distance between the players (outside face N and inside face N
-are the same wall = same face): same face = full volume, adjacent face = about 35%,
-opposite face = silent, faded smoothly near edges. The numbers are named constants.
-Puzzle and map design should use this: send players to far faces and they lose each
-other. Near an edge a player counts partly as being on the next face, so the volume fades
-instead of jumping when someone crosses.
+are the same wall = same face). Flat per face: same face = 1.0 (`VOICE_SAME`), adjacent
+face = 0.35 (`VOICE_ADJ`), opposite face = 0 (`VOICE_OPP`), wherever you stand on the
+face. The client ramps gain changes over `VOICE_RAMP_MS` (150 ms) so crossing an edge does
+not pop. Puzzle and map design should use this: send players to far faces and they lose
+each other.
 
 Client: `client/src/voice/voice.ts`. Native `RTCPeerConnection` (no PeerJS/simple-peer
 dependency), signaled through our own Socket.io server (`voice:signal`), public STUN only.

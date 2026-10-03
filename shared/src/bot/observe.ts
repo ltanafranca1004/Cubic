@@ -32,7 +32,7 @@ export interface Observation {
   solvedFaces: FaceId[];
   portalOpen: boolean;
   strikes: number;
-  /** How well you hear your partner: 0 (not at all, far away) to 3 (same wall). */
+  /** How well you hear your partner: 3 same wall, 1 the next face over, 0 opposite side (silent). */
   voiceSignal: number;
   won: boolean;
 }

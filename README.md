@@ -42,8 +42,8 @@ game.
 Cubic is meant to be played by voice, no Discord. In the game press **Enable microphone**
 and allow it. Hold **V** to talk (or switch to open mic), **Mute** to cut your mic, and use
 the slider for your partner's volume. How well you hear each other depends on where you
-both stand on the cube: same wall is clear, the next face is faint (about 35%), the
-opposite face is silent. The three bars show the signal, the dots show who is speaking.
+both stand on the cube: same wall is clear, the next face is faint (35%), the opposite
+face is silent. The bars show the signal (3, 1, 0), the dots show who is speaking.
 
 Audio is WebRTC, signaled through our own Socket.io server (public STUN). If a direct
 connection cannot be made it falls back to relaying audio through the server; add
