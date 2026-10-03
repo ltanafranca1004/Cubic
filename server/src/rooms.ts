@@ -234,6 +234,16 @@ export class Room {
     this.emitState([]);
   }
 
+  /**
+   * Dev tools only (see dev.ts, DEV_COMMANDS=1): change the state with a /shared dev
+   * helper, then broadcast it like any other change.
+   */
+  devApply(change: (state: GameState, now: number) => GameEvent[]): GameEvent[] {
+    const events = change(this.state, this.now());
+    this.emitState(events);
+    return events;
+  }
+
   private emitState(events: GameEvent[]): void {
     const update: StateUpdate = { state: this.state, events, acks: this.acks() };
     for (const l of this.listeners) l.onState?.(update);

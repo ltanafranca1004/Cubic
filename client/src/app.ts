@@ -28,6 +28,12 @@ export function hudOf(state: GameState, me: Side, now: number): HudState {
   };
 }
 
+/**
+ * Hook for the dev tools (client/src/dev, ?dev only): the running app's Net, a way to
+ * redraw, and `viewSide` to draw the other player's side instead of our own (hot-seat).
+ */
+export const devHooks: { net: Net | null; viewSide: Side | null; render(): void } = { net: null, viewSide: null, render: () => {} };
+
 export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null = null): void {
   const gameEl = document.createElement('div');
   gameEl.id = 'game';
@@ -93,6 +99,9 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
     onPlayAgain: () => net.restart(),
   };
 
+  /** The side we draw: our own, unless the dev tools show the other one. */
+  const viewSide = () => (net.side ? (devHooks.viewSide ?? net.side) : null);
+
   function uiState(): UIState {
     const seats = net.room?.seats;
     const full = !!seats && seats.out.taken && seats.in.taken;
@@ -116,11 +125,11 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
       error: net.error,
       roomCode: net.code,
       mode: net.room?.mode ?? null,
-      side: net.side,
+      side: viewSide(),
       aiAvailable: net.info.aiAvailable,
       chat: net.chat,
       partnerTyping,
-      hud: inGame ? hudOf(net.state!, net.side!, Date.now()) : null,
+      hud: inGame ? hudOf(net.state!, viewSide()!, Date.now()) : null,
       voice: voice.snapshot(signalBars(proximity())),
     };
   }
@@ -129,7 +138,7 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
     const state = uiState();
     const playing = state.screen === 'game';
     gameEl.style.visibility = playing ? 'visible' : 'hidden';
-    game?.setState(playing ? net.state : null, net.side ?? 'out');
+    game?.setState(playing ? net.state : null, viewSide() ?? 'out');
     handle?.update(state);
   }
 
@@ -141,6 +150,7 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
   handle = ui.mount(root, actions);
   // Dev only: lets tests and the console inspect the client state.
   if (import.meta.env.DEV) Object.assign(window, { __cubic: net, __cubicVoice: voice });
+  Object.assign(devHooks, { net, render });
   net.start();
   if (!offlineSide) void voice.resumeMic();
   render();

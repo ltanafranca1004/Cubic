@@ -227,3 +227,44 @@ export function objectiveFor(state: GameState, side: Side, env: GameEnv = defaul
   if (!pending) return `Face ${face} is open. Head somewhere else.`;
   return own;
 }
+
+// ---------- DEV ONLY ----------
+// Engine-level cheats for the dev tools (client/src/dev, the server's `dev` socket message
+// behind DEV_COMMANDS=1). Never call these from game code, puzzles or the AI.
+
+/**
+ * DEV ONLY. Force-latch the puzzle on `face` as solved, whatever the puzzle itself thinks.
+ * The puzzle's own state is not touched (a door it controls stays as it was).
+ */
+export function devSolve(state: GameState, face: FaceId, now: number = Date.now(), env: GameEnv = defaultEnv): GameEvent[] {
+  const puzzle = env.puzzles.find((p) => p.face === face);
+  if (state.wonAt !== null || !puzzle || state.solved.includes(face)) return [];
+  state.solved.push(face);
+  state.solved.sort();
+  const events: GameEvent[] = [{ type: 'solve', face, puzzle: puzzle.id }];
+  settle(state, env, now, events);
+  return events;
+}
+
+/**
+ * DEV ONLY. Put `side` on `face` with the face's canonical up, on the free tile nearest the
+ * spawn point. The puzzles see it as stepping off the old tile and onto the new one.
+ */
+export function devTeleport(state: GameState, side: Side, face: FaceId, now: number = Date.now(), env: GameEnv = defaultEnv): GameEvent[] {
+  if (state.wonAt !== null) return [];
+  const player = state.players[side];
+  const from = player.pose;
+  const spawn = SPAWN[side];
+  const tiles: TileRef[] = [];
+  env.world[side][face].tiles.forEach((row, y) => row.forEach((_, x) => tiles.push({ face, x, y })));
+  const far = (t: TileRef) => Math.abs(t.x - spawn.x) + Math.abs(t.y - spawn.y);
+  const to = tiles.sort((a, b) => far(a) - far(b)).find((t) => !isBlocked(state, side, t, env, now));
+  if (!to) return [];
+  const events: GameEvent[] = [];
+  const fromTile: TileRef = { face: from.face, x: from.x, y: from.y };
+  player.pose = { side, face, up: CANON_UP[face], x: to.x, y: to.y, dir: from.dir };
+  for (const p of env.puzzles) if (p.face === from.face) p.onLeave?.(state.puzzles[p.id], makeCtx(state, env, p, now, events), side, fromTile);
+  for (const p of env.puzzles) if (p.face === face) p.onEnter?.(state.puzzles[p.id], makeCtx(state, env, p, now, events), side, to);
+  settle(state, env, now, events);
+  return events;
+}
