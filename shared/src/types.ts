@@ -170,6 +170,8 @@ export interface ClientToServer {
   'room:createAI': (msg: { side: Side }, ack: Ack<Seat>) => void;
   'room:rejoin': (msg: { code: string; token: string }, ack: Ack<Seat>) => void;
   'room:leave': () => void;
+  /** After a win: start a fresh game in the same room. */
+  'room:restart': () => void;
   /** dx,dy in SCREEN space of the sender: exactly one of them is -1 or 1. */
   move: (msg: { dx: number; dy: number; seq: number }) => void;
   /** Pick up / drop (E key). */
