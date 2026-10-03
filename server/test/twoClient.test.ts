@@ -80,6 +80,12 @@ class Client {
     await this.until(() => this.last.acks[this.side] >= seq, `ack ${seq}`);
   }
 
+  async interact() {
+    const seq = ++this.seq;
+    this.sock.emit('interact', { seq });
+    await this.until(() => this.last.acks[this.side] >= seq, `ack ${seq}`);
+  }
+
   /** Walk to a tile with real validated moves, re-planning from the server state. */
   async walkTo(target: TileRef) {
     for (let guard = 0; guard < 200; guard++) {
@@ -181,6 +187,18 @@ test('two clients play a whole game online', async () => {
   assert.deepEqual(back.state.solved, [1]);
   assert.equal(back.chat.length, a.chat.length);
   await a.until(() => !!a.room?.seats.in.connected, 'partner back');
+
+  // --- items online: outside carries the rose from face 1 to the pot on face 6
+  const rose = a.last.state.items.rose!;
+  await a.walkTo({ face: 1, x: rose.x, y: rose.y });
+  await a.interact();
+  assert.equal(a.last.state.players.out.carrying, 'rose');
+  await a.walkTo(find('out', 6, 'target'));
+  assert.equal(a.last.state.players.out.carrying, 'rose'); // it crossed the edges with them
+  await a.interact();
+  await b2.until(() => b2.events.some((e) => e.type === 'puzzle' && e.name === 'bloom'), 'item puzzle event reaches both');
+  assert.deepEqual(a.last.state.solved, [1, 6]);
+  assert.deepEqual([a.last.state.items.rose!.face, a.last.state.items.rose!.placedOn !== null], [6, true]);
 
   // --- portal win
   const portal = find('out', 6, 'portal');

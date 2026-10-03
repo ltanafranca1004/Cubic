@@ -216,12 +216,14 @@ export function itemsOn(state: GameState, side: Side, face: FaceId): Item[] {
 export function objectiveFor(state: GameState, side: Side, env: GameEnv = defaultEnv): string {
   const face = state.players[side].pose.face;
   const total = env.puzzles.length;
+  const puzzle = env.puzzles.find((p) => p.face === face);
+  const pending = puzzle && !state.solved.includes(face);
+  const own = pending ? (puzzle.objective?.(state.puzzles[puzzle.id], makeCtx(state, env, puzzle, 0, []), side) ?? '') : '';
   if (objectsOn(env.world, side, face, 'portal').length > 0) {
     if (portalOpen(state, env)) return 'The portal is awake. Both of you, step into it.';
-    return `A portal sleeps here. It wakes once every face is open. ${state.solved.length} of ${total} so far.`;
+    return `A portal sleeps here. It wakes once every puzzle is solved (${state.solved.length} of ${total}). ${own}`.trim();
   }
-  const puzzle = env.puzzles.find((p) => p.face === face);
   if (!puzzle) return 'Nothing to solve here. Keep walking.';
-  if (state.solved.includes(face)) return `Face ${face} is open. Head somewhere else.`;
-  return puzzle.objective?.(state.puzzles[puzzle.id], makeCtx(state, env, puzzle, 0, []), side) ?? '';
+  if (!pending) return `Face ${face} is open. Head somewhere else.`;
+  return own;
 }

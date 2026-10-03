@@ -5,3 +5,4 @@ export * from './maps';
 export * from './puzzles';
 export * from './game';
 export * from './bot';
+export * from './voice';

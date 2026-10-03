@@ -91,6 +91,7 @@ test('per-side visibility: each side only sees its own half of the puzzle', () =
   const out = visibleObjects(s, 'out', 1).map((o) => o.type);
   const inn = visibleObjects(s, 'in', 1).map((o) => o.type);
   assert.deepEqual(out.sort(), ['crystal', 'door']);
+  assert.deepEqual(Object.keys(s.items), ['rose']);
   assert.deepEqual(inn, ['plate']);
   assert.notEqual(objectiveFor(s, 'out'), objectiveFor(s, 'in'));
 });
@@ -106,6 +107,16 @@ test('portal win: needs every puzzle solved and both players on the portal', () 
 
   go(s, 'in', obj(env, 'in', 1, 'plate'));
   go(s, 'out', obj(env, 'out', 1, 'crystal'));
+  assert.equal(portalOpen(s), false); // the rose is still on face 1
+
+  // Carry the rose from face 1 to the pot on face 6.
+  go(s, 'out', { face: 1, x: s.items.rose!.x, y: s.items.rose!.y });
+  assert.deepEqual(applyInteract(s, 'out', 1), [{ type: 'pickup', side: 'out', item: 'rose' }]);
+  go(s, 'out', obj(env, 'out', 6, 'target'));
+  const planted = applyInteract(s, 'out', 1);
+  assert.ok(planted.some((e) => e.type === 'place' && e.item === 'rose'));
+  assert.ok(planted.some((e) => e.type === 'puzzle' && e.name === 'bloom'));
+  assert.deepEqual(s.solved, [1, 6]);
   assert.equal(portalOpen(s), true);
   go(s, 'out', portalOut);
   // The win fires the moment the second player touches any portal tile.

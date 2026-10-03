@@ -7,6 +7,7 @@ import type { FaceId, Side } from '../types';
 export const STRING_MAPS: Record<Side, Record<FaceId, string[]>> = {
   out: {
     // Meadow. Example puzzle: the door D only opens while the inside player stands on a plate.
+    // R is a rose to carry to the pot (U) on face 6.
     1: [
       'T........T',
       '..........',
@@ -16,7 +17,7 @@ export const STRING_MAPS: Record<Side, Record<FaceId, string[]>> = {
       '...#D#....',
       '..........',
       '.......T..',
-      '..........',
+      '.R........',
       'T........T',
     ],
     // Desert
@@ -80,7 +81,7 @@ export const STRING_MAPS: Record<Side, Record<FaceId, string[]>> = {
       '....OO....',
       '....OO....',
       '..........',
-      '..........',
+      '.......U..',
       '.#......#.',
       '..........',
     ],

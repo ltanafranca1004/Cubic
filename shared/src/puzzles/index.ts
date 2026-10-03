@@ -1,4 +1,5 @@
 import { plateDoor } from './plateDoor';
+import { rosePot } from './rosePot';
 import type { PuzzleModule } from './types';
 
 export * from './types';
@@ -8,4 +9,4 @@ export * from './types';
  * The portal on face 6 opens once all of these are solved.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const PUZZLES: PuzzleModule<any>[] = [plateDoor];
+export const PUZZLES: PuzzleModule<any>[] = [plateDoor, rosePot];
