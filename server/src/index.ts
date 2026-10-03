@@ -23,11 +23,15 @@ const ttsModel = env.ELEVENLABS_MODEL_ID || DEFAULT_TTS_MODEL;
 // stay on the browser voice so the AI is never silent.
 const wanted = parseTtsMode(env.TTS_MODE, env.NODE_ENV);
 const ttsMode = wanted === 'elevenlabs' && !env.ELEVENLABS_API_KEY ? 'browser' : wanted;
+// TURN relay for voice (optional). All three are needed, otherwise clients get STUN only.
+const turnUrls = (env.TURN_URLS ?? '').split(',').map((u) => u.trim()).filter(Boolean);
+const turn = turnUrls.length && env.TURN_USERNAME && env.TURN_CREDENTIAL ? { urls: turnUrls, username: env.TURN_USERNAME, credential: env.TURN_CREDENTIAL } : null;
 const tts = createTts({ apiKey: env.ELEVENLABS_API_KEY, voiceId: env.ELEVENLABS_VOICE_ID, modelId: ttsModel });
 
 const app = createApp({
   origins: (env.CLIENT_ORIGIN ?? '').split(','),
   allowLocalhost: env.NODE_ENV !== 'production',
+  turn,
   info: () => ({ aiAvailable: !!brain, ttsAvailable: !!brain, ttsMode }),
   devCommands: devCommandsEnabled(env),
   onAiRoom: (room, humanSide) => {
@@ -46,9 +50,10 @@ const app = createApp({
   },
 });
 
+if (!turn && (turnUrls.length || env.TURN_USERNAME || env.TURN_CREDENTIAL)) console.warn('TURN needs TURN_URLS, TURN_USERNAME and TURN_CREDENTIAL together: voice uses STUN only.');
 if (wanted === 'elevenlabs' && ttsMode === 'browser') console.warn('TTS_MODE=elevenlabs but ELEVENLABS_API_KEY is not set: using the browser voice.');
 
 if (env.DEV_COMMANDS === '1') console.warn(devCommandsEnabled(env) ? 'DEV_COMMANDS=1: dev commands (teleport, solve) are ON. Never use this on a public server.' : 'DEV_COMMANDS=1 ignored: NODE_ENV=production.');
 
 const port = await app.listen(Number(env.PORT) || 3001);
-console.log(`cubic server listening on :${port} (AI partner: ${fake ? 'scripted (AI_FAKE=1)' : brain ? model : 'off, no GEMINI_API_KEY'}, persona ${persona}; AI voice: ${ttsMode}${ttsMode === 'elevenlabs' ? ` ${ttsModel}` : ''}, ${tts.bankSize} bank lines)`);
+console.log(`cubic server listening on :${port} (AI partner: ${fake ? 'scripted (AI_FAKE=1)' : brain ? model : 'off, no GEMINI_API_KEY'}, persona ${persona}; AI voice: ${ttsMode}${ttsMode === 'elevenlabs' ? ` ${ttsModel}` : ''}, ${tts.bankSize} bank lines; voice ICE: ${turn ? `STUN + TURN (${turnUrls.length} urls)` : 'STUN only'})`);

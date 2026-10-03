@@ -9,6 +9,29 @@ type Io = Server<ClientToServer, ServerToClient>;
 type Sock = Socket<ClientToServer, ServerToClient>;
 
 const VOICE_CHUNK_MAX = 64 * 1024;
+/** Public STUN, always offered. The client keeps the same list as its fallback. */
+export const STUN_URLS = ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'];
+
+/** A TURN relay for voice calls that cannot connect directly (TURN_* env vars). */
+export interface TurnConfig {
+  urls: string[];
+  username: string;
+  credential: string;
+}
+export interface IceServer {
+  urls: string[];
+  username?: string;
+  credential?: string;
+}
+
+/** What GET /ice returns: STUN, plus TURN when it is fully configured. */
+export function iceServers(turn?: TurnConfig | null): IceServer[] {
+  const urls = (turn?.urls ?? []).map((u) => u.trim()).filter(Boolean);
+  const stun: IceServer = { urls: STUN_URLS };
+  // A TURN entry without credentials makes the browser's RTCPeerConnection throw.
+  if (!turn || urls.length === 0 || !turn.username || !turn.credential) return [stun];
+  return [stun, { urls, username: turn.username, credential: turn.credential }];
+}
 
 export interface AppOptions {
   /** Allowed browser origins (CLIENT_ORIGIN). */
@@ -17,6 +40,8 @@ export interface AppOptions {
   allowLocalhost?: boolean;
   /** Hook for the AI partner: called when a room is created for an AI game. */
   onAiRoom?: (room: Room, humanSide: Side) => void;
+  /** TURN relay handed to clients by GET /ice. Unset = STUN only. */
+  turn?: TurnConfig | null;
   info?: () => ServerInfo;
   /** Obey the `dev` socket message (DEV_COMMANDS=1). Ignored when NODE_ENV=production. */
   devCommands?: boolean;
@@ -51,6 +76,19 @@ export function createApp(opts: AppOptions = {}): App {
     if (req.url === '/health') {
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ ok: true, rooms: rooms.size }));
+      return;
+    }
+    if (req.url === '/ice') {
+      // Same origin rules as the socket. The client is on another origin in production,
+      // so an allowed origin also gets the CORS header.
+      const origin = req.headers.origin;
+      if (req.method !== 'GET' || !originAllowed(origin)) {
+        res.writeHead(req.method !== 'GET' ? 405 : 403);
+        res.end();
+        return;
+      }
+      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store', vary: 'Origin', ...(origin ? { 'access-control-allow-origin': origin } : {}) });
+      res.end(JSON.stringify({ iceServers: iceServers(opts.turn) }));
       return;
     }
     res.writeHead(404);
