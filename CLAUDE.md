@@ -48,7 +48,8 @@ Commands (from the repo root): `npm install`, `npm run dev` (server :3001 + clie
 ## Pinned versions
 
 Node >= 22.12, TypeScript ~6.0 (typescript-eslint does not support TS 7 yet), Phaser ^4.2.1,
-Vite ^8.3, Socket.io ^4.8, tsx ^4.23, ESLint ^10. Do not bump majors during the hackathon.
+Vite ^8.3, Socket.io ^4.8, tsx ^4.23, ESLint ^10. Model IDs: Gemini `gemini-3.5-flash`,
+ElevenLabs `eleven_flash_v2_5` (both overridable by env). Do not bump majors during the hackathon.
 **Phaser 4, not Phaser 3:** check the Phaser 4 docs / `node_modules/phaser/types` before
 using an API from memory.
 
@@ -153,8 +154,12 @@ own screen orientation), `pathTo` / `findPath` (BFS across faces with the real b
 and `planAction` (goto, go_face, step_on, move, pick_up, drop, wait). `/server/src/ai` is
 the brain: `AiPlayer` sits in the empty seat, sends Gemini the rules + observation + chat,
 validates the JSON reply `{ say, action }` and walks the action one step per 200 ms
-through the same `Room` methods a human's socket uses. Max one Gemini call per 3 s per
-room, 12 s timeout, "Give me a sec..." on errors, token usage logged. New puzzle objects
+through the same `Room` methods a human's socket uses. Max one Gemini call per 6 s per
+room (no backlog), 12 s timeout; on errors it backs off and the scripted partner
+(`scripted.ts`, also `AI_FAKE=1`) plays that turn. Lines are capped at 80 characters.
+`AI_PERSONA` (default | tsundere) changes tone only. Speech: `TTS_MODE` browser |
+elevenlabs, disk cache + voice bank in `server/src/ai/tts.ts`. Token and TTS character
+usage are logged. New puzzle objects
 are visible to the AI automatically through `visible()`; describe new mechanics in
 `server/src/ai/prompt.ts` if the AI needs to know a rule.
 
