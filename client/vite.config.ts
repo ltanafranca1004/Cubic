@@ -26,6 +26,7 @@ export default defineConfig({
     proxy: {
       '/socket.io': { ...asLocal, ws: true },
       '/health': asLocal,
+      '/ice': asLocal,
     },
   },
   build: { target: 'es2022', chunkSizeWarningLimit: 2000 },

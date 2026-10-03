@@ -225,3 +225,56 @@ test('CLIENT_ORIGIN: comma-separated list, exact origins and * inside a host lab
     await strict.close();
   }
 });
+
+test('GET /ice: STUN only without TURN, STUN + TURN when configured', async () => {
+  type Ice = { iceServers: { urls: string[]; username?: string; credential?: string }[] };
+  const plain = (await (await fetch(`${url}/ice`)).json()) as Ice;
+  assert.equal(plain.iceServers.length, 1);
+  assert.ok(plain.iceServers[0]!.urls.every((u) => u.startsWith('stun:')));
+  assert.equal(plain.iceServers[0]!.username, undefined);
+
+  const turn = { urls: [' turn:turn.example:80 ', 'turns:turn.example:443?transport=tcp', ''], username: 'user', credential: 'secret' };
+  const withTurn = createApp({ allowLocalhost: true, turn });
+  // Half-configured TURN (no credential) must not reach the browser: it would throw there.
+  const half = createApp({ allowLocalhost: true, turn: { ...turn, credential: '' } });
+  try {
+    const res = await fetch(`http://localhost:${await withTurn.listen(0)}/ice`);
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('content-type') ?? '', /json/);
+    const body = (await res.json()) as Ice;
+    assert.deepEqual(body.iceServers[0], plain.iceServers[0]);
+    assert.deepEqual(body.iceServers[1], { urls: ['turn:turn.example:80', 'turns:turn.example:443?transport=tcp'], username: 'user', credential: 'secret' });
+    assert.equal(body.iceServers.length, 2);
+    assert.deepEqual(await (await fetch(`http://localhost:${await half.listen(0)}/ice`)).json(), plain);
+  } finally {
+    await withTurn.close();
+    await half.close();
+  }
+});
+
+test('GET /ice: same origin rules as the socket, CORS header for allowed origins', async () => {
+  const strict = createApp({ origins: ['https://cubic.vercel.app', 'https://cubic-*.vercel.app'], allowLocalhost: false, turn: { urls: ['turn:turn.example:80'], username: 'user', credential: 'secret' } });
+  const port = await strict.listen(0);
+  const get = (origin?: string, method = 'GET') => fetch(`http://localhost:${port}/ice`, { method, headers: origin ? { origin } : {} });
+  try {
+    for (const ok of ['https://cubic.vercel.app', 'https://cubic-git-ui-luis.vercel.app']) {
+      const res = await get(ok);
+      assert.equal(res.status, 200, ok);
+      assert.equal(res.headers.get('access-control-allow-origin'), ok);
+      assert.equal(((await res.json()) as { iceServers: unknown[] }).iceServers.length, 2);
+    }
+    // No Origin header (same-origin or a non-browser client): allowed, no CORS header.
+    const bare = await get();
+    assert.equal(bare.status, 200);
+    assert.equal(bare.headers.get('access-control-allow-origin'), null);
+    for (const bad of ['https://evil.example', 'https://cubic.vercel.app.evil.example', 'http://localhost:5173']) {
+      const res = await get(bad);
+      assert.equal(res.status, 403, bad);
+      assert.equal(res.headers.get('access-control-allow-origin'), null);
+      assert.equal(await res.text(), '', 'no credentials in a rejected response');
+    }
+    assert.equal((await get('https://cubic.vercel.app', 'POST')).status, 405);
+  } finally {
+    await strict.close();
+  }
+});
