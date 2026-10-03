@@ -5,6 +5,7 @@ import {
   createGame,
   type ChatMessage,
   type ClientToServer,
+  type DevCommand,
   type GameEvent,
   type GameState,
   type RoomInfo,
@@ -263,6 +264,14 @@ export class Net {
     const me = this.side;
     const mine = this.socket ? events.filter((e) => 'side' in e && e.side === me) : events;
     if (mine.length) this.h.onEvents(mine, true);
+  }
+
+  /** Dev tools (?dev): ask the server to run a dev command. It refuses unless DEV_COMMANDS=1. */
+  dev(cmd: DevCommand): Promise<{ ok: true } | { ok: false; error: string }> {
+    return new Promise((resolve) => {
+      if (!this.socket || !this.online) resolve({ ok: false, error: 'Not connected to a server.' });
+      else this.socket.emit('dev', cmd, resolve);
+    });
   }
 
   sendChat(text: string): void {

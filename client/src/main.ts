@@ -5,6 +5,7 @@ import { mockActions, mockGameUIState, mockLobbyState } from './ui/mock';
 const root = document.querySelector<HTMLElement>('#app')!;
 const params = new URLSearchParams(location.search);
 const mock = params.get('mock');
+if (params.has('dev')) void import('./dev').then((dev) => dev.mountDev()); // dev tools, see client/src/dev
 
 if (mock === 'lobby' || mock === 'hud') {
   // Static mock data for building UI without a server (see client/src/ui/README.md).
