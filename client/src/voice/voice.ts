@@ -1,16 +1,17 @@
 import { VOICE_RAMP_MS, type TtsClip, type VoiceChunk } from '@cubic/shared';
 import { audioContext } from '../game/sfx';
 import type { VoiceState } from '../ui/hooks';
+import { STUN_ONLY, hasTurn, iceConfig } from './ice';
 
 // Proximity voice. WebRTC audio between the two players, signaled through our own
-// Socket.io server (public STUN only). Every remote sound goes through one Web Audio graph:
+// Socket.io server. ICE servers come from the server's GET /ice (public STUN, plus a TURN
+// relay when one is configured; see ice.ts). Every remote sound goes through one Web Audio graph:
 //
 //   remote stream / relay / AI speech  ->  bus  ->  gain (voiceMix x volume)  ->  speakers
 //
 // If the direct connection cannot be made, both sides fall back to relaying short Opus
 // (webm) chunks through the server.
 
-const ICE: RTCConfiguration = { iceServers: [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }] };
 const TICK_MS = 50;
 /** Give the direct connection this long before falling back to the relay. */
 const DIRECT_TIMEOUT_MS = 10_000;
@@ -47,6 +48,8 @@ export class Voice {
   private pc: RTCPeerConnection | null = null;
   private pendingIce: RTCIceCandidateInit[] = [];
   private directTimer: number | null = null;
+  /** Bumped whenever the call is dropped, so a step that was waiting on /ice gives up. */
+  private epoch = 0;
 
   private bus: GainNode | null = null;
   private out: GainNode | null = null;
@@ -233,31 +236,65 @@ export class Voice {
       this.startRelay(true);
       return;
     }
+    void iceConfig(); // both sides start the (cached) fetch now, before the offer exists
     this.directTimer = window.setTimeout(() => {
       if (this.pc?.connectionState !== 'connected') this.startRelay(true);
     }, DIRECT_TIMEOUT_MS);
     if (caller) void this.call();
   }
 
-  private newPc(): RTCPeerConnection {
-    const pc = new RTCPeerConnection(ICE);
+  private newPc(config: RTCConfiguration): RTCPeerConnection {
+    let pc: RTCPeerConnection;
+    try {
+      pc = new RTCPeerConnection(config);
+    } catch (e) {
+      // A malformed TURN URL from the server must not cost us the direct call.
+      console.warn('[voice] bad ICE servers, STUN only', e);
+      pc = new RTCPeerConnection((config = STUN_ONLY));
+    }
+    console.info(`[voice] ice servers: ${hasTurn(config) ? 'stun + turn' : 'stun only'}`);
     this.pc = pc;
-    this.pendingIce = [];
     pc.onicecandidate = (e) => e.candidate && this.deps.signal({ candidate: e.candidate.toJSON() } satisfies Signal);
     pc.ontrack = (e) => this.attachRemote(e.streams[0] ?? new MediaStream([e.track]));
+    pc.oniceconnectionstatechange = () => console.info(`[voice] ice ${pc.iceConnectionState}`);
     pc.onconnectionstatechange = () => {
       if (this.pc !== pc) return;
       if (pc.connectionState === 'connected') {
         if (this.directTimer) clearTimeout(this.directTimer);
         this.stopRelay();
         this.setLink('direct');
+        void Voice.logRoute(pc);
       } else if (pc.connectionState === 'failed') this.startRelay(true);
     };
     return pc;
   }
 
+  /** Log how the call got through: host (same network), srflx (STUN) or relay (TURN). */
+  private static async logRoute(pc: RTCPeerConnection): Promise<void> {
+    try {
+      const stats = await pc.getStats();
+      type Report = Record<string, unknown> & { id: string; type: string };
+      const reports = new Map<string, Report>();
+      stats.forEach((r: Report) => reports.set(r.id, r));
+      const all = [...reports.values()];
+      const transport = all.find((r) => r.type === 'transport' && r.selectedCandidatePairId);
+      // Firefox has no transport report: its chosen pair is flagged `selected`.
+      const pair = (transport && reports.get(transport.selectedCandidatePairId as string)) ?? all.find((r) => r.type === 'candidate-pair' && (r.selected || (r.nominated && r.state === 'succeeded')));
+      const local = pair && reports.get(pair.localCandidateId as string);
+      const remote = pair && reports.get(pair.remoteCandidateId as string);
+      if (!local || !remote) return;
+      const via = local.candidateType === 'relay' || remote.candidateType === 'relay' ? 'relay' : local.candidateType;
+      console.info(`[voice] connected via ${via} (local ${local.candidateType}, remote ${remote.candidateType}, ${local.relayProtocol ?? local.protocol})`);
+    } catch {
+      // stats are only for the log
+    }
+  }
+
   private async call(): Promise<void> {
-    const pc = this.newPc();
+    const epoch = this.epoch;
+    const config = await iceConfig();
+    if (epoch !== this.epoch) return; // hung up or restarted while waiting
+    const pc = this.newPc(config);
     const tx = pc.addTransceiver('audio', { direction: 'sendrecv' });
     await tx.sender.replaceTrack(this.micStream?.getAudioTracks()[0] ?? null);
     await pc.setLocalDescription(await pc.createOffer());
@@ -271,8 +308,15 @@ export class Voice {
         this.startRelay(false);
       } else if (msg.sdp?.type === 'offer') {
         if (this.forceRelay) return;
+        // Drop the old connection first: candidates that arrive while /ice is being
+        // fetched then wait in pendingIce for the new one.
         this.pc?.close();
-        const pc = this.newPc();
+        this.pc = null;
+        this.pendingIce = [];
+        const epoch = ++this.epoch;
+        const config = await iceConfig();
+        if (epoch !== this.epoch) return; // a newer offer or a hang-up took over
+        const pc = this.newPc(config);
         await pc.setRemoteDescription(msg.sdp);
         const tx = pc.getTransceivers()[0];
         if (tx) {
@@ -319,8 +363,10 @@ export class Voice {
   private closeCall(): void {
     if (this.directTimer) clearTimeout(this.directTimer);
     this.directTimer = null;
+    this.epoch++;
     this.pc?.close();
     this.pc = null;
+    this.pendingIce = [];
     this.remoteSrc?.disconnect();
     this.remoteSrc = null;
     this.stopRelay();
@@ -337,6 +383,7 @@ export class Voice {
   private startRelay(tellPartner: boolean): void {
     if (this.link === 'relay') return;
     if (this.directTimer) clearTimeout(this.directTimer);
+    this.epoch++;
     this.pc?.close();
     this.pc = null;
     if (tellPartner) this.deps.signal({ relay: true } satisfies Signal);
