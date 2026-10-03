@@ -47,6 +47,8 @@ export function createApp(opts: AppOptions = {}): App {
 
   const io: Io = new Server(http, {
     cors: { origin: (origin, cb) => cb(null, originAllowed(origin)) },
+    // CORS does not cover WebSocket upgrades: refuse other origins outright.
+    allowRequest: (req, cb) => cb(null, originAllowed(req.headers.origin)),
     maxHttpBufferSize: 256 * 1024,
   });
   const rooms = new Rooms();
