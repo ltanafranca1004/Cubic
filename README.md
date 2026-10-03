@@ -37,6 +37,40 @@ game.
 6. Face 6 has the portal. Once every puzzle is solved, both players step on it to win.
 7. Chat: Enter to type, Esc to close. Refreshing a window puts you back in your seat.
 
+## Voice
+
+Cubic is meant to be played by voice, no Discord. In the game press **Enable microphone**
+and allow it. Hold **V** to talk (or switch to open mic), **Mute** to cut your mic, and use
+the slider for your partner's volume. How well you hear each other depends on where you
+both stand on the cube: same wall is clear, the next face is faint (about 35%), the
+opposite face is silent. The three bars show the signal, the dots show who is speaking.
+
+Audio is WebRTC, signaled through our own Socket.io server (public STUN). If a direct
+connection cannot be made it falls back to relaying audio through the server; add
+`?relay` to the URL to force that path when testing. Voice reconnects by itself after a
+refresh. To test alone, use two windows and headphones.
+
+## Items
+
+Press **E** to pick up the item you are standing on, and E again to drop it. You carry one
+at a time and it comes with you across faces. Example: the outside player carries the rose
+from face 1 to the pot on face 6.
+
+## Play with the AI
+
+No second player? A Gemini-powered partner takes the other side. It sees only its own
+side of the cube, like a human would, and you solve puzzles by chatting with it.
+
+1. Get a key at https://aistudio.google.com/apikey and put it in `server/.env`:
+   `GEMINI_API_KEY=...` (optional `GEMINI_MODEL`, default `gemini-flash-latest`).
+2. Optional voice for the AI: `ELEVENLABS_API_KEY=...` (and `ELEVENLABS_VOICE_ID`).
+3. `npm run dev`, open the app, press **Play with AI: outside** or **inside**.
+4. Type to it (Enter). Tell it what you see and ask what it sees. It walks at human speed
+   and can be wrong.
+
+No key at hand? `AI_FAKE=1 npm run dev` uses a small scripted partner instead (dev/demo
+only). Keys stay on the server and are never sent to the browser.
+
 Teammates: read [CLAUDE.md](CLAUDE.md) first, then the README in your folder:
 [puzzles](shared/src/puzzles/README.md), [maps](maps/README.md),
 [assets](client/public/assets/README.md), [ui](client/src/ui/README.md),
