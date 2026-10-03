@@ -142,7 +142,9 @@ not pop. Puzzle and map design should use this: send players to far faces and th
 each other.
 
 Client: `client/src/voice/voice.ts`. Native `RTCPeerConnection` (no PeerJS/simple-peer
-dependency), signaled through our own Socket.io server (`voice:signal`), public STUN only.
+dependency), signaled through our own Socket.io server (`voice:signal`). ICE servers come
+from the server's `GET /ice` (`client/src/voice/ice.ts`, cached, STUN-only fallback):
+public STUN, plus TURN when `TURN_URLS`, `TURN_USERNAME` and `TURN_CREDENTIAL` are all set.
 If the direct connection fails it relays Opus/webm chunks through the server
 (`voice:chunk`; `?relay` forces it). All remote audio, including the AI's ElevenLabs
 speech (`tts`), goes through one Web Audio gain driven by `voiceMix`.

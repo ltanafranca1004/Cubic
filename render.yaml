@@ -35,3 +35,10 @@ services:
         sync: false
       - key: ELEVENLABS_MODEL_ID
         value: eleven_flash_v2_5
+      # --- Voice: TURN relay for calls that cannot connect directly (optional, see README)
+      - key: TURN_URLS # comma-separated turn:/turns: URLs
+        sync: false
+      - key: TURN_USERNAME
+        sync: false
+      - key: TURN_CREDENTIAL
+        sync: false

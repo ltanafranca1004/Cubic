@@ -45,10 +45,15 @@ the slider for your partner's volume. How well you hear each other depends on wh
 both stand on the cube: same wall is clear, the next face is faint (35%), the opposite
 face is silent. The bars show the signal (3, 1, 0), the dots show who is speaking.
 
-Audio is WebRTC, signaled through our own Socket.io server (public STUN). If a direct
-connection cannot be made it falls back to relaying audio through the server; add
-`?relay` to the URL to force that path when testing. Voice reconnects by itself after a
-refresh. To test alone, use two windows and headphones.
+Audio is WebRTC, signaled through our own Socket.io server. The client asks the server
+for its ICE servers (`GET /ice`): public STUN, plus a TURN relay when one is configured
+(see [TURN relay](#turn-relay-optional)). If a direct connection still cannot be made it
+falls back to relaying audio through the game server; add `?relay` to the URL to force
+that path when testing. Voice reconnects by itself after a refresh. To test alone, use two
+windows and headphones.
+
+The browser console shows how a call got through: `[voice] ice checking / connected`,
+then `[voice] connected via host` (same network), `srflx` (STUN) or `relay` (TURN).
 
 ## Audio
 
@@ -140,8 +145,9 @@ laptops: one creates a room, the other joins with the code. The dev client talks
 own origin and Vite proxies `/socket.io` (WebSocket included) to the local game server,
 so that single URL serves the whole game. Leave `VITE_SERVER_URL` unset for this.
 
-Voice between two networks is peer-to-peer when it can be and falls back to relaying
-through the server when it cannot. Use headphones.
+Voice between two networks is peer-to-peer when it can be, goes through the TURN relay if
+one is set (see [TURN relay](#turn-relay-optional)), and falls back to relaying through
+the game server when neither works. Use headphones.
 
 Teammates: read [CLAUDE.md](CLAUDE.md) first, then the README in your folder:
 [puzzles](shared/src/puzzles/README.md), [maps](maps/README.md),
@@ -186,6 +192,8 @@ Backend on Render, frontend on Vercel. Config is in `render.yaml` and `vercel.js
      `https://cubic.vercel.app,https://cubic-*.vercel.app,https://cubic.tech`.
    - `GEMINI_API_KEY`: for "Play with AI".
    - `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`: for the AI partner's voice.
+   - `TURN_URLS`, `TURN_USERNAME`, `TURN_CREDENTIAL`: optional voice relay, see
+     [TURN relay](#turn-relay-optional).
    The rest have defaults in `render.yaml`: `GEMINI_MODEL`, `AI_FAKE`, `AI_PERSONA`,
    `TTS_MODE`, `ELEVENLABS_MODEL_ID`. Render sets `PORT` itself. Every variable is
    described in `server/.env.example`.
@@ -199,6 +207,63 @@ judging.
 
 Render's disk is not kept between deploys, so the voice cache starts empty there: clips
 are generated on first use and reused until the next restart.
+
+### TURN relay (optional)
+
+STUN alone fails on strict networks (symmetric NAT, campus and venue Wi-Fi, some mobile
+carriers). Without TURN those calls drop to the slower chunk relay through the game
+server. With TURN they stay real WebRTC, relayed by the TURN server.
+
+Set all three on the server (Render dashboard, or `server/.env` locally). If any is
+missing the server hands out STUN only:
+
+| Variable | Value |
+| --- | --- |
+| `TURN_URLS` | The `turn:` / `turns:` URLs, comma-separated |
+| `TURN_USERNAME` | The credential's username |
+| `TURN_CREDENTIAL` | The credential's password |
+
+One free provider that fits this static username + password model is **Metered**
+(checked against its docs on 2026-10-03):
+
+1. Sign up at [metered.ca](https://www.metered.ca/tools/openrelay/) (no credit card).
+2. Dashboard > **TURN Server > Credentials > Create Credential**. Label, region and
+   project are optional.
+3. Open the credential, **Get credential > Show ICE Servers Array**. Copy the `username`
+   and `credential` into `TURN_USERNAME` and `TURN_CREDENTIAL`, and the `turn:` / `turns:`
+   URLs into `TURN_URLS`. Use the hosts your dashboard shows; the docs' example is:
+
+   ```
+   TURN_URLS=turn:global.relay.metered.ca:80,turn:global.relay.metered.ca:80?transport=tcp,turn:global.relay.metered.ca:443,turns:global.relay.metered.ca:443?transport=tcp
+   ```
+
+   Leave the `stun:` entry out: the server always adds public STUN itself.
+4. A new credential can take up to 2 minutes to work. Redeploy or restart the server, then
+   check `https://<render-url>/ice` lists the TURN entry.
+
+Things to know:
+
+- **Free quota.** Metered's Open Relay page says 20 GB of TURN usage per month; its
+  pricing page lists the free plan as a "Free Trial" with 500 MB per month. Assume the
+  lower number. Voice is small (our estimate: 30 to 60 MB per hour of relayed call,
+  counting both directions), so either is enough for a demo, and only calls that cannot
+  connect directly use it.
+- **Credential lifetime.** A credential created in the dashboard is a plain username and
+  password with no expiry set, which is what the three env vars need. Metered can also
+  create expiring credentials, but only through its REST API (`expiryInSeconds`); Cubic
+  does not call that API. The docs do not state in so many words that dashboard
+  credentials never expire, so if TURN stops working, check the credential first.
+- **The credential is not secret from players.** `/ice` sends it to every browser on an
+  allowed origin, as any WebRTC app must. It only allows relaying through that TURN
+  account, so the risk is someone using up the quota. Rotate it in the dashboard if so.
+- Providers with short-lived, API-generated credentials only (for example Cloudflare
+  Realtime TURN) do not fit these env vars: `/ice` would have to call their API per
+  request.
+
+Docs: [Open Relay](https://www.metered.ca/tools/openrelay/),
+[creating TURN credentials](https://www.metered.ca/docs/turn-server-service/creating-turn-credentials/),
+[expiring credentials](https://www.metered.ca/docs/turnserver-guides/expiring-turn-credentials/),
+[pricing](https://www.metered.ca/stun-turn).
 
 ### 2. Frontend: Vercel
 
