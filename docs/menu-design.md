@@ -222,9 +222,9 @@ is blurred. Double clicks: the scene sets a `leaving` flag before anything else.
 ```
                  +--------------------------------+
                  |            SETTINGS            |
-                 | (spk) MASTER VOLUME  ==o--  80 |
+                 | (spk) MASTER VOLUME  ====o 100 |
                  | (mus) MUSIC          =o---  60 |
-                 | (sfx) SOUND EFFECTS  ==o--  80 |
+                 | (sfx) SOUND EFFECTS  ====o 100 |
                  | ------------------------------ |
                  | (cht) PROXIMITY CHAT      [on] |
                  | (spk) CHAT VOLUME    ====o 100 |
@@ -272,7 +272,6 @@ pixels.
   missing.
 - **The lobby is the server's.** Host, guest, picks, ready and start are rules in
   `server/src/rooms.ts` with tests. The scenes only draw `UIState.lobby`.
-- **Audio is an interface.** `style/audioApi.ts` matches the AudioManager being built in
-  another branch; until it is plugged in with `setAudioApi()`, the sliders move and
-  nothing breaks. The flow already asks for the `menu`, `lobby`, `outside` and `inside`
-  tracks at the right moments.
+- **Audio is an interface.** The UI sets volumes through `style/audioApi.ts`; `main.ts`
+  plugs the real AudioManager into it with `setAudioApi()`. Which track plays on which
+  screen is decided in `app.ts` (menu, lobby once you are in a room, then your side).

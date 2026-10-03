@@ -15,7 +15,8 @@ export interface Settings {
   micMuted: boolean;
 }
 
-export const DEFAULT_SETTINGS: Settings = { master: 0.8, music: 0.6, sfx: 0.8, voiceOn: true, voiceVolume: 1, micMuted: false };
+/** The volumes match the AudioManager's own defaults, so nothing jumps when the UI mounts. */
+export const DEFAULT_SETTINGS: Settings = { master: 1, music: 0.6, sfx: 1, voiceOn: true, voiceVolume: 1, micMuted: false };
 
 /** Where the voice settings go: the existing Voice class, through the UI actions. */
 export interface VoiceSink {

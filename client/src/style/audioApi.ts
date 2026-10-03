@@ -1,8 +1,9 @@
-// The audio the UI talks to. The real one is client/src/audio/AudioManager.ts, built in
-// another branch with exactly this API. Until it is wired in, every call lands in a silent
+// The audio the UI talks to: a small interface, so the UI folders do not depend on the
+// audio folder. main.ts plugs the real client/src/audio/AudioManager.ts in with
+// setAudioApi(). Without it (tests, a broken audio device) every call lands in a silent
 // stand-in, so the menus and the settings panel work either way.
 //
-// To wire it (one line, e.g. in main.ts):  setAudioApi(audioManager)
+// The UI only sets volumes. Which music plays on which screen is decided in app.ts.
 
 export type MusicTrack = 'menu' | 'lobby' | 'outside' | 'inside';
 
@@ -11,6 +12,7 @@ export interface AudioApi {
   setMaster(v: number): void;
   setMusic(v: number): void;
   setSfx(v: number): void;
+  /** `fade` is in ms. */
   playMusic(trackId: string, opts?: { fade?: number }): void;
   stopMusic(opts?: { fade?: number }): void;
   playSfx(id: string): void;
@@ -35,7 +37,7 @@ export function setAudioApi(api: AudioApi): void {
   if (wanted.master !== null) api.setMaster(wanted.master);
   if (wanted.music !== null) api.setMusic(wanted.music);
   if (wanted.sfx !== null) api.setSfx(wanted.sfx);
-  if (wanted.track !== null) api.playMusic(wanted.track, { fade: 0.6 });
+  if (wanted.track !== null) api.playMusic(wanted.track);
 }
 
 /** The audio API the UI uses. Never throws: a broken sound must not break a menu. */

@@ -1,5 +1,4 @@
 import Phaser from 'phaser';
-import { audio } from '../style/audioApi';
 import { C, TIME, hex } from '../style/tokens';
 import type { UIActions, UIState } from '../ui/hooks';
 
@@ -58,11 +57,6 @@ export class Flow {
     this.go(to);
   }
 
-  private music(to: Screen): void {
-    const side = this.state().side;
-    audio.playMusic(to === 'backdrop' ? (side === 'in' ? 'inside' : 'outside') : to === 'side' ? 'lobby' : 'menu', { fade: 0.6 });
-  }
-
   private go(to: Screen): void {
     const from = this.current;
     const scenes = this.game.scene;
@@ -70,7 +64,6 @@ export class Flow {
     const dark = to === 'backdrop' && this.state().side === 'in';
     const fade = { color: dark ? C.ink : C.white };
     this.current = to;
-    this.music(to);
     if (!from) {
       scenes.start(to, {});
       return;

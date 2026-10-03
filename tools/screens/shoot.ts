@@ -9,7 +9,7 @@
 //
 // The dive GIF needs ffmpeg on the PATH (or FFMPEG=/path/to/ffmpeg).
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, readdirSync, renameSync, rmSync } from 'node:fs';
+import { mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { chromium, type Browser, type Page } from 'playwright';
 
 const BASE = process.env.BASE ?? 'http://localhost:5206';
@@ -276,7 +276,6 @@ async function gif(browser: Browser): Promise<void> {
   // nearest-neighbour down to half size and a palette made from the clip keep the pixels crisp
   const filter = 'fps=25,scale=640:-1:flags=neighbor,split[a][b];[a]palettegen=max_colors=64[p];[b][p]paletteuse=dither=none';
   execFileSync(FFMPEG, ['-y', '-loglevel', 'error', '-ss', from, '-t', '2.6', '-i', video, '-filter_complex', filter, `${OUT}cloud-dive.gif`]);
-  renameSync(video, `${OUT}cloud-dive.webm`);
   rmSync(dir, { recursive: true, force: true });
   console.log('   cloud-dive.gif');
 }

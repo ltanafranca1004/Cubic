@@ -46,9 +46,8 @@ handle.update(state);                   // on every change
 Movement keys (WASD / arrows), E (pick up / drop) and V (push to talk) are handled by the
 game, not the UI. While a text input is focused the game ignores them.
 
-Sound: the UI never plays audio itself. Volumes and music go through
-`../style/audioApi.ts`, which is silent until the real AudioManager is plugged in with
-`setAudioApi()`.
+Sound: the UI never plays audio itself. The settings sliders set volumes through
+`../style/audioApi.ts`, which `main.ts` connects to the AudioManager with `setAudioApi()`.
 
 ## Working without the server
 

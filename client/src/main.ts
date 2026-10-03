@@ -1,6 +1,18 @@
 import { startApp } from './app';
+import { audio, type SfxId, type TrackId } from './audio/AudioManager';
+import { setAudioApi } from './style/audioApi';
 import { ui } from './ui';
 import { mockActions, mockGameUIState, mockLobbyState, mockMenuState } from './ui/mock';
+
+// The settings panel's volume sliders drive the real AudioManager.
+setAudioApi({
+  setMaster: (v) => audio.setMaster(v),
+  setMusic: (v) => audio.setMusic(v),
+  setSfx: (v) => audio.setSfx(v),
+  playMusic: (id, opts) => void audio.playMusic(id as TrackId, opts),
+  stopMusic: (opts) => void audio.stopMusic(opts),
+  playSfx: (id) => audio.playSfx(id as SfxId),
+});
 
 const root = document.querySelector<HTMLElement>('#app')!;
 const params = new URLSearchParams(location.search);
