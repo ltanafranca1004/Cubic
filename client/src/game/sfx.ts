@@ -4,6 +4,12 @@ import type { GameEvent } from '@cubic/shared';
 // assets/manifest.json can replace these per key later.
 
 let ctx: AudioContext | null = null;
+/** Where the effects play. The AudioManager points this at its SFX bus (volume sliders). */
+let output: (() => AudioNode) | null = null;
+
+export function routeSfx(to: () => AudioNode): void {
+  output = to;
+}
 
 /** Shared AudioContext (also used by voice chat). Created on first use after a gesture. */
 export function audioContext(): AudioContext {
@@ -22,7 +28,7 @@ function tone(freq: number, dur: number, type: OscillatorType = 'square', vol = 
     osc.frequency.value = freq;
     gain.gain.setValueAtTime(vol, t);
     gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    osc.connect(gain).connect(ac.destination);
+    osc.connect(gain).connect(output?.() ?? ac.destination);
     osc.start(t);
     osc.stop(t + dur + 0.05);
   } catch {
@@ -48,6 +54,8 @@ export const sfx: Record<string, () => void> = {
 };
 
 export function playEvent(e: GameEvent): void {
+  // The solved sting is a sample: the AudioManager plays it (and falls back to `solve`).
+  if (e.type === 'solve') return;
   const key = e.type === 'puzzle' ? e.name : e.type;
   (sfx[key] ?? (e.type === 'puzzle' ? () => tone(350, 0.08) : undefined))?.();
 }
