@@ -123,6 +123,26 @@ Teammates: read [CLAUDE.md](CLAUDE.md) first, then the README in your folder:
 No server needed for UI or art work: `http://localhost:5173/?mock=game` is a playable local
 game (`&side=in` for the inside view); `?mock=lobby` and `?mock=hud` show static mock states.
 
+## Dev tools
+
+Add `?dev` to the URL (`http://localhost:5173/?dev`). Without it none of this is loaded.
+
+- **`` ` ``** shows or hides an overlay: face, pose (x, y, up vector, side), compass drift,
+  voice gain (`voiceMix`), held item, FPS and ping (round trip to the server).
+- **1 to 6** teleport your player to that face. **Shift + 1 to 6** teleport the INSIDE
+  player instead.
+- **Solve puzzle** marks the puzzle on your current face as solved.
+- **Hot-seat** lets one window play both players: a second socket from the same page takes
+  the other seat of a real room, so every move still goes through the server. WASD + E =
+  outside, arrow keys + `.` = inside. The overlay says which side is drawn; **Tab** or
+  **Switch view** shows the other one. A refresh keeps both seats.
+
+Teleport and solve are done by the server, and only when it runs with `DEV_COMMANDS=1` in
+`server/.env`. It is off by default and ignored when `NODE_ENV=production`, so it cannot be
+switched on for the deployed game. Hot-seat and the overlay need no flag. Solve only latches
+the face as solved: the puzzle's own state (an open door, say) is left as it was. With
+`?mock=game&dev` the same keys change the local mock game.
+
 ## Deploy
 
 Backend on Render, frontend on Vercel. Config is in `render.yaml` and `vercel.json`.
