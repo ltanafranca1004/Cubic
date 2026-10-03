@@ -29,6 +29,8 @@ export interface Observation {
   /** The face beyond each edge of your view. */
   edges: Record<'up' | 'down' | 'left' | 'right', { face: FaceId; name: string; solved: boolean }>;
   objective: string;
+  /** This face still has something to solve (the objective line above says the same). */
+  puzzleHere: boolean;
   solvedFaces: FaceId[];
   portalOpen: boolean;
   strikes: number;
@@ -75,6 +77,7 @@ export function observe(state: GameState, side: Side, env: GameEnv = defaultEnv)
     carrying: carried ? carried.kind : null,
     edges: { up: edge(n.up), down: edge(n.down), left: edge(n.left), right: edge(n.right) },
     objective: objectiveFor(state, side, env),
+    puzzleHere: env.puzzles.some((p) => p.face === face) && !state.solved.includes(face),
     solvedFaces: [...state.solved],
     portalOpen: portalOpen(state, env),
     strikes: state.strikes,

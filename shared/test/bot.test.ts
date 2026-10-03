@@ -1,6 +1,30 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { applyInteract, applyMove, createGame, observe, parseAction, pathTo, planAction, stepPose, type BotStep, type GameState, type Side } from '../src/index';
+import {
+  CANON_UP,
+  FACES,
+  LEASH_ERROR,
+  applyInteract,
+  applyMove,
+  chooseGoal,
+  createGame,
+  faceDistance,
+  hearPartner,
+  leashAllows,
+  leashBroken,
+  newMemory,
+  observe,
+  parseAction,
+  pathTo,
+  planAction,
+  remember,
+  stepPose,
+  type BotMemory,
+  type BotStep,
+  type FaceId,
+  type GameState,
+  type Side,
+} from '../src/index';
 
 function run(state: GameState, side: Side, steps: BotStep[]) {
   for (const s of steps) {
@@ -104,4 +128,145 @@ test('parseAction rejects junk and clamps what it accepts', () => {
   assert.deepEqual(parseAction({ type: 'move', dir: 'left', steps: 500 }), { type: 'move', dir: 'left', steps: 20 });
   assert.deepEqual(parseAction({ type: 'wait', args: {} }), { type: 'wait' });
   assert.ok('error' in planAction(createGame(0), 'out', { type: 'drop' }));
+});
+
+/** Put a player somewhere without walking (test setup only). */
+function place(state: GameState, side: Side, face: FaceId, x = 5, y = 8) {
+  state.players[side].pose = { side, face, up: CANON_UP[face], x, y, dir: 1 };
+}
+
+/** What the bot knows after looking around from where it stands. */
+const look = (state: GameState, side: Side, memory: BotMemory = newMemory()) => remember(memory, observe(state, side));
+
+test('observe() tells nothing about the partner except how far their face is', () => {
+  for (const side of ['in', 'out'] as const) {
+    const partner = side === 'in' ? 'out' : 'in';
+    const s = createGame(0);
+    const base = observe(s, side);
+    // Anywhere on the same wall, facing any way: the observation is identical.
+    for (const [x, y] of [[0, 0], [9, 9], [6, 1], [1, 6]] as const) {
+      place(s, partner, 1, x, y);
+      s.players[partner].pose.dir = -1;
+      s.players[partner].steps += 7;
+      assert.deepEqual(observe(s, side), base);
+    }
+    // On another face only the voice signal changes, and it is the same for all four next faces.
+    for (const face of FACES) {
+      place(s, partner, face);
+      const signal = [3, 1, 0][faceDistance(1, face)];
+      assert.deepEqual(observe(s, side), { ...base, voiceSignal: signal });
+    }
+  }
+});
+
+test('the partner face is only ever guessed from the voice signal', () => {
+  assert.equal(hearPartner(null, { face: 1, voiceSignal: 3 }), 1); // clear: same wall
+  assert.equal(hearPartner(null, { face: 1, voiceSignal: 0 }), 3); // silent: the opposite face
+  assert.equal(hearPartner(5, { face: 2, voiceSignal: 0 }), 4);
+  assert.equal(hearPartner(null, { face: 1, voiceSignal: 1 }), null); // faint: one of four, no idea which
+  assert.equal(hearPartner(1, { face: 2, voiceSignal: 1 }), 1); // still fits what it heard before
+  assert.equal(hearPartner(1, { face: 1, voiceSignal: 1 }), null); // they left this wall
+  assert.equal(hearPartner(1, { face: 3, voiceSignal: 1 }), null); // no longer fits
+
+  // The belief follows the bot as it walks away from a partner who stays put.
+  const s = createGame(0);
+  let m = look(s, 'in');
+  assert.equal(m.partnerFace, 1);
+  place(s, 'in', 2);
+  m = look(s, 'in', m);
+  assert.equal(m.partnerFace, 1);
+  // Two states that look the same from the inside give the same memory, wherever the partner really is.
+  place(s, 'out', 5);
+  assert.deepEqual(look(s, 'in', m), m);
+});
+
+test('chooseGoal: the nearest unsolved puzzle it knows about, otherwise stay with the partner', () => {
+  const s = createGame(0);
+  assert.deepEqual(chooseGoal(observe(s, 'in'), newMemory()), { kind: 'puzzle', face: 1, here: true, inReach: true });
+
+  // Face 1 solved: the inside has seen nothing else, so it stays.
+  run(s, 'in', planActionSteps(s, 'in', { type: 'step_on', object: 'plate' }));
+  run(s, 'out', planActionSteps(s, 'out', { type: 'step_on', object: 'crystal' }));
+  let m = look(s, 'in');
+  assert.deepEqual(chooseGoal(observe(s, 'in'), m), { kind: 'stay' });
+
+  // A face it has not stood on is not known, even though a puzzle is there.
+  place(s, 'in', 2);
+  m = look(s, 'in', m);
+  assert.deepEqual(chooseGoal(observe(s, 'in'), m), { kind: 'stay' });
+
+  // Once seen, face 6 is the goal, from wherever the leash lets it go.
+  place(s, 'in', 6);
+  m = look(s, 'in', m);
+  assert.deepEqual(chooseGoal(observe(s, 'in'), m), { kind: 'puzzle', face: 6, here: true, inReach: true });
+  place(s, 'in', 1);
+  assert.deepEqual(chooseGoal(observe(s, 'in'), m), { kind: 'puzzle', face: 6, here: false, inReach: true });
+  // Partner on the far side of face 6 (face 5): the puzzle is known but out of reach.
+  place(s, 'in', 2);
+  place(s, 'out', 5);
+  m = look(s, 'in', m); // faint, and no idea which face
+  place(s, 'in', 5);
+  m = look(s, 'in', m); // clear: partner is here
+  assert.deepEqual(chooseGoal(observe(s, 'in'), m), { kind: 'puzzle', face: 6, here: false, inReach: false });
+
+  // Out of earshot: get back first.
+  place(s, 'in', 6);
+  assert.deepEqual(chooseGoal(observe(s, 'in'), m), { kind: 'regroup' });
+});
+
+test('chooseGoal: carrying an item and the open portal come first, and lift the leash', () => {
+  const s = createGame(0);
+  run(s, 'in', planActionSteps(s, 'in', { type: 'step_on', object: 'plate' }));
+  run(s, 'out', planActionSteps(s, 'out', { type: 'step_on', object: 'crystal' }));
+  run(s, 'out', planActionSteps(s, 'out', { type: 'step_on', object: 'rose' }));
+  let m = look(s, 'out');
+  assert.equal(leashAllows(observe(s, 'out'), m, 3), false);
+  run(s, 'out', planActionSteps(s, 'out', { type: 'pick_up' }));
+  assert.deepEqual(chooseGoal(observe(s, 'out'), m), { kind: 'carry', item: 'rose', face: null });
+  assert.equal(leashAllows(observe(s, 'out'), m, 3), true); // the puzzle needs the two apart
+
+  place(s, 'out', 6);
+  m = look(s, 'out', m);
+  assert.equal(leashBroken(observe(s, 'out')), false);
+  assert.deepEqual(chooseGoal(observe(s, 'out'), m), { kind: 'carry', item: 'rose', face: 6 }); // it has seen the pot now
+  run(s, 'out', planActionSteps(s, 'out', { type: 'step_on', object: 'target' }));
+  run(s, 'out', planActionSteps(s, 'out', { type: 'drop' }));
+  place(s, 'out', 1);
+  assert.deepEqual(chooseGoal(observe(s, 'out'), m), { kind: 'portal', face: 6 });
+  assert.deepEqual(chooseGoal(observe(s, 'in'), newMemory()), { kind: 'portal', face: 6 }); // told by the rules
+});
+
+test('the leash: a far go_face is refused, a near one is planned, and paths stay inside it', () => {
+  const s = createGame(0);
+  const m = look(s, 'in');
+  const leash = (face: FaceId) => leashAllows(observe(s, 'in'), m, face);
+  assert.deepEqual(FACES.filter(leash), [1, 2, 4, 5, 6]); // partner on face 1: everything but the opposite face
+
+  assert.deepEqual(planAction(s, 'in', { type: 'go_face', face: 3 }, undefined, leash), { error: LEASH_ERROR });
+  assert.ok('steps' in planAction(s, 'in', { type: 'go_face', face: 3 })); // only the leash is in the way
+  assert.ok('steps' in planAction(s, 'in', { type: 'go_face', face: 2 }, undefined, leash));
+
+  // From the next face the opposite one is a single edge away, and still refused.
+  place(s, 'in', 2);
+  const m2 = look(s, 'in', m);
+  const leash2 = (face: FaceId) => leashAllows(observe(s, 'in'), m2, face);
+  assert.equal(leash2(3), false);
+  assert.deepEqual(planAction(s, 'in', { type: 'go_face', face: 3 }, undefined, leash2), { error: LEASH_ERROR });
+  // A straight line that runs over that edge is refused too (inside, face 3 is to the left of face 2).
+  assert.equal(observe(s, 'in').edges.left.face, 3);
+  assert.deepEqual(planAction(s, 'in', { type: 'move', dir: 'left', steps: 20 }, undefined, leash2), { error: LEASH_ERROR });
+  assert.ok('steps' in planAction(s, 'in', { type: 'move', dir: 'left', steps: 3 }, undefined, leash2));
+  assert.ok('steps' in planAction(s, 'in', { type: 'move', dir: 'right', steps: 20 }, undefined, leash2)); // back over face 1
+
+  // A walk never cuts through a forbidden face: fence off 2 and 4 and the way to 3 goes over the top or bottom.
+  place(s, 'in', 1);
+  const plan = planAction(s, 'in', { type: 'go_face', face: 3 }, undefined, (f) => f !== 2 && f !== 4);
+  assert.ok('steps' in plan);
+  const faces = new Set<number>();
+  for (const step of plan.steps) {
+    run(s, 'in', [step]);
+    faces.add(s.players.in.pose.face);
+  }
+  assert.equal(s.players.in.pose.face, 3);
+  assert.ok(!faces.has(2) && !faces.has(4), [...faces].join());
 });

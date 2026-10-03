@@ -1,11 +1,30 @@
-import { CHAT_MAX_LEN, observe, parseAction, planAction, type BotAction, type BotStep, type ChatMessage, type GameEvent, type Side } from '@cubic/shared';
+import {
+  CHAT_MAX_LEN,
+  chooseGoal,
+  leashAllows,
+  leashBroken,
+  newMemory,
+  observe,
+  parseAction,
+  planAction,
+  remember,
+  stepPose,
+  type BotAction,
+  type BotStep,
+  type ChatMessage,
+  type GameEvent,
+  type GameState,
+  type Observation,
+  type Side,
+} from '@cubic/shared';
 import type { Room } from '../rooms';
 import type { Brain } from './gemini';
-import { MAX_SAY_CHARS, turnPrompt } from './prompt';
+import { MAX_SAY_CHARS, idleHint, turnPrompt } from './prompt';
 
 // The AI partner. Gemini is the brain, this is the nervous system: it shows the brain what
 // its own side can see, validates the reply, and walks the chosen action one step at a
-// time through the same Room methods a human's socket uses.
+// time through the same Room methods a human's socket uses. It also keeps the body on a
+// leash: whatever the brain asks for, it never walks more than one face from the human.
 
 export interface AiOptions {
   /** Minimum time between Gemini calls for this room. */
@@ -18,6 +37,8 @@ export interface AiOptions {
   timeoutMs?: number;
   /** First back-off after a failed call; doubles per failure in a row, up to a minute. */
   backoffMs?: number;
+  /** The human has neither moved nor spoken for this long: suggest the next goal. */
+  idleHintMs?: number;
   /** Answers a turn when the brain fails (429, 503, timeout, bad JSON), so the game never stalls. */
   fallback?: Brain;
   /** Called with each line the AI says (for speech). */
@@ -31,6 +52,8 @@ const FALLBACK_EVERY_MS = 20_000;
 const BACKOFF_MS = 6000;
 const BACKOFF_MAX_MS = 60_000;
 const EVENTS_KEPT = 8;
+/** Human idle time before the AI suggests the next goal. */
+const IDLE_HINT_MS = 20_000;
 
 export interface ParsedReply {
   say: string | null;
@@ -81,6 +104,14 @@ export class AiPlayer {
   private thinkTimer: NodeJS.Timeout;
   private wakeTimer: NodeJS.Timeout | null = null;
   private abort: AbortController | null = null;
+  /** What this side has seen so far, and where the voice says the partner is. */
+  private memory = newMemory();
+  private memoryOf: GameState;
+  private idleTimer: NodeJS.Timeout | null = null;
+  /** The human went quiet: the next turn suggests the next goal. */
+  private hintDue = false;
+  /** The hint line for the turn being answered, until something has been said. */
+  private hint: string | null = null;
   private unlisten: () => void;
   /** Stats, for logs and tests. */
   calls = 0;
@@ -97,19 +128,61 @@ export class AiPlayer {
   ) {
     this.minThinkMs = opts.minThinkMs ?? 6000;
     this.timeoutMs = opts.timeoutMs ?? 12_000;
+    this.memoryOf = room.state;
     room.sit(side, true);
     this.unlisten = room.listen({
       onChat: (msg) => {
-        if (msg.from !== side) this.wake();
+        if (msg.from === side) return;
+        this.humanActed();
+        this.wake();
       },
-      onState: (u) => this.notice(u.events),
+      onState: (u) => {
+        this.look(); // the voice signal changes as either of us walks
+        if (u.events.some((e) => 'side' in e && e.side !== side)) this.humanActed();
+        this.notice(u.events);
+      },
       onClosed: () => this.stop(),
     });
     this.stepTimer = setInterval(() => this.step(), opts.stepMs ?? 200);
     this.thinkTimer = setInterval(() => this.maybeThink(), opts.idleMs ?? 8000);
     this.stepTimer.unref();
     this.thinkTimer.unref();
+    this.humanActed();
     this.wake();
+  }
+
+  /** Look around: this side's observation, folded into what it remembers. */
+  private look(): Observation {
+    if (this.memoryOf !== this.room.state) {
+      this.memoryOf = this.room.state; // a new game: forget the old cube
+      this.memory = newMemory();
+    }
+    const observation = observe(this.room.state, this.side);
+    this.memory = remember(this.memory, observation);
+    return observation;
+  }
+
+  /** The human moved or spoke: start the idle clock again. Only the fact is used, never where they are. */
+  private humanActed(): void {
+    this.hintDue = false;
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    if (this.stopped) return;
+    this.idleTimer = setTimeout(() => {
+      this.idleTimer = null;
+      this.hintDue = true;
+      // Gemini is failing: do not make one line wait out the back-off.
+      if (this.failures > 0 && !this.thinking) this.takeHint();
+      else this.wake();
+    }, this.opts.idleHintMs ?? IDLE_HINT_MS);
+    this.idleTimer.unref();
+  }
+
+  /** The hint is due and the brain is not going to say it: the body says it for this turn. */
+  private takeHint(): void {
+    if (!this.hintDue || this.stopped || this.room.state.wonAt !== null) return;
+    this.hintDue = false;
+    this.hint = idleHint(chooseGoal(this.look(), this.memory));
+    if (!this.thinking) this.speak(this.hint);
   }
 
   private log(line: string): void {
@@ -154,6 +227,11 @@ export class AiPlayer {
    */
   private wake(): void {
     this.stale = true;
+    this.schedule();
+  }
+
+  /** Look again when the rate limit allows, without claiming that anything changed. */
+  private schedule(): void {
     if (this.wakeTimer || this.stopped) return;
     const wait = Math.max(0, this.nextThinkAt - Date.now());
     this.wakeTimer = setTimeout(() => {
@@ -167,10 +245,25 @@ export class AiPlayer {
     if (this.stopped || this.room.state.wonAt !== null) return;
     const next = this.queue.shift();
     if (!next) return;
+    const from = this.room.state.players[this.side].pose;
+    if (next !== 'interact') {
+      // The leash, checked again at every edge: the partner may have moved since the plan.
+      const to = stepPose(from, next[0], next[1]).pose.face;
+      if (to !== from.face && !leashAllows(this.look(), this.memory, to)) {
+        this.queue = [];
+        return this.finish(`stopped at the edge: face ${to} is more than one face away from your partner`);
+      }
+    }
     const events = next === 'interact' ? this.room.interact(this.side) : this.room.move(this.side, next[0], next[1]);
     if (events.some((e) => e.type === 'bump')) {
       this.queue = [];
       this.finish('blocked: you bumped into something and stopped');
+    } else if (events.some((e) => e.type === 'flip') && leashBroken(this.look())) {
+      // Walked out of earshot (the partner was not where the voice suggested): come straight back.
+      const back = planAction(this.room.state, this.side, { type: 'go_face', face: from.face });
+      this.queue = 'steps' in back ? back.steps : [];
+      this.doing = `${this.doing ?? 'action'} stopped: you walked out of earshot of your partner. Turning back`;
+      if (this.queue.length === 0) this.finish('could not');
     } else if (this.queue.length === 0) this.finish('done');
   }
 
@@ -183,10 +276,11 @@ export class AiPlayer {
   private async maybeThink(): Promise<void> {
     if (this.stopped || this.thinking || this.room.state.wonAt !== null) return;
     if (!this.room.isConnected(this.side === 'out' ? 'in' : 'out')) return; // nobody to play with
-    if (Date.now() < this.nextThinkAt) return this.wake();
-    const observation = observe(this.room.state, this.side);
-    // Nothing new to react to: do not spend a call.
-    const seen = JSON.stringify(observation) + this.room.chat.length;
+    if (Date.now() < this.nextThinkAt) return this.schedule();
+    const observation = this.look();
+    // Nothing new to react to: do not spend a call. Its own lines are not news, or it
+    // would keep answering itself while the human is quiet.
+    const seen = JSON.stringify(observation) + (this.room.chat.filter((m) => m.from !== this.side).at(-1)?.id ?? 0);
     if (!this.stale && seen === this.lastSeen) return;
     this.lastSeen = seen;
     this.stale = false;
@@ -194,7 +288,19 @@ export class AiPlayer {
     this.thinking = true;
     this.nextThinkAt = Date.now() + this.minThinkMs;
     this.room.setTyping(this.side, true);
-    const turn = turnPrompt({ side: this.side, observation, recentEvents: this.events, chat: this.room.chat, lastActionResult: this.lastResult, busy: this.doing });
+    const goal = chooseGoal(observation, this.memory);
+    this.hint = this.hintDue ? idleHint(goal) : null;
+    const turn = turnPrompt({
+      side: this.side,
+      observation,
+      recentEvents: this.events,
+      chat: this.room.chat,
+      lastActionResult: this.lastResult,
+      busy: this.doing,
+      goal,
+      partnerIdle: this.hintDue,
+    });
+    this.hintDue = false;
     this.events = [];
     this.abort = new AbortController();
     const timeout = setTimeout(() => this.abort?.abort(), this.timeoutMs);
@@ -229,32 +335,40 @@ export class AiPlayer {
       clearTimeout(timeout);
       this.thinking = false;
       if (!this.stopped) this.room.setTyping(this.side, false);
+      if (this.stale || this.hintDue) this.schedule(); // something happened while it was thinking
     }
   }
 
   private async fallback(turn: string): Promise<void> {
+    this.takeHint(); // the human may have gone quiet while the failed call was out
     if (this.opts.fallback) {
       try {
         const parsed = parseReply((await this.opts.fallback.think(turn, new AbortController().signal)).text);
-        if (parsed && !this.stopped) return this.act(parsed);
+        if (parsed && !this.stopped) return this.act(this.hint ? { ...parsed, say: this.hint } : parsed);
       } catch {
         // fall through to the plain line
       }
     }
-    if (this.stopped || Date.now() - this.lastFallbackAt < FALLBACK_EVERY_MS) return;
+    if (this.stopped) return;
+    if (this.hint) return this.speak(this.hint);
+    if (Date.now() - this.lastFallbackAt < FALLBACK_EVERY_MS) return;
     this.lastFallbackAt = Date.now();
     this.speak(FALLBACK_LINE);
   }
 
   private speak(text: string): void {
+    this.hint = null;
     const msg = this.room.say(this.side, text);
     if (msg) this.opts.onSay?.(msg);
   }
 
   private act(reply: ParsedReply): void {
-    if (reply.say) this.speak(reply.say);
+    // A brain that stays quiet on an idle turn still gets the hint said for it.
+    const say = reply.say ?? this.hint;
+    if (say) this.speak(say);
     if (!reply.action) return;
-    const plan = planAction(this.room.state, this.side, reply.action);
+    const observation = this.look();
+    const plan = planAction(this.room.state, this.side, reply.action, undefined, (face) => leashAllows(observation, this.memory, face));
     const label = JSON.stringify(reply.action);
     if ('error' in plan) {
       this.queue = [];
@@ -274,6 +388,7 @@ export class AiPlayer {
     clearInterval(this.stepTimer);
     clearInterval(this.thinkTimer);
     if (this.wakeTimer) clearTimeout(this.wakeTimer);
+    if (this.idleTimer) clearTimeout(this.idleTimer);
     this.abort?.abort();
     this.unlisten();
     this.log(`stopped after ${this.calls} calls, tokens in=${this.tokens.input} out=${this.tokens.output}`);

@@ -1,6 +1,6 @@
 import { stepPose } from '../cube';
 import { defaultEnv, isBlocked, type GameEnv } from '../game';
-import type { GameState, Pose, Side, TileRef } from '../types';
+import type { FaceId, GameState, Pose, Side, TileRef } from '../types';
 
 // Pathfinding over the cube surface: breadth-first search in (face, up, tile) space using
 // the same stepPose and blockers as a real move, so a path is always legal to walk.
@@ -20,8 +20,9 @@ const keyOf = (p: Pose) => `${p.face}|${p.up.join(',')}|${p.x},${p.y}`;
 /**
  * Shortest list of moves from `side`'s current pose to a pose accepted by `goal`,
  * or null if there is none. Blockers are evaluated against the current state.
+ * `allow` fences the search: the path never crosses onto a face it rejects (the AI's leash).
  */
-export function findPath(state: GameState, side: Side, goal: (pose: Pose) => boolean, env: GameEnv = defaultEnv): Move[] | null {
+export function findPath(state: GameState, side: Side, goal: (pose: Pose) => boolean, env: GameEnv = defaultEnv, allow?: (face: FaceId) => boolean): Move[] | null {
   const start = state.players[side].pose;
   if (goal(start)) return [];
   const prev = new Map<string, { from: string; move: Move }>();
@@ -34,6 +35,7 @@ export function findPath(state: GameState, side: Side, goal: (pose: Pose) => boo
         const { pose: to } = stepPose(pose, move[0], move[1]);
         const k = keyOf(to);
         if (seen.has(k) || isBlocked(state, side, to, env)) continue;
+        if (allow && to.face !== pose.face && !allow(to.face)) continue;
         seen.add(k);
         prev.set(k, { from: keyOf(pose), move });
         if (goal(to)) {
