@@ -1,7 +1,7 @@
-import { screenToCanon } from '../cube';
+import { screenToCanon, stepPose } from '../cube';
 import { defaultEnv, itemsOn, visibleObjects, type GameEnv } from '../game';
-import { GRID, type FaceId, type GameState, type Side } from '../types';
-import { findPath, pathTo, type Move } from './path';
+import { GRID, type FaceId, type GameState, type Pose, type Side } from '../types';
+import { findPath, type Move } from './path';
 
 // The AI's body: high-level actions turned into ordinary steps. The server walks them one
 // at a time through applyMove / applyInteract, so the AI cannot teleport or cheat.
@@ -63,9 +63,28 @@ export function parseAction(raw: unknown): BotAction | null {
   }
 }
 
-/** Turn an action into steps from the current state, or explain why it cannot be done. */
-export function planAction(state: GameState, side: Side, action: BotAction, env: GameEnv = defaultEnv): { steps: BotStep[] } | { error: string } {
+/** Why the leash refused a walk. The brain reads it as the action's result. */
+export const LEASH_ERROR = 'that is more than one face away from your partner. Stay within earshot of them';
+
+/**
+ * Turn an action into steps from the current state, or explain why it cannot be done.
+ * `leash` says which faces the body may walk onto (see leashAllows): a planned walk never
+ * leaves them, and an action with no way around is refused.
+ */
+export function planAction(
+  state: GameState,
+  side: Side,
+  action: BotAction,
+  env: GameEnv = defaultEnv,
+  leash?: (face: FaceId) => boolean,
+): { steps: BotStep[] } | { error: string } {
   const pose = state.players[side].pose;
+  /** Shortest walk inside the leash. If only the leash is in the way, say so. */
+  const walk = (goal: (p: Pose) => boolean, error: string) => {
+    const path = findPath(state, side, goal, env, leash);
+    if (path) return { steps: path };
+    return { error: leash && findPath(state, side, goal, env) ? LEASH_ERROR : error };
+  };
   switch (action.type) {
     case 'wait':
       return { steps: [] };
@@ -76,17 +95,23 @@ export function planAction(state: GameState, side: Side, action: BotAction, env:
     case 'drop':
       if (!state.players[side].carrying) return { error: 'not carrying anything' };
       return { steps: ['interact'] };
-    case 'move':
-      return { steps: Array<Move>(action.steps ?? 1).fill(DIRS[action.dir]!) };
+    case 'move': {
+      const steps = Array<Move>(action.steps ?? 1).fill(DIRS[action.dir]!);
+      // A straight line can run over an edge: follow it, and refuse it at the leash.
+      let at = pose;
+      for (const [dx, dy] of steps) {
+        const to = stepPose(at, dx, dy).pose;
+        if (leash && to.face !== at.face && !leash(to.face)) return { error: LEASH_ERROR };
+        at = to;
+      }
+      return { steps };
+    }
     case 'goto': {
       const [x, y] = screenToCanon(side, pose.face, pose.up, action.col, action.row);
-      const path = pathTo(state, side, { face: pose.face, x, y }, env);
-      return path ? { steps: path } : { error: 'no way to reach that tile right now' };
+      return walk((p) => p.face === pose.face && p.x === x && p.y === y, 'no way to reach that tile right now');
     }
-    case 'go_face': {
-      const path = findPath(state, side, (p) => p.face === action.face, env);
-      return path ? { steps: path } : { error: 'no way to reach that face right now' };
-    }
+    case 'go_face':
+      return walk((p) => p.face === action.face, 'no way to reach that face right now');
     case 'step_on': {
       // Only things this side can see on its own face.
       const spots = [
@@ -94,8 +119,7 @@ export function planAction(state: GameState, side: Side, action: BotAction, env:
         ...itemsOn(state, side, pose.face).filter((i) => i.kind === action.object || action.object === 'item'),
       ];
       if (spots.length === 0) return { error: `you cannot see any "${action.object}" on this face` };
-      const path = findPath(state, side, (p) => p.face === pose.face && spots.some((s) => s.x === p.x && s.y === p.y), env);
-      return path ? { steps: path } : { error: `the ${action.object} cannot be reached right now` };
+      return walk((p) => p.face === pose.face && spots.some((s) => s.x === p.x && s.y === p.y), `the ${action.object} cannot be reached right now`);
     }
   }
 }
