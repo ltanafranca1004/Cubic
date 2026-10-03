@@ -1,7 +1,7 @@
-import { placeholderUI } from '../lobby';
+import { cubicUI } from './cubicUI';
 import type { UIHost } from './hooks';
 
 export * from './hooks';
 
-// The active UI. Swap `placeholderUI` for your own UIHost to replace the whole UI.
-export const ui: UIHost = placeholderUI;
+// The active UI. (The first placeholder UI is still in ../lobby as a reference.)
+export const ui: UIHost = cubicUI;

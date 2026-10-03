@@ -1,6 +1,9 @@
 import Phaser from 'phaser';
 import type { GameEvent, GameState, Side } from '@cubic/shared';
 import { EXTRA_SCENES } from '../scenes';
+import { SheetArt } from '../style/art';
+import { uiScale } from '../style/scale';
+import { CodeArt } from './art';
 import { GameScene, VIEW_PX, type GameInput } from './GameScene';
 
 export type { GameInput } from './GameScene';
@@ -11,14 +14,14 @@ export interface GameHandle {
   destroy(): void;
 }
 
-/** Largest whole-number zoom that fits the window (pixel art must scale by integers). */
+/** The game view shares the UI's whole-number scale, so a pixel is one size everywhere. */
 function fitZoom(): number {
-  const room = Math.min(window.innerWidth - 120, window.innerHeight - 300);
-  return Math.max(1, Math.min(6, Math.floor(room / VIEW_PX)));
+  return uiScale();
 }
 
 export function createGameView(parent: HTMLElement, input: GameInput): GameHandle {
-  const scene = new GameScene();
+  // Real tiles from assets/manifest.json, with the code-drawn art as the fallback.
+  const scene = new GameScene((textures) => new SheetArt(textures, new CodeArt(textures)));
   const game = new Phaser.Game({
     type: Phaser.AUTO,
     parent,
@@ -26,7 +29,7 @@ export function createGameView(parent: HTMLElement, input: GameInput): GameHandl
     height: VIEW_PX,
     pixelArt: true,
     roundPixels: true,
-    backgroundColor: '#05070D',
+    backgroundColor: '#2e222f',
     banner: false,
     audio: { noAudio: true }, // sound effects use our own Web Audio graph
     scale: { mode: Phaser.Scale.NONE, zoom: fitZoom() },

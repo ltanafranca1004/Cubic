@@ -38,6 +38,9 @@ export const mockLobbyState: UIState = {
   voice: { mic: 'off', mode: 'push', muted: false, link: 'none', talking: false, partnerLevel: 0, signal: 0, partnerVolume: 1 },
 };
 
+/** The menus before any room: title, then the mode screen (?mock=menu). */
+export const mockMenuState: UIState = { ...mockLobbyState, status: 'idle', roomCode: null, mode: null, side: null, lobby: null };
+
 export const mockGameUIState: UIState = {
   ...mockLobbyState,
   screen: 'game',
