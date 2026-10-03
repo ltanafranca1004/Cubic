@@ -26,9 +26,11 @@ game.
 
 1. `npm run dev`, then open `http://localhost:5173` in two windows side by side (two
    windows, not two tabs of one window: a hidden tab pauses its game loop).
-2. Window A: **Create room**. You are the OUTSIDE player; a 4-letter code appears.
-3. Window B: type the code, **Join room**. You are the INSIDE player. Both windows switch
-   to the game.
+2. Window A: **Play**, then **Create Lobby**. You are the host (P1); the 4-letter room
+   code is at the top of the screen.
+3. Window B: **Play**, **Join Lobby**, type the code. You are the guest (P2). Each player
+   picks a side (A / D or click: outside is on top of the cube, inside is in it), the
+   guest presses **Ready**, the host presses **Start**. Both windows switch to the game.
 4. Move with WASD or the arrow keys (hold to keep walking). Walk off any edge to cross to
    the next face; the labels around the view say which face is where, and "compass drift"
    shows how far your up has turned.
@@ -96,7 +98,8 @@ side of the cube, like a human would, and you solve puzzles by chatting with it.
 
 1. Get a key at https://aistudio.google.com/apikey and put it in `server/.env`:
    `GEMINI_API_KEY=...` (optional `GEMINI_MODEL`, default `gemini-3.5-flash`).
-2. `npm run dev`, open the app, press **Play with AI: outside** or **inside**.
+2. `npm run dev`, open the app, press **Play**, then **Play Outside with AI** or
+   **Play Inside with AI**.
 3. Type to it (Enter). Tell it what you see and ask what it sees. It walks at human speed
    and can be wrong. Its lines are 80 characters at most.
 
@@ -155,7 +158,9 @@ Teammates: read [CLAUDE.md](CLAUDE.md) first, then the README in your folder:
 [scenes](client/src/scenes/README.md).
 
 No server needed for UI or art work: `http://localhost:5173/?mock=game` is a playable local
-game (`&side=in` for the inside view); `?mock=lobby` and `?mock=hud` show static mock states.
+game (`&side=in` for the inside view); `?mock=menu`, `?mock=lobby` and `?mock=hud` show
+static mock states. The look is specified in [docs/style.md](docs/style.md) and
+[docs/menu-design.md](docs/menu-design.md); art credits are in [CREDITS.md](CREDITS.md).
 
 ## Dev tools
 
