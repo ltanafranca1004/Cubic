@@ -6,7 +6,7 @@ import type { FaceMap, MapObject, TileKind } from './types';
  * A character is either terrain or an object standing on floor.
  * Add a line here to introduce a new object type (also listed in /maps/README.md).
  */
-export const LEGEND: Readonly<Record<string, { tile: TileKind } | { object: string }>> = {
+export const LEGEND: Readonly<Record<string, { tile: TileKind } | { object: string; name?: string; props?: MapObject['props'] }>> = {
   '.': { tile: 'floor' },
   '#': { tile: 'wall' },
   T: { tile: 'tree' },
@@ -19,6 +19,7 @@ export const LEGEND: Readonly<Record<string, { tile: TileKind } | { object: stri
   // "<side><face>-<x>-<y>" and targets accept anything; use Tiled for named ones.
   I: { object: 'item' },
   U: { object: 'target' },
+  R: { object: 'item', name: 'rose', props: { kind: 'rose' } },
 };
 
 /** Build a FaceMap from 10 strings of 10 legend characters. Throws on bad input. */
@@ -36,8 +37,8 @@ export function parseStringMap(side: Side, face: FaceId, rows: readonly string[]
       if ('tile' in entry) line.push(entry.tile);
       else {
         line.push('floor');
-        const name = entry.object === 'item' || entry.object === 'target' ? `${side}${face}-${x}-${y}` : '';
-        objects.push({ type: entry.object, x, y, name, props: {} });
+        const auto = entry.object === 'item' || entry.object === 'target' ? `${side}${face}-${x}-${y}` : '';
+        objects.push({ type: entry.object, x, y, name: entry.name ?? auto, props: { ...entry.props } });
       }
     });
     tiles.push(line);

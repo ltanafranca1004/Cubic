@@ -1,44 +1,36 @@
-import { createServer } from 'node:http';
-import { Server } from 'socket.io';
-import type { ClientToServer, ServerToClient } from '@cubic/shared';
-
-// Skeleton: health check, CORS and a typed Socket.io server. Rooms land on branch "core".
+import { createApp } from './app';
+import { AiPlayer } from './ai/aiPlayer';
+import { DEFAULT_GEMINI_MODEL, geminiBrain } from './ai/gemini';
+import { scriptedBrain } from './ai/scripted';
+import { elevenLabsTts } from './ai/tts';
 
 try {
   process.loadEnvFile(new URL('../.env', import.meta.url));
 } catch {
-  // no server/.env: fine, use the real environment
+  // no server/.env: use the real environment
 }
 
-const PORT = Number(process.env.PORT) || 3001;
-const isProd = process.env.NODE_ENV === 'production';
-const allowed = (process.env.CLIENT_ORIGIN ?? '')
-  .split(',')
-  .map((o) => o.trim().replace(/\/$/, ''))
-  .filter(Boolean);
-const isLocal = (origin: string) => /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+const env = process.env;
+const model = env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL;
+const fake = env.AI_FAKE === '1';
+const brain = fake ? scriptedBrain : env.GEMINI_API_KEY ? geminiBrain(env.GEMINI_API_KEY, model) : null;
+const tts = env.ELEVENLABS_API_KEY ? elevenLabsTts(env.ELEVENLABS_API_KEY, env.ELEVENLABS_VOICE_ID || undefined) : null;
 
-export function originAllowed(origin: string | undefined): boolean {
-  if (!origin) return true; // same-origin / non-browser clients
-  return allowed.includes(origin.replace(/\/$/, '')) || (!isProd && isLocal(origin));
-}
-
-const http = createServer((req, res) => {
-  if (req.url === '/health') {
-    res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ ok: true }));
-    return;
-  }
-  res.writeHead(404);
-  res.end();
+const app = createApp({
+  origins: (env.CLIENT_ORIGIN ?? '').split(','),
+  allowLocalhost: env.NODE_ENV !== 'production',
+  info: () => ({ aiAvailable: !!brain, ttsAvailable: !!tts }),
+  onAiRoom: (room, humanSide) => {
+    if (!brain) return;
+    new AiPlayer(room, humanSide === 'out' ? 'in' : 'out', brain, {
+      onSay: (msg) => {
+        void tts?.speak(msg.text).then((audio) => {
+          if (audio) app.io.to(room.code).emit('tts', { chatId: msg.id, mime: 'audio/mpeg', data: audio as unknown as ArrayBuffer });
+        });
+      },
+    });
+  },
 });
 
-const io = new Server<ClientToServer, ServerToClient>(http, {
-  cors: { origin: (origin, cb) => cb(null, originAllowed(origin)) },
-});
-
-io.on('connection', (socket) => {
-  socket.emit('info', { aiAvailable: false, ttsAvailable: false });
-});
-
-http.listen(PORT, () => console.log(`cubic server listening on :${PORT}`));
+const port = await app.listen(Number(env.PORT) || 3001);
+console.log(`cubic server listening on :${port} (AI partner: ${fake ? 'scripted (AI_FAKE=1)' : brain ? model : 'off, no GEMINI_API_KEY'}; AI voice: ${tts ? 'on' : 'off'})`);

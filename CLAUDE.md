@@ -87,7 +87,7 @@ Every owned folder has a README that says exactly what goes there.
   `plateDoor.ts`. Template: `_template.ts`. Register in `puzzles/index.ts`.
 - **UI:** `UIHost` / `UIState` / `UIActions` in `client/src/ui/hooks.ts`
   (`onCreateRoom`, `onJoinRoom(code)`, `onPlayWithAI(side)`, ...). Mock data in
-  `client/src/ui/mock.ts`, shown with `?mock=lobby` or `?mock=game`.
+  `client/src/ui/mock.ts`, shown with `?mock=lobby`, `?mock=hud` or `?mock=game`.
 - **Assets:** `client/public/assets/manifest.json` (schema in that folder's README).
 
 ## Cube and coordinates
@@ -137,8 +137,26 @@ No Discord: voice is part of the game. `voiceMix(state)` in `shared/src/voice.ts
 are the same wall = same face): same face = full volume, adjacent face = about 35%,
 opposite face = silent, faded smoothly near edges. The numbers are named constants.
 Puzzle and map design should use this: send players to far faces and they lose each
-other. WebRTC audio, signaled through our own Socket.io server, with a server relay
-fallback. In AI games the AI's lines are spoken with ElevenLabs through the same gain.
+other. Near an edge a player counts partly as being on the next face, so the volume fades
+instead of jumping when someone crosses.
+
+Client: `client/src/voice/voice.ts`. Native `RTCPeerConnection` (no PeerJS/simple-peer
+dependency), signaled through our own Socket.io server (`voice:signal`), public STUN only.
+If the direct connection fails it relays Opus/webm chunks through the server
+(`voice:chunk`; `?relay` forces it). All remote audio, including the AI's ElevenLabs
+speech (`tts`), goes through one Web Audio gain driven by `voiceMix`.
+
+## AI partner
+
+`/shared/src/bot` is the body: `observe(state, side)` (only what that side can see, in its
+own screen orientation), `pathTo` / `findPath` (BFS across faces with the real blockers)
+and `planAction` (goto, go_face, step_on, move, pick_up, drop, wait). `/server/src/ai` is
+the brain: `AiPlayer` sits in the empty seat, sends Gemini the rules + observation + chat,
+validates the JSON reply `{ say, action }` and walks the action one step per 200 ms
+through the same `Room` methods a human's socket uses. Max one Gemini call per 3 s per
+room, 12 s timeout, "Give me a sec..." on errors, token usage logged. New puzzle objects
+are visible to the AI automatically through `visible()`; describe new mechanics in
+`server/src/ai/prompt.ts` if the AI needs to know a rule.
 
 ## Git workflow
 

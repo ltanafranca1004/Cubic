@@ -7,7 +7,7 @@ import type { ChatMessage, FaceId, RoomMode, Side } from '@cubic/shared';
 // the game engine or Phaser directly.
 //
 // To replace the placeholder UI: implement UIHost in this folder and export it from
-// ./index.ts. Build it against ./mock.ts (open the client with ?mock in the URL).
+// ./index.ts. Build it against ./mock.ts (?mock=lobby, ?mock=hud, ?mock=game).
 
 export interface UIActions {
   onCreateRoom(): void;
