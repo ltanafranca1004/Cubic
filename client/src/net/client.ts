@@ -20,7 +20,20 @@ import {
 // predicted copy of the state with the same /shared code the server runs; every server
 // update replaces the truth and replays whatever the server has not acknowledged yet.
 
-export const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
+/**
+ * Where the game server is. Production builds use VITE_SERVER_URL (the Render URL). In dev,
+ * when it is unset, the client talks to its own origin and Vite proxies /socket.io to the
+ * local server, so the game also works through a single tunnel URL. '' = same origin.
+ */
+export const SERVER_URL: string = (import.meta.env.VITE_SERVER_URL ?? '').replace(/\/$/, '');
+
+/**
+ * Wake the server as early as possible: the Render free tier sleeps when idle and a cold
+ * start takes about 50 seconds. Fire and forget; the socket keeps retrying meanwhile.
+ */
+export function wakeServer(): void {
+  void fetch(`${SERVER_URL}/health`, { mode: 'no-cors', cache: 'no-store' }).catch(() => {});
+}
 const SEAT_KEY = 'cubic.seat';
 
 type Pending = { seq: number; kind: 'move'; dx: number; dy: number } | { seq: number; kind: 'interact' };
@@ -74,7 +87,8 @@ export class Net {
       this.h.onChange();
       return;
     }
-    const socket = (this.socket = io(SERVER_URL, { transports: ['websocket', 'polling'] }));
+    wakeServer();
+    const socket = (this.socket = SERVER_URL ? io(SERVER_URL, { transports: ['websocket', 'polling'] }) : io({ transports: ['websocket', 'polling'] }));
     socket.on('connect', () => {
       this.online = true;
       this.h.onChange();
