@@ -286,6 +286,16 @@ test('after the human idles, the AI suggests the next goal in one line, once', a
   assert.deepEqual(b.room.chat.map((m) => m.text), ['hello', 'Shall we try the plate?']);
 });
 
+test('a failing Gemini does not delay the idle hint: the body says it, without another call', async () => {
+  const down = new Error('503 overloaded');
+  const { room, ai } = setup('out', [down, down, down, down], { idleHintMs: 150, backoffMs: 60_000, fallback: scriptedBrain('default') });
+  const hint = idleHint({ kind: 'puzzle', face: 1, here: true, inReach: true });
+  await until(() => room.chat.some((m) => m.text === hint), 'the idle hint');
+  assert.equal(ai.calls, 1); // still backing off
+  await sleep(250);
+  assert.equal(room.chat.filter((m) => m.text === hint).length, 1);
+});
+
 test('the turn tells the brain its goal, and nothing about the other side', async () => {
   const { prompts } = setup('out', []);
   await until(() => prompts.length === 1, 'first think');

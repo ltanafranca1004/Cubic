@@ -170,9 +170,19 @@ export class AiPlayer {
     this.idleTimer = setTimeout(() => {
       this.idleTimer = null;
       this.hintDue = true;
-      this.wake();
+      // Gemini is failing: do not make one line wait out the back-off.
+      if (this.failures > 0 && !this.thinking) this.takeHint();
+      else this.wake();
     }, this.opts.idleHintMs ?? IDLE_HINT_MS);
     this.idleTimer.unref();
+  }
+
+  /** The hint is due and the brain is not going to say it: the body says it for this turn. */
+  private takeHint(): void {
+    if (!this.hintDue || this.stopped || this.room.state.wonAt !== null) return;
+    this.hintDue = false;
+    this.hint = idleHint(chooseGoal(this.look(), this.memory));
+    if (!this.thinking) this.speak(this.hint);
   }
 
   private log(line: string): void {
@@ -217,6 +227,11 @@ export class AiPlayer {
    */
   private wake(): void {
     this.stale = true;
+    this.schedule();
+  }
+
+  /** Look again when the rate limit allows, without claiming that anything changed. */
+  private schedule(): void {
     if (this.wakeTimer || this.stopped) return;
     const wait = Math.max(0, this.nextThinkAt - Date.now());
     this.wakeTimer = setTimeout(() => {
@@ -261,10 +276,11 @@ export class AiPlayer {
   private async maybeThink(): Promise<void> {
     if (this.stopped || this.thinking || this.room.state.wonAt !== null) return;
     if (!this.room.isConnected(this.side === 'out' ? 'in' : 'out')) return; // nobody to play with
-    if (Date.now() < this.nextThinkAt) return this.wake();
+    if (Date.now() < this.nextThinkAt) return this.schedule();
     const observation = this.look();
-    // Nothing new to react to: do not spend a call.
-    const seen = JSON.stringify(observation) + this.room.chat.length;
+    // Nothing new to react to: do not spend a call. Its own lines are not news, or it
+    // would keep answering itself while the human is quiet.
+    const seen = JSON.stringify(observation) + (this.room.chat.filter((m) => m.from !== this.side).at(-1)?.id ?? 0);
     if (!this.stale && seen === this.lastSeen) return;
     this.lastSeen = seen;
     this.stale = false;
@@ -319,14 +335,16 @@ export class AiPlayer {
       clearTimeout(timeout);
       this.thinking = false;
       if (!this.stopped) this.room.setTyping(this.side, false);
+      if (this.stale || this.hintDue) this.schedule(); // something happened while it was thinking
     }
   }
 
   private async fallback(turn: string): Promise<void> {
+    this.takeHint(); // the human may have gone quiet while the failed call was out
     if (this.opts.fallback) {
       try {
         const parsed = parseReply((await this.opts.fallback.think(turn, new AbortController().signal)).text);
-        if (parsed && !this.stopped) return this.act(parsed);
+        if (parsed && !this.stopped) return this.act(this.hint ? { ...parsed, say: this.hint } : parsed);
       } catch {
         // fall through to the plain line
       }
