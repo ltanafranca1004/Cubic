@@ -1,4 +1,5 @@
 import { FACE_NAMES, compassDrift, neighbours, objectiveFor, portalOpen, signalBars, voiceMix, type GameEvent, type GameState, type Side } from '@cubic/shared';
+import { audio, musicForScreen } from './audio/AudioManager';
 import { createGameView, type GameHandle } from './game';
 import { playEvent } from './game/sfx';
 import { Net } from './net/client';
@@ -50,6 +51,7 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
       onChange: () => render(),
       onEvents: (events: GameEvent[]) => {
         events.forEach(playEvent);
+        if (events.some((e) => e.type === 'solve')) audio.playSfx('solved');
         game?.handle(events);
       },
       onChat: () => {},
@@ -139,6 +141,8 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
     const playing = state.screen === 'game';
     gameEl.style.visibility = playing ? 'visible' : 'hidden';
     game?.setState(playing ? net.state : null, viewSide() ?? 'out');
+    // Music follows the screen: menu, then lobby once in a room, then the side being shown.
+    audio.playMusic(musicForScreen(playing ? 'game' : net.side ? 'lobby' : 'menu', viewSide()));
     handle?.update(state);
   }
 
@@ -149,10 +153,11 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
   });
   handle = ui.mount(root, actions);
   // Dev only: lets tests and the console inspect the client state.
-  if (import.meta.env.DEV) Object.assign(window, { __cubic: net, __cubicVoice: voice });
+  if (import.meta.env.DEV) Object.assign(window, { __cubic: net, __cubicVoice: voice, __cubicAudio: audio });
   Object.assign(devHooks, { net, render });
   net.start();
   if (!offlineSide) void voice.resumeMic();
   render();
   setInterval(render, 500); // keeps the clock ticking
+  setInterval(() => audio.setVoiceLevel(voice.partnerLevelNow), 50); // music ducks under the partner's voice
 }

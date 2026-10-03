@@ -83,6 +83,11 @@ export class Voice {
     };
   }
 
+  /** How loud the partner is right now (0..1), for ducking the music. */
+  get partnerLevelNow(): number {
+    return this.partnerLevel;
+  }
+
   // ---------- audio graph ----------
 
   private graph(): { bus: GainNode; out: GainNode } {

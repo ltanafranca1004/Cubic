@@ -50,6 +50,34 @@ connection cannot be made it falls back to relaying audio through the server; ad
 `?relay` to the URL to force that path when testing. Voice reconnects by itself after a
 refresh. To test alone, use two windows and headphones.
 
+## Audio
+
+Music changes with where you are: a menu theme, a lobby theme, a bright adventurous loop
+for the outside player and a dark one for the inside player, crossfaded over 800 ms, plus
+a short sting when a puzzle is solved. It starts on your first click or key press
+(browsers block sound before that) and dips about 6 dB while your partner talks.
+
+Everything goes through `client/src/audio/AudioManager.ts`:
+
+```ts
+import { audio, musicForScreen } from './audio/AudioManager';
+audio.setMaster(0.8); audio.setMusic(0.5); audio.setSfx(1); // 0..1, heard at once
+audio.playMusic(musicForScreen('start'));                   // 'menu' | 'lobby' | 'outside' | 'inside'
+audio.playMusic('lobby', { fade: 400 });                    // fade in ms, default 800
+audio.stopMusic({ fade: 800 });
+audio.playSfx('solved');                                    // or any synthesized effect, e.g. 'step'
+```
+
+The tracks are CC0, from the Ninja Adventure pack (see [CREDITS.md](CREDITS.md)), and
+live in `client/public/assets/audio`. Voice chat has its own volume slider and is not
+affected by these three volumes.
+
+Optional: `npm run music:gen -w server` generates alternative tracks with the ElevenLabs
+Music API into `client/public/assets/audio/gen`. It prints the estimated cost and asks
+before spending anything, and refuses above `MUSIC_MAX_CREDITS` (default 5000). The API
+key needs the `music_generation` permission and a paid plan. Model: `ELEVENLABS_MUSIC_MODEL`
+(default `music_v1`).
+
 ## Items
 
 Press **E** to pick up the item you are standing on, and E again to drop it. You carry one
