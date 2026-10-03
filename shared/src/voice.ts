@@ -16,8 +16,6 @@ export const VOICE_EDGE_FADE_TILES = 3;
 /** Signal bars shown on the HUD: gain needed for 1, 2 and 3 bars. */
 export const VOICE_BAR_THRESHOLDS = [0.04, 0.3, 0.7] as const;
 
-const GAIN_BY_DISTANCE = [VOICE_SAME_FACE_GAIN, VOICE_ADJACENT_GAIN, VOICE_OPPOSITE_GAIN] as const;
-
 /**
  * How much a player "counts" as being on each face. Standing mid-face you are fully on
  * it; near an edge you are partly on the neighbour (half and half on the last tile), so
@@ -50,14 +48,37 @@ export interface VoiceMix {
   gain: number;
 }
 
-/** How loud the players are to each other right now. Symmetric. */
+/**
+ * How loud the players are to each other right now. Symmetric.
+ *
+ * Each player's presence is spread over faces (see facePresence). We pair the two
+ * presences up as favourably as possible: whatever both have on the same face counts at
+ * full volume, what can be paired across adjacent faces counts at the adjacent gain, and
+ * only what is forced onto opposite faces is silent. So two players side by side are clear
+ * even next to an edge, and the volume fades as one of them walks away over it.
+ */
 export function voiceMix(state: Pick<GameState, 'players'>): VoiceMix {
   const a = facePresence(state.players.out.pose);
   const b = facePresence(state.players.in.pose);
-  let gain = 0;
-  for (const fa of FACES) {
-    for (const fb of FACES) gain += (a[fa] ?? 0) * (b[fb] ?? 0) * GAIN_BY_DISTANCE[faceDistance(fa, fb)];
+  const restA: Partial<Record<FaceId, number>> = {};
+  const restB: Partial<Record<FaceId, number>> = {};
+  let same = 0;
+  let rest = 0;
+  for (const f of FACES) {
+    const shared = Math.min(a[f] ?? 0, b[f] ?? 0);
+    same += shared;
+    restA[f] = (a[f] ?? 0) - shared;
+    restB[f] = (b[f] ?? 0) - shared;
+    rest += restA[f]!;
   }
+  // Of the rest, the part that can only be paired with the opposite face is lost.
+  let forcedOpposite = 0;
+  for (const f of FACES) {
+    const opposite = FACES.find((g) => faceDistance(f, g) === 2)!;
+    forcedOpposite = Math.max(forcedOpposite, restA[f]! + restB[opposite]! - rest);
+  }
+  const adjacent = rest - forcedOpposite;
+  const gain = same * VOICE_SAME_FACE_GAIN + adjacent * VOICE_ADJACENT_GAIN + forcedOpposite * VOICE_OPPOSITE_GAIN;
   return { gain: Math.min(1, Math.max(0, gain)) };
 }
 

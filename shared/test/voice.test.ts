@@ -29,6 +29,19 @@ test('same face (outside N and inside N are one wall): full volume', () => {
   for (const f of FACES) close(voiceMix(game(at('out', f, 4, 4), at('in', f, 5, 5))).gain, 1);
 });
 
+test('side by side is clear anywhere on the face, even right next to an edge', () => {
+  for (const [x, y] of [[4, 8], [0, 0], [9, 5], [2, 9]] as const) close(voiceMix(game(at('out', 1, x, y), at('in', 1, x, y))).gain, 1);
+  assert.ok(voiceMix(game(at('out', 1, 4, 8), at('in', 1, 2, 8))).gain > 0.85); // the spawn tiles
+});
+
+test('walking to an edge away from the partner fades towards the next face', () => {
+  const partner = at('in', 1, 4, 4);
+  const gains = [5, 6, 7, 8, 9].map((x) => voiceMix(game(at('out', 1, x, 4), partner)).gain);
+  for (let i = 1; i < gains.length; i++) assert.ok(gains[i]! <= gains[i - 1]!);
+  close(gains[0]!, 1);
+  close(gains[4]!, (1 + VOICE_ADJACENT_GAIN) / 2);
+});
+
 test('adjacent faces are quieter, opposite faces are silent', () => {
   for (const a of FACES) {
     for (const b of FACES) {

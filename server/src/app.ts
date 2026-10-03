@@ -91,7 +91,11 @@ export function createApp(opts: AppOptions = {}): App {
     };
     /** Both humans are here: tell them to (re)start the voice call. */
     const voiceReady = () => {
-      if (room && room.isConnected('out') && room.isConnected('in') && partner()) io.to(room.code).emit('voice:ready');
+      const r = room;
+      // After the join/rejoin ack, so the newcomer knows its side before the call starts.
+      setTimeout(() => {
+        if (r && r === room && r.mode === 'friend' && r.isConnected('out') && r.isConnected('in') && partner()) io.to(r.code).emit('voice:ready');
+      }, 50);
     };
     const safe = (ack: unknown, fn: () => Seat) => {
       if (typeof ack !== 'function') return;

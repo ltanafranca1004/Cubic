@@ -1,8 +1,9 @@
-import { FACE_NAMES, compassDrift, neighbours, objectiveFor, portalOpen, type GameEvent, type GameState, type Side } from '@cubic/shared';
+import { FACE_NAMES, compassDrift, neighbours, objectiveFor, portalOpen, signalBars, voiceMix, type GameEvent, type GameState, type Side } from '@cubic/shared';
 import { createGameView, type GameHandle } from './game';
 import { playEvent } from './game/sfx';
 import { Net } from './net/client';
-import type { HudState, UIActions, UIHandle, UIHost, UIState, VoiceState } from './ui/hooks';
+import type { HudState, UIActions, UIHandle, UIHost, UIState } from './ui/hooks';
+import { Voice } from './voice/voice';
 
 // Glue: Net (server + prediction) -> UIState for the UI and GameState for the Phaser view;
 // UIActions and game input -> Net. No game rules here.
@@ -27,8 +28,6 @@ export function hudOf(state: GameState, me: Side, now: number): HudState {
   };
 }
 
-const VOICE_OFF: VoiceState = { mic: 'off', mode: 'push', muted: false, link: 'none', talking: false, partnerLevel: 0, signal: 0, partnerVolume: 1 };
-
 export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null = null): void {
   const gameEl = document.createElement('div');
   gameEl.id = 'game';
@@ -52,12 +51,29 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
         partnerTyping = on;
         render();
       },
-      onVoiceReady: () => {},
-      onVoiceSignal: () => {},
-      onVoiceChunk: () => {},
-      onTts: () => {},
+      onVoiceReady: () => voice.onReady(),
+      onVoiceSignal: (data) => void voice.onSignal(data),
+      onVoiceChunk: (chunk) => voice.onChunk(chunk),
+      onTts: (clip) => void voice.playClip(clip),
     },
     offlineSide,
+  );
+
+  /** How well the players hear each other right now (0 when there is no partner). */
+  const proximity = () => {
+    if (!net.state || !net.side || !started) return 0;
+    const partner = net.room?.seats[net.side === 'out' ? 'in' : 'out'];
+    return partner?.connected ? voiceMix(net.state).gain : 0;
+  };
+  const voice = new Voice(
+    {
+      signal: (data) => net.voiceSignal(data),
+      sendChunk: (chunk) => net.voiceChunk(chunk),
+      proximity,
+      isCaller: () => (net.side ? net.side === 'out' : null),
+      onChange: () => render(),
+    },
+    new URLSearchParams(location.search).has('relay'),
   );
 
   const actions: UIActions = {
@@ -69,10 +85,10 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
       net.leave();
     },
     onSendChat: (text) => net.sendChat(text),
-    onEnableMic: () => {},
-    onSetMuted: () => {},
-    onSetMicMode: () => {},
-    onSetPartnerVolume: () => {},
+    onEnableMic: () => void voice.enableMic(),
+    onSetMuted: (muted) => voice.setMuted(muted),
+    onSetMicMode: (mode) => voice.setMode(mode),
+    onSetPartnerVolume: (v) => voice.setVolume(v),
     onPlayAgain: () => net.restart(),
   };
 
@@ -104,7 +120,7 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
       chat: net.chat,
       partnerTyping,
       hud: inGame ? hudOf(net.state!, net.side!, Date.now()) : null,
-      voice: VOICE_OFF,
+      voice: voice.snapshot(signalBars(proximity())),
     };
   }
 
@@ -119,12 +135,13 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
   game = createGameView(gameEl, {
     onMove: (dx, dy) => started && net.move(dx, dy),
     onInteract: () => started && net.interact(),
-    onTalk: () => {},
+    onTalk: (down) => voice.setTalkKey(down),
   });
   handle = ui.mount(root, actions);
   // Dev only: lets tests and the console inspect the client state.
-  if (import.meta.env.DEV) (window as unknown as { __cubic: Net }).__cubic = net;
+  if (import.meta.env.DEV) Object.assign(window, { __cubic: net, __cubicVoice: voice });
   net.start();
+  if (!offlineSide) void voice.resumeMic();
   render();
   setInterval(render, 500); // keeps the clock ticking
 }
