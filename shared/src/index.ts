@@ -1,3 +1,7 @@
 export * from './types';
+export * from './vec';
+export * from './cube';
 export * from './maps';
 export * from './puzzles';
+export * from './game';
+export * from './bot';
