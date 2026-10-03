@@ -1,4 +1,5 @@
 # Backend on Render (free web service). Render injects PORT itself.
+# The free tier sleeps after 15 minutes idle; a cold start takes about 50 seconds.
 services:
   - type: web
     name: cubic-server
@@ -10,13 +11,27 @@ services:
     envVars:
       - key: NODE_VERSION
         value: 22
-      - key: CLIENT_ORIGIN # comma-separated list of allowed origins, e.g. the Vercel URL
+      - key: NODE_ENV
+        value: production
+      # Allowed browser origins, comma-separated, "*" allowed inside a host:
+      # https://cubic.vercel.app,https://cubic-*.vercel.app,https://cubic.tech
+      - key: CLIENT_ORIGIN
         sync: false
+      # --- AI partner
       - key: GEMINI_API_KEY
         sync: false
       - key: GEMINI_MODEL
-        sync: false
+        value: gemini-3.5-flash
+      - key: AI_FAKE # set to 1 to use the scripted partner (no Gemini)
+        value: "0"
+      - key: AI_PERSONA # default | tsundere
+        value: default
+      # --- AI partner voice
+      - key: TTS_MODE # browser | elevenlabs
+        value: elevenlabs
       - key: ELEVENLABS_API_KEY
         sync: false
       - key: ELEVENLABS_VOICE_ID
         sync: false
+      - key: ELEVENLABS_MODEL_ID
+        value: eleven_flash_v2_5

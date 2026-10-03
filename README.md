@@ -42,8 +42,8 @@ game.
 Cubic is meant to be played by voice, no Discord. In the game press **Enable microphone**
 and allow it. Hold **V** to talk (or switch to open mic), **Mute** to cut your mic, and use
 the slider for your partner's volume. How well you hear each other depends on where you
-both stand on the cube: same wall is clear, the next face is faint (about 35%), the
-opposite face is silent. The three bars show the signal, the dots show who is speaking.
+both stand on the cube: same wall is clear, the next face is faint (35%), the opposite
+face is silent. The bars show the signal (3, 1, 0), the dots show who is speaking.
 
 Audio is WebRTC, signaled through our own Socket.io server (public STUN). If a direct
 connection cannot be made it falls back to relaying audio through the server; add
@@ -62,14 +62,58 @@ No second player? A Gemini-powered partner takes the other side. It sees only it
 side of the cube, like a human would, and you solve puzzles by chatting with it.
 
 1. Get a key at https://aistudio.google.com/apikey and put it in `server/.env`:
-   `GEMINI_API_KEY=...` (optional `GEMINI_MODEL`, default `gemini-flash-latest`).
-2. Optional voice for the AI: `ELEVENLABS_API_KEY=...` (and `ELEVENLABS_VOICE_ID`).
-3. `npm run dev`, open the app, press **Play with AI: outside** or **inside**.
-4. Type to it (Enter). Tell it what you see and ask what it sees. It walks at human speed
-   and can be wrong.
+   `GEMINI_API_KEY=...` (optional `GEMINI_MODEL`, default `gemini-3.5-flash`).
+2. `npm run dev`, open the app, press **Play with AI: outside** or **inside**.
+3. Type to it (Enter). Tell it what you see and ask what it sees. It walks at human speed
+   and can be wrong. Its lines are 80 characters at most.
 
-No key at hand? `AI_FAKE=1 npm run dev` uses a small scripted partner instead (dev/demo
-only). Keys stay on the server and are never sent to the browser.
+- **Personality:** `AI_PERSONA=default` or `AI_PERSONA=tsundere` (annoyed on the surface,
+  secretly helpful). Tone only: it still knows just what its own side shows.
+- **Rate limit:** one Gemini call per 6 seconds per room. If Gemini fails (429, 503,
+  timeout) the server backs off and a small scripted partner plays that turn, so the game
+  never stalls.
+- **No key at hand, or a demo emergency:** `AI_FAKE=1 npm run dev` runs the scripted
+  partner alone. No keys, no network.
+
+Keys stay on the server and are never sent to the browser.
+
+### The AI's voice
+
+`TTS_MODE=browser` (default outside production) speaks the AI's lines with the browser's
+free `speechSynthesis`. `TTS_MODE=elevenlabs` (default in production) uses ElevenLabs
+(`ELEVENLABS_API_KEY`, optional `ELEVENLABS_VOICE_ID`, `ELEVENLABS_MODEL_ID` default
+`eleven_flash_v2_5`). If the key is missing or a call fails, that line falls back to the
+browser voice.
+
+To keep ElevenLabs cheap:
+- Every clip is cached in `server/.tts-cache` (not in git), keyed by voice + model + text.
+- `npm run tts:bank -w server` pre-generates the lines in `server/tts/bank-lines.txt`
+  (about 70 short lines, both personas, about 2,000 characters once). At runtime a line
+  that matches a bank line, ignoring case and punctuation, plays the banked clip for free.
+  Cached and banked clips are also used in browser mode.
+- The server logs the characters sent to ElevenLabs per room and in total.
+
+## Test on two laptops
+
+The microphone needs HTTPS, so share one HTTPS URL through a tunnel. Only laptop A runs
+anything.
+
+```
+# laptop A, terminal 1
+npm install
+npm run dev
+
+# laptop A, terminal 2
+npx cloudflared tunnel --url http://localhost:5173
+```
+
+cloudflared prints a URL like `https://random-words.trycloudflare.com`. Open it on both
+laptops: one creates a room, the other joins with the code. The dev client talks to its
+own origin and Vite proxies `/socket.io` (WebSocket included) to the local game server,
+so that single URL serves the whole game. Leave `VITE_SERVER_URL` unset for this.
+
+Voice between two networks is peer-to-peer when it can be and falls back to relaying
+through the server when it cannot. Use headphones.
 
 Teammates: read [CLAUDE.md](CLAUDE.md) first, then the README in your folder:
 [puzzles](shared/src/puzzles/README.md), [maps](maps/README.md),
@@ -89,15 +133,24 @@ Backend on Render, frontend on Vercel. Config is in `render.yaml` and `vercel.js
    and creates the free web service `cubic-server` (build `npm install`, start
    `npm start -w server`, health check `/health`).
 2. Set the env vars it asks for (leave what you do not have yet empty):
-   - `CLIENT_ORIGIN`: the Vercel URL (step 3). Comma-separate several origins.
-   - `GEMINI_API_KEY`, `GEMINI_MODEL`: for "Play with AI".
+   - `CLIENT_ORIGIN`: the Vercel URL (step 3). A comma-separated list; `*` matches
+     inside a host name, e.g.
+     `https://cubic.vercel.app,https://cubic-*.vercel.app,https://cubic.tech`.
+   - `GEMINI_API_KEY`: for "Play with AI".
    - `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`: for the AI partner's voice.
-   Render sets `PORT` itself.
+   The rest have defaults in `render.yaml`: `GEMINI_MODEL`, `AI_FAKE`, `AI_PERSONA`,
+   `TTS_MODE`, `ELEVENLABS_MODEL_ID`. Render sets `PORT` itself. Every variable is
+   described in `server/.env.example`.
 3. Deploy and note the URL, e.g. `https://cubic-server.onrender.com`. Check
    `https://<render-url>/health` returns `{"ok":true}`.
 
-The free tier **sleeps after 15 minutes idle** and takes up to a minute to wake. Open the
-app (or the `/health` URL) a few minutes before a demo or judging.
+The free tier **sleeps after 15 minutes idle** and a cold start takes about 50 seconds.
+The lobby pings `/health` the moment it loads to start waking the server, and shows
+"Waking the server..." until it answers. Open the app a few minutes before a demo or
+judging.
+
+Render's disk is not kept between deploys, so the voice cache starts empty there: clips
+are generated on first use and reused until the next restart.
 
 ### 2. Frontend: Vercel
 

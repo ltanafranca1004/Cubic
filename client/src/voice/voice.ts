@@ -1,4 +1,4 @@
-import type { TtsClip, VoiceChunk } from '@cubic/shared';
+import { VOICE_RAMP_MS, type TtsClip, type VoiceChunk } from '@cubic/shared';
 import { audioContext } from '../game/sfx';
 import type { VoiceState } from '../ui/hooks';
 
@@ -17,8 +17,6 @@ const DIRECT_TIMEOUT_MS = 10_000;
 const RELAY_MIME = 'audio/webm;codecs=opus';
 const RELAY_SLICE_MS = 200;
 const RELAY_MAX_LAG_S = 1;
-/** Seconds for gain changes to settle: smooth, no zipper noise. */
-const GAIN_SMOOTH_S = 0.08;
 const TALK_LEVEL = 0.04;
 
 type Signal = { sdp?: RTCSessionDescriptionInit; candidate?: RTCIceCandidateInit; relay?: boolean };
@@ -42,6 +40,8 @@ export class Voice {
   private volume = 1;
   private partnerLevel = 0;
   private myLevel = 0;
+  /** Gain the output is ramping to (proximity x volume). */
+  private target = -1;
 
   private micStream: MediaStream | null = null;
   private pc: RTCPeerConnection | null = null;
@@ -110,7 +110,16 @@ export class Voice {
 
   private tick(): void {
     const gain = this.deps.proximity();
-    if (this.out) this.out.gain.setTargetAtTime(gain * this.volume, audioContext().currentTime, GAIN_SMOOTH_S);
+    const target = gain * this.volume;
+    if (this.out && target !== this.target) {
+      // Short linear ramp so crossing an edge (or moving the slider) does not pop.
+      this.target = target;
+      const now = audioContext().currentTime;
+      const param = this.out.gain;
+      param.cancelScheduledValues(now);
+      param.setValueAtTime(param.value, now);
+      param.linearRampToValueAtTime(target, now + VOICE_RAMP_MS / 1000);
+    }
     // What you would actually hear: their level scaled by distance.
     this.partnerLevel = Math.round(Voice.level(this.meter) * Math.min(1, gain * 2) * 20) / 20;
     this.myLevel = Voice.level(this.micMeter);
@@ -425,6 +434,21 @@ export class Voice {
     } catch (e) {
       console.warn('[voice] could not play the AI line', e);
     }
+  }
+
+  /**
+   * Say an AI line with the browser's free speechSynthesis (TTS_MODE=browser, or the
+   * ElevenLabs call failed). It cannot be routed through Web Audio, so the proximity gain
+   * is applied as the utterance volume when the line starts.
+   */
+  speakText(text: string): void {
+    if (typeof speechSynthesis === 'undefined') return;
+    const volume = Math.min(1, Math.max(0, this.deps.proximity() * this.volume));
+    if (volume <= 0) return; // out of earshot
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.volume = volume;
+    utterance.rate = 1.05;
+    speechSynthesis.speak(utterance);
   }
 
   destroy(): void {

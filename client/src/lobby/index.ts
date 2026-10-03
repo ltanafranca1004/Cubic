@@ -164,7 +164,7 @@ export const placeholderUI: UIHost = {
         $('pu-wait').style.display = seated ? '' : 'none';
         $('pu-code').textContent = state.roomCode ?? '';
         $('pu-you').textContent = sideName(state.side).toUpperCase();
-        $('pu-status').textContent = state.online ? STATUS[state.status] : 'Cannot reach the server. Retrying...';
+        $('pu-status').textContent = state.online ? STATUS[state.status] : 'Waking the server... a sleeping server takes up to a minute to start.';
         $('pu-err').textContent = state.error ?? '';
         const busy = state.status === 'connecting' || !state.online;
         $<HTMLButtonElement>('pu-create').disabled = busy;

@@ -211,3 +211,17 @@ test('two clients play a whole game online', async () => {
   a.sock.emit('room:restart');
   await b2.until(() => b2.last.state.wonAt === null && b2.last.state.solved.length === 0, 'fresh game');
 });
+
+test('CLIENT_ORIGIN: comma-separated list, exact origins and * inside a host label', async () => {
+  const strict = createApp({ origins: ' https://cubic.vercel.app/ , https://cubic-*.vercel.app,https://cubic.tech'.split(','), allowLocalhost: false });
+  const port = await strict.listen(0);
+  const status = async (origin?: string) => (await fetch(`http://localhost:${port}/socket.io/?EIO=4&transport=polling`, { headers: origin ? { origin } : {} })).status;
+  try {
+    for (const ok of ['https://cubic.vercel.app', 'https://cubic-git-ui-luis.vercel.app', 'https://CUBIC.tech', undefined]) assert.equal(await status(ok), 200, String(ok));
+    for (const bad of ['https://evil.example', 'https://cubic.vercel.app.evil.example', 'https://cubic-x.evil.vercel.app', 'https://xcubic.tech', 'http://cubic.tech', 'http://localhost:5173']) {
+      assert.equal(await status(bad), 403, bad);
+    }
+  } finally {
+    await strict.close();
+  }
+});

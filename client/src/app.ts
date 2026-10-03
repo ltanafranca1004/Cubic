@@ -55,6 +55,7 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
       onVoiceSignal: (data) => void voice.onSignal(data),
       onVoiceChunk: (chunk) => voice.onChunk(chunk),
       onTts: (clip) => void voice.playClip(clip),
+      onSpeak: (text) => voice.speakText(text),
     },
     offlineSide,
   );

@@ -1,7 +1,7 @@
 import { CHAT_MAX_LEN, observe, parseAction, planAction, type BotAction, type BotStep, type ChatMessage, type GameEvent, type Side } from '@cubic/shared';
 import type { Room } from '../rooms';
 import type { Brain } from './gemini';
-import { turnPrompt } from './prompt';
+import { MAX_SAY_CHARS, turnPrompt } from './prompt';
 
 // The AI partner. Gemini is the brain, this is the nervous system: it shows the brain what
 // its own side can see, validates the reply, and walks the chosen action one step at a
@@ -16,6 +16,10 @@ export interface AiOptions {
   stepMs?: number;
   /** Give up on a Gemini call after this long. */
   timeoutMs?: number;
+  /** First back-off after a failed call; doubles per failure in a row, up to a minute. */
+  backoffMs?: number;
+  /** Answers a turn when the brain fails (429, 503, timeout, bad JSON), so the game never stalls. */
+  fallback?: Brain;
   /** Called with each line the AI says (for speech). */
   onSay?: (msg: ChatMessage) => void;
   log?: (line: string) => void;
@@ -23,12 +27,22 @@ export interface AiOptions {
 
 export const FALLBACK_LINE = 'Give me a sec...';
 const FALLBACK_EVERY_MS = 20_000;
-const MAX_SAY = 140;
+/** After a failed call, wait this long before the next one, doubling up to the max. */
+const BACKOFF_MS = 6000;
+const BACKOFF_MAX_MS = 60_000;
 const EVENTS_KEPT = 8;
 
 export interface ParsedReply {
   say: string | null;
   action: BotAction | null;
+}
+
+/** Cut a line to the say limit, at a word boundary when there is one. */
+export function clip(text: string, max = Math.min(MAX_SAY_CHARS, CHAT_MAX_LEN)): string {
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max);
+  const space = cut.lastIndexOf(' ');
+  return (space > max * 0.6 ? cut.slice(0, space) : cut).replace(/[\s,;:]+$/, '');
 }
 
 /** Validate the model's JSON. Returns null when it is not usable at all. */
@@ -43,7 +57,7 @@ export function parseReply(text: string): ParsedReply | null {
   const r = raw as Record<string, unknown>;
   if (!('say' in r) && !('action' in r)) return null;
   if (r.say != null && typeof r.say !== 'string') return null;
-  const say = typeof r.say === 'string' && r.say.trim() ? r.say.trim().slice(0, Math.min(MAX_SAY, CHAT_MAX_LEN)) : null;
+  const say = typeof r.say === 'string' && r.say.trim() ? clip(r.say.trim()) : null;
   const action = r.action == null ? null : parseAction(r.action);
   if (r.action != null && !action) return say ? { say, action: null } : null; // bad action: keep the words
   return { say, action };
@@ -55,8 +69,10 @@ export class AiPlayer {
   private events: string[] = [];
   private lastResult: string | null = null;
   private thinking = false;
-  private lastThinkAt = 0;
   private lastFallbackAt = 0;
+  /** No Gemini call before this time (rate limit + back-off after errors). */
+  private nextThinkAt = 0;
+  private failures = 0;
   /** Something happened since the last think. */
   private stale = true;
   private lastSeen = '';
@@ -79,7 +95,7 @@ export class AiPlayer {
     private brain: Brain,
     private opts: AiOptions = {},
   ) {
-    this.minThinkMs = opts.minThinkMs ?? 3000;
+    this.minThinkMs = opts.minThinkMs ?? 6000;
     this.timeoutMs = opts.timeoutMs ?? 12_000;
     room.sit(side, true);
     this.unlisten = room.listen({
@@ -131,11 +147,15 @@ export class AiPlayer {
     if (news) this.wake();
   }
 
-  /** Think soon (as soon as the rate limit allows). */
+  /**
+   * Think as soon as the rate limit allows. At most one wake-up is ever pending: more
+   * triggers in the meantime are folded into it, never queued. Until then the body keeps
+   * doing its current action.
+   */
   private wake(): void {
     this.stale = true;
     if (this.wakeTimer || this.stopped) return;
-    const wait = Math.max(0, this.lastThinkAt + this.minThinkMs - Date.now());
+    const wait = Math.max(0, this.nextThinkAt - Date.now());
     this.wakeTimer = setTimeout(() => {
       this.wakeTimer = null;
       void this.maybeThink();
@@ -163,7 +183,7 @@ export class AiPlayer {
   private async maybeThink(): Promise<void> {
     if (this.stopped || this.thinking || this.room.state.wonAt !== null) return;
     if (!this.room.isConnected(this.side === 'out' ? 'in' : 'out')) return; // nobody to play with
-    if (Date.now() - this.lastThinkAt < this.minThinkMs) return this.wake();
+    if (Date.now() < this.nextThinkAt) return this.wake();
     const observation = observe(this.room.state, this.side);
     // Nothing new to react to: do not spend a call.
     const seen = JSON.stringify(observation) + this.room.chat.length;
@@ -172,7 +192,7 @@ export class AiPlayer {
     this.stale = false;
 
     this.thinking = true;
-    this.lastThinkAt = Date.now();
+    this.nextThinkAt = Date.now() + this.minThinkMs;
     this.room.setTyping(this.side, true);
     const turn = turnPrompt({ side: this.side, observation, recentEvents: this.events, chat: this.room.chat, lastActionResult: this.lastResult, busy: this.doing });
     this.events = [];
@@ -193,11 +213,18 @@ export class AiPlayer {
       const parsed = parseReply(reply.text);
       if (!parsed) {
         this.log(`unusable reply: ${reply.text.slice(0, 120)}`);
-        this.fallback();
-      } else this.act(parsed);
+        await this.fallback(turn);
+      } else {
+        this.failures = 0;
+        this.act(parsed);
+      }
     } catch (e) {
-      this.log(`gemini error: ${e instanceof Error ? e.message : String(e)}`);
-      if (!this.stopped) this.fallback();
+      // 429, 503, network, timeout: back off, and let the scripted partner take this turn.
+      this.failures++;
+      const backoff = Math.min(BACKOFF_MAX_MS, (this.opts.backoffMs ?? BACKOFF_MS) * 2 ** (this.failures - 1));
+      this.nextThinkAt = Date.now() + Math.max(this.minThinkMs, backoff);
+      this.log(`gemini error: ${(e instanceof Error ? e.message : String(e)).slice(0, 200)} (backing off ${Math.round(backoff / 1000)}s)`);
+      if (!this.stopped) await this.fallback(turn);
     } finally {
       clearTimeout(timeout);
       this.thinking = false;
@@ -205,8 +232,16 @@ export class AiPlayer {
     }
   }
 
-  private fallback(): void {
-    if (Date.now() - this.lastFallbackAt < FALLBACK_EVERY_MS) return;
+  private async fallback(turn: string): Promise<void> {
+    if (this.opts.fallback) {
+      try {
+        const parsed = parseReply((await this.opts.fallback.think(turn, new AbortController().signal)).text);
+        if (parsed && !this.stopped) return this.act(parsed);
+      } catch {
+        // fall through to the plain line
+      }
+    }
+    if (this.stopped || Date.now() - this.lastFallbackAt < FALLBACK_EVERY_MS) return;
     this.lastFallbackAt = Date.now();
     this.speak(FALLBACK_LINE);
   }

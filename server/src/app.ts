@@ -29,11 +29,18 @@ export interface App {
 
 const isLocal = (origin: string) => /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
 const trim = (o: string) => o.trim().replace(/\/$/, '');
+/**
+ * One CLIENT_ORIGIN entry as a matcher. Exact, except that "*" stands for any run of
+ * letters, digits and dashes inside one host label (for Vercel preview URLs such as
+ * https://cubic-*.vercel.app). It never matches a dot, so it cannot span domains.
+ */
+export const originPattern = (origin: string) =>
+  new RegExp(`^${origin.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '[a-z0-9-]+')}$`, 'i');
 
 export function createApp(opts: AppOptions = {}): App {
-  const origins = (opts.origins ?? []).map(trim).filter(Boolean);
-  const originAllowed = (origin: string | undefined) => !origin || origins.includes(trim(origin)) || (!!opts.allowLocalhost && isLocal(origin));
-  const info = opts.info ?? (() => ({ aiAvailable: false, ttsAvailable: false }));
+  const origins = (opts.origins ?? []).map(trim).filter(Boolean).map(originPattern);
+  const originAllowed = (origin: string | undefined) => !origin || origins.some((re) => re.test(trim(origin))) || (!!opts.allowLocalhost && isLocal(origin));
+  const info = opts.info ?? (() => ({ aiAvailable: false, ttsAvailable: false, ttsMode: 'browser' as const }));
 
   const http = createServer((req, res) => {
     if (req.url === '/health') {

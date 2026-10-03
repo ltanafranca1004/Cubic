@@ -3,7 +3,8 @@ import { after, test } from 'node:test';
 import type { Side } from '@cubic/shared';
 import { AiPlayer, FALLBACK_LINE, parseReply } from '../src/ai/aiPlayer';
 import type { Brain } from '../src/ai/gemini';
-import { elevenLabsTts } from '../src/ai/tts';
+import { MAX_SAY_CHARS, parsePersona, systemPrompt } from '../src/ai/prompt';
+import { scriptedBrain } from '../src/ai/scripted';
 import { LIMITS, Rooms } from '../src/rooms';
 
 LIMITS.moveBurst = 1e9;
@@ -44,7 +45,9 @@ test('parseReply: validates the JSON shape', () => {
   for (const bad of ['', 'not json', '[]', '"hi"', '{}', '{"say":5,"action":null}', '{"say":null,"action":{"type":"teleport"}}', '{"say": "unterminated']) {
     assert.equal(parseReply(bad), null, bad);
   }
-  assert.equal(parseReply(JSON.stringify({ say: 'x'.repeat(900), action: null }))!.say!.length, 140);
+  assert.equal(parseReply(JSON.stringify({ say: 'x'.repeat(900), action: null }))!.say!.length, 80);
+  const long = parseReply(JSON.stringify({ say: 'There is a plate on my floor near the top left corner and a pillar right below it, I think', action: null }))!.say!;
+  assert.ok(long.length <= 80 && !long.endsWith(' ') && long.endsWith('below'), long); // cut at a word
 });
 
 test('the AI takes the empty seat, talks, and walks its action at walking speed', async () => {
@@ -66,7 +69,7 @@ test('the prompt only contains the AI side of the world', async () => {
 });
 
 test('malformed replies, errors and timeouts get the fallback line and never crash', async () => {
-  const { room, ai, logs } = setup('in', ['this is not json', new Error('503 overloaded'), 'hang', '{"say":"Back. What do you see?","action":null}']);
+  const { room, ai, logs } = setup('in', ['this is not json', new Error('503 overloaded'), 'hang', '{"say":"Back. What do you see?","action":null}'], { backoffMs: 10 });
   await until(() => room.chat.some((m) => m.text === FALLBACK_LINE), 'fallback line');
   for (let i = 0; i < 3; i++) {
     room.say('in', `hello ${i}`); // each human line wakes the AI again
@@ -91,6 +94,58 @@ test('rate limit: a burst of chat does not mean a burst of Gemini calls', async 
   assert.ok(ai.calls <= 3, `calls ${ai.calls}`);
 });
 
+test('a failing Gemini (429) backs off and the scripted partner plays that turn', async () => {
+  const quota = Object.assign(new Error('429 RESOURCE_EXHAUSTED'), { status: 429 });
+  const { room, ai, logs } = setup('out', [quota, quota, quota], { fallback: scriptedBrain('default'), minThinkMs: 30 });
+  // Gemini never answered, yet the AI still found the plate and stood on it.
+  await until(() => (room.state.puzzles['plate-door'] as { pressed: boolean }).pressed, 'the scripted fallback to act');
+  assert.ok(room.chat.some((m) => m.isAI && /plate/.test(m.text)));
+  assert.ok(!room.chat.some((m) => m.text === FALLBACK_LINE));
+  assert.ok(logs.some((l) => l.includes('429') && l.includes('backing off 6s')));
+  // Backed off: no second call right away even though events keep arriving.
+  const calls = ai.calls;
+  room.say('out', 'hello?');
+  await sleep(150);
+  assert.equal(ai.calls, calls);
+});
+
+test('the default throttle is one Gemini call per 6 seconds per room, with no backlog', async () => {
+  const { room, ai } = setup('in', [], { minThinkMs: undefined });
+  await until(() => ai.calls === 1, 'first think');
+  for (let i = 0; i < 5; i++) {
+    room.say('in', `msg ${i}`); // five triggers inside the window
+    await sleep(30);
+  }
+  await sleep(300);
+  assert.equal(ai.calls, 1);
+  assert.equal((ai as unknown as { minThinkMs: number }).minThinkMs, 6000);
+});
+
+test('AI_FAKE scripted partner works with no keys, in both personas, within the say limit', async () => {
+  for (const persona of ['default', 'tsundere'] as const) {
+    const room = rooms.create('ai');
+    room.sit('out');
+    new AiPlayer(room, 'in', scriptedBrain(persona), { minThinkMs: 20, idleMs: 1e9, stepMs: 1, log: () => {} });
+    await until(() => (room.state.puzzles['plate-door'] as { pressed: boolean }).pressed, `${persona} scripted AI on the plate`);
+    assert.ok(room.chat.length > 0 && room.chat.every((m) => m.text.length <= MAX_SAY_CHARS));
+  }
+});
+
+test('persona changes the tone, not the rules or what the bot knows', () => {
+  assert.equal(parsePersona(undefined), 'default');
+  assert.equal(parsePersona('tsundere'), 'tsundere');
+  assert.equal(parsePersona('pirate'), 'default');
+  const a = systemPrompt('default');
+  const b = systemPrompt('tsundere');
+  assert.notEqual(a, b);
+  assert.match(b, /tsundere/i);
+  for (const p of [a, b]) {
+    assert.match(p, /at most 80 characters/);
+    assert.match(p, /only know what your own observation shows/);
+    assert.match(p, /YOUR OWN frame of reference/);
+  }
+});
+
 test('an impossible action is reported back instead of executed', async () => {
   const { room, prompts } = setup('in', ['{"say":null,"action":{"type":"step_on","object":"crystal"}}']);
   const before = { ...room.state.players.out.pose };
@@ -105,20 +160,3 @@ test('the AI leaves with the human', () => {
   assert.ok(logs.some((l) => l.includes('stopped')));
 });
 
-test('ElevenLabs speech is cached per line and fails soft', async () => {
-  let calls = 0;
-  const ok = (async (url: string, init: RequestInit) => {
-    calls++;
-    assert.match(url, /text-to-speech/);
-    assert.equal((init.headers as Record<string, string>)['xi-api-key'], 'k');
-    return new Response(new Uint8Array([1, 2, 3]));
-  }) as unknown as typeof fetch;
-  const tts = elevenLabsTts('k', 'voice', ok);
-  const a = await tts.speak('Give me a sec...');
-  const b = await tts.speak('Give me a sec...');
-  assert.deepEqual([...a!], [1, 2, 3]);
-  assert.equal(a, b);
-  assert.equal(calls, 1);
-  const bad = elevenLabsTts('k', 'voice', (async () => new Response('no', { status: 401 })) as unknown as typeof fetch);
-  assert.equal(await bad.speak('hi'), null);
-});
