@@ -165,6 +165,18 @@ export interface StateUpdate {
   acks: Record<Side, number>;
 }
 
+/**
+ * Dev tools (client `?dev`). The server only obeys when it runs with DEV_COMMANDS=1, and
+ * never when NODE_ENV=production; otherwise every command is answered with an error.
+ */
+export type DevCommand =
+  /** Does nothing: the answer's round trip is the ping. */
+  | { type: 'ping' }
+  /** Put `side` (either player, whoever asks) on `face`. */
+  | { type: 'teleport'; side: Side; face: FaceId }
+  /** Force-latch the puzzle on `face` as solved. */
+  | { type: 'solve'; face: FaceId };
+
 export interface ClientToServer {
   'room:create': (ack: Ack<Seat>) => void;
   'room:join': (msg: { code: string }, ack: Ack<Seat>) => void;
@@ -183,6 +195,8 @@ export interface ClientToServer {
   'voice:signal': (msg: { data: unknown }) => void;
   /** Fallback audio relay when the direct connection fails. */
   'voice:chunk': (msg: VoiceChunk) => void;
+  /** Dev tools only, see DevCommand. */
+  dev: (cmd: DevCommand, ack: Ack<object>) => void;
 }
 
 export interface ServerToClient {
