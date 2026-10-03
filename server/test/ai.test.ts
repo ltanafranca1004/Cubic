@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
-import type { Side } from '@cubic/shared';
+import { faceDistance, parseAction, planAction, type Side } from '@cubic/shared';
 import { AiPlayer, FALLBACK_LINE, parseReply } from '../src/ai/aiPlayer';
 import type { Brain } from '../src/ai/gemini';
-import { MAX_SAY_CHARS, parsePersona, systemPrompt } from '../src/ai/prompt';
+import { MAX_SAY_CHARS, idleHint, parsePersona, systemPrompt } from '../src/ai/prompt';
 import { scriptedBrain } from '../src/ai/scripted';
-import { LIMITS, Rooms } from '../src/rooms';
+import { LIMITS, Rooms, type Room } from '../src/rooms';
 
 LIMITS.moveBurst = 1e9;
 const rooms = new Rooms();
@@ -160,3 +160,138 @@ test('the AI leaves with the human', () => {
   assert.ok(logs.some((l) => l.includes('stopped')));
 });
 
+
+/** Walk a player like a human would: one validated move at a time. */
+function walk(room: Room, side: Side, raw: unknown) {
+  const plan = planAction(room.state, side, parseAction(raw)!);
+  assert.ok('steps' in plan, 'error' in plan ? plan.error : '');
+  for (const step of plan.steps) {
+    if (step === 'interact') room.interact(side);
+    else room.move(side, step[0], step[1]);
+  }
+}
+const apart = (room: Room) => faceDistance(room.state.players.out.pose.face, room.state.players.in.pose.face);
+const say = (text: string | null, action: object | null = null) => JSON.stringify({ say: text, action });
+
+test('scripted partner (AI_FAKE): after face 1 is solved it stays within one face of the human, and suggests the next goal after 20s', async (t) => {
+  // Fake clock, real timings: 6 s throttle, 200 ms steps, 20 s idle hint.
+  t.mock.timers.enable({ apis: ['setInterval', 'setTimeout', 'Date'] });
+  const pass = async (ms: number) => {
+    for (let at = 0; at < ms; at += 100) {
+      t.mock.timers.tick(100);
+      await new Promise((r) => setImmediate(r));
+    }
+  };
+  const room = rooms.create('ai');
+  room.sit('out');
+  const ai = new AiPlayer(room, 'in', scriptedBrain('default'), { log: () => {} });
+  let farthest = 0;
+  room.listen({ onState: () => (farthest = Math.max(farthest, apart(room))) });
+
+  await pass(10_000);
+  assert.ok((room.state.puzzles['plate-door'] as { pressed: boolean }).pressed, 'the AI is on the plate');
+  walk(room, 'out', { type: 'step_on', object: 'crystal' });
+  assert.deepEqual(room.state.solved, [1]);
+
+  const solvedAt = Date.now(); // the human's last move
+  const calls = ai.calls;
+  const lines = room.chat.length;
+  await pass(30_000); // the human does nothing at all
+  assert.equal(farthest, 0, 'the AI left the wall the human is on');
+  assert.equal(room.state.players.in.pose.face, 1);
+  assert.ok(ai.calls - calls <= 5, `calls ${ai.calls - calls}`); // still one think per 6 s at most
+  const hint = idleHint({ kind: 'stay' });
+  const spoken = room.chat.slice(lines).filter((m) => m.isAI);
+  assert.deepEqual(spoken.filter((m) => m.text === hint).length, 1, spoken.map((m) => m.text).join(' | '));
+  const waited = spoken.find((m) => m.text === hint)!.at - solvedAt;
+  assert.ok(waited >= 20_000 && waited <= 26_100, `hint after ${waited} ms`); // 20 s of idling, then the next free think
+  assert.ok(hint.length <= MAX_SAY_CHARS);
+
+  // The human walks one face over: the AI may stay, it is still in earshot.
+  walk(room, 'out', { type: 'go_face', face: 2 });
+  await pass(30_000);
+  assert.equal(farthest, 1);
+  // The human walks out of earshot: the AI follows until it hears them again, and no further.
+  walk(room, 'out', { type: 'go_face', face: 3 });
+  assert.equal(apart(room), 2);
+  await pass(15_000);
+  assert.equal(apart(room), 1);
+  await pass(30_000);
+  assert.equal(apart(room), 1);
+  ai.stop();
+});
+
+test('the leash is enforced by the body: a brain that asks for a far face is refused', async () => {
+  const far = say(null, { type: 'go_face', face: 3 });
+  const { room, prompts } = setup('out', [far, say(null, { type: 'go_face', face: 2 }), far, say(null, { type: 'move', dir: 'left', steps: 20 })]);
+  let farthest = 0;
+  room.listen({ onState: () => (farthest = Math.max(farthest, apart(room))) });
+  await until(() => prompts.length >= 2, 'the think after the refusal');
+  assert.match(JSON.parse(prompts[1]!).lastActionResult, /could not do it, that is more than one face away from your partner/);
+  // One face over is fine. From there the far face is a single edge away, and still refused.
+  await until(() => room.state.players.in.pose.face === 2, 'the walk to face 2');
+  await until(() => prompts.length >= 5, 'the thinks after both refusals');
+  assert.match(JSON.parse(prompts[3]!).lastActionResult, /go_face.*more than one face away/);
+  assert.match(JSON.parse(prompts[4]!).lastActionResult, /move.*more than one face away/);
+  assert.equal(room.state.players.in.pose.face, 2);
+  assert.equal(farthest, 1);
+});
+
+test('the leash: if the human slipped away unheard, the AI turns back at the first silent face', async () => {
+  const { room, prompts } = setup('out', [say(null, { type: 'go_face', face: 2 }), say(null), say(null, { type: 'go_face', face: 6 })], { minThinkMs: 150 });
+  await until(() => room.state.players.in.pose.face === 2 && prompts.length >= 2, 'the walk to face 2');
+  // Face 1 to face 5: both are next to face 2, so the voice stays faint and the AI cannot tell.
+  walk(room, 'out', { type: 'go_face', face: 5 });
+  const faces: number[] = [];
+  room.listen({ onState: () => faces.push(room.state.players.in.pose.face) });
+  room.say('out', 'anything on face 6?'); // wakes the brain, which now asks for face 6
+  await until(() => faces.includes(6), 'the AI to try face 6');
+  await until(() => room.state.players.in.pose.face === 2, 'the AI to come back');
+  assert.equal(faces.filter((f) => f === 6).length, 1); // one step onto the silent face, then straight back
+  await until(() => prompts.length >= 4, 'the think after turning back');
+  assert.match(prompts.slice(3).map((p) => JSON.parse(p).lastActionResult).join(' '), /out of earshot/);
+  assert.equal(apart(room), 1);
+});
+
+test('carrying an item lifts the leash: the puzzle needs the two apart', async () => {
+  const { room } = setup('in', [say(null, { type: 'step_on', object: 'rose' }), say(null, { type: 'pick_up' }), say(null, { type: 'go_face', face: 3 })]);
+  await until(() => room.state.players.out.pose.face === 3, 'the AI to carry the rose to the far face');
+  assert.equal(room.state.players.out.carrying, 'rose');
+  assert.equal(apart(room), 2);
+});
+
+test('after the human idles, the AI suggests the next goal in one line, once', async () => {
+  // A brain that never speaks: the body still says the hint.
+  const { room, prompts } = setup('out', [], { idleHintMs: 120, minThinkMs: 30 });
+  await sleep(60);
+  assert.equal(room.chat.length, 0);
+  room.say('out', 'hm'); // the human is not idle yet: the clock starts again
+  await sleep(90);
+  assert.equal(room.chat.filter((m) => m.isAI).length, 0);
+  const hint = idleHint({ kind: 'puzzle', face: 1, here: true, inReach: true });
+  await until(() => room.chat.some((m) => m.isAI && m.text === hint), 'the idle hint');
+  const turn = JSON.parse(prompts.at(-1)!);
+  assert.equal(turn.partnerIdle, true);
+  assert.deepEqual([turn.goal.kind, turn.goal.face], ['puzzle', 1]);
+  assert.equal(JSON.parse(prompts[0]!).partnerIdle, false);
+  await sleep(300);
+  assert.equal(room.chat.filter((m) => m.isAI).length, 1); // not repeated while the human stays idle
+  room.move('out', 1, 0); // a move counts as activity too
+  await until(() => room.chat.filter((m) => m.isAI).length === 2, 'a second hint after a second idle spell');
+
+  // A brain that does answer the idle turn is not talked over.
+  const b = setup('out', [say('hello'), say('Shall we try the plate?')], { idleHintMs: 80, minThinkMs: 30 });
+  await until(() => b.room.chat.length === 2, 'the brain to answer the idle turn');
+  await sleep(100);
+  assert.deepEqual(b.room.chat.map((m) => m.text), ['hello', 'Shall we try the plate?']);
+});
+
+test('the turn tells the brain its goal, and nothing about the other side', async () => {
+  const { prompts } = setup('out', []);
+  await until(() => prompts.length === 1, 'first think');
+  const turn = JSON.parse(prompts[0]!);
+  assert.equal(turn.goal.kind, 'puzzle');
+  assert.match(turn.goal.advice, /not solved yet/);
+  assert.match(systemPrompt(), /Stay within one face of your partner/);
+  for (const hidden of ['"door"', '"crystal"', 'partnerFace', '"pose"', '"x"', '"y"']) assert.ok(!prompts[0]!.includes(hidden), hidden);
+});

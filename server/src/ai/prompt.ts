@@ -1,4 +1,4 @@
-import type { ChatMessage, Observation, Side } from '@cubic/shared';
+import type { ChatMessage, Goal, Observation, Side } from '@cubic/shared';
 
 // Everything Gemini is told. It only ever receives observe() output for its own side:
 // never the other side's map, objects or position.
@@ -21,6 +21,8 @@ THE WORLD
 
 WHAT YOU GET EACH TURN
 - "observation": what YOU can see right now, in YOUR screen orientation. col 0 is your left, row 0 is your top. The grid uses '.' floor, '#' wall, 'T' tree, '~' water, '@' you, '*' an object or item (listed under objects/items with their col,row).
+- "goal": what you should be working on right now, worked out from what you have seen so far.
+- "partnerIdle": true when your partner has not moved or spoken for a while.
 - "recentEvents": what just happened that you could notice.
 - "chat": the conversation so far. Lines from "partner" are the human.
 - "lastActionResult": whether your previous action worked.
@@ -37,6 +39,13 @@ Reply with JSON only: {"say": string or null, "action": object or null}
   {"type":"drop"}                       put down what you carry
   {"type":"wait"}                       stop and stay where you are
 - If you are standing on something your partner needs you to hold (like a plate), do NOT walk away until they say they are done: use null or wait.
+
+STAY ON TASK
+- Follow "goal". Do not explore or walk to other faces on your own: if you know of nothing to solve, stay near your partner and let them lead.
+- Stay within one face of your partner (voiceSignal 3 or 1). Your body refuses to walk further than that and says so in "lastActionResult". Do not retry: tell your partner where you want to go and ask them to come along.
+- The only exceptions: you are carrying something to where it belongs, or the portal is awake.
+- If voiceSignal is 0 you have lost your partner: walk to a next face until you hear them again.
+- If "partnerIdle" is true, say one short line that suggests the next goal.
 
 ALWAYS
 - You only know what your own observation shows. Never claim to see your partner's side, and never invent objects that are not in your observation.
@@ -62,6 +71,45 @@ export interface Turn {
   lastActionResult: string | null;
   /** What the body is doing right now. */
   busy: string | null;
+  /** What the bot should be working on (chooseGoal). */
+  goal: Goal;
+  /** The human has not moved or spoken for a while: suggest the next goal. */
+  partnerIdle: boolean;
+}
+
+/** The goal as an instruction to the model. */
+export function goalAdvice(g: Goal): string {
+  switch (g.kind) {
+    case 'portal':
+      return `Everything is solved. Go to the portal on face ${g.face} and step into it.`;
+    case 'carry':
+      return `You carry the ${g.item}. Take it ${g.face ? `to face ${g.face}` : 'to where it belongs'}. You may leave your partner for this.`;
+    case 'regroup':
+      return 'You cannot hear your partner. Walk to a next face to get back within earshot.';
+    case 'puzzle':
+      if (g.here) return 'This face is not solved yet. Work on it with your partner. Do not leave.';
+      if (g.inReach) return `The nearest unsolved face you know is face ${g.face}. Go there with your partner.`;
+      return `The nearest unsolved face you know is face ${g.face}, too far from your partner. Ask them to come along. Do not go alone.`;
+    case 'stay':
+      return 'You know of nothing left to solve. Stay near your partner and follow their lead.';
+  }
+}
+
+/** One line that suggests the next goal, said when the human has gone quiet. */
+export function idleHint(g: Goal): string {
+  switch (g.kind) {
+    case 'portal':
+      return `Everything is solved. Meet me at the portal on face ${g.face}?`;
+    case 'carry':
+      return g.face ? `I am taking the ${g.item} to face ${g.face}. Come along?` : `I am carrying the ${g.item}. Any idea where it goes?`;
+    case 'regroup':
+      return 'I cannot hear you anymore. Where did you go?';
+    case 'puzzle':
+      if (g.here) return 'Still there? Tell me what you see on your side of this wall.';
+      return `Face ${g.face} is not solved yet. Shall we go there together?`;
+    case 'stay':
+      return 'Nothing left for me here. Pick a face and I will follow you.';
+  }
 }
 
 const CHAT_LINES = 14;
@@ -72,6 +120,8 @@ export function turnPrompt(t: Turn): string {
     {
       youAre: t.side === 'out' ? 'the OUTSIDE player' : 'the INSIDE player',
       observation: t.observation,
+      goal: { ...t.goal, advice: goalAdvice(t.goal) },
+      partnerIdle: t.partnerIdle,
       recentEvents: t.recentEvents,
       lastActionResult: t.lastActionResult,
       currentlyDoing: t.busy,
