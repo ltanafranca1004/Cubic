@@ -1,0 +1,22 @@
+# Backend on Render (free web service). Render injects PORT itself.
+services:
+  - type: web
+    name: cubic-server
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start -w server
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: CLIENT_ORIGIN # comma-separated list of allowed origins, e.g. the Vercel URL
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        sync: false
+      - key: ELEVENLABS_API_KEY
+        sync: false
+      - key: ELEVENLABS_VOICE_ID
+        sync: false

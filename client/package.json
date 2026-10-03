@@ -1,0 +1,20 @@
+{
+  "name": "@cubic/client",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit -p . && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@cubic/shared": "*",
+    "phaser": "^4.2.1",
+    "socket.io-client": "^4.8.4"
+  },
+  "devDependencies": {
+    "vite": "^8.3.2"
+  }
+}
