@@ -49,6 +49,7 @@ export interface RoomListener {
   onState?(update: StateUpdate): void;
   onChat?(msg: ChatMessage): void;
   onRoom?(info: RoomInfo): void;
+  onTyping?(side: Side, on: boolean): void;
   onClosed?(): void;
 }
 
@@ -214,6 +215,11 @@ export class Room {
     if (this.chat.length > CHAT_HISTORY) this.chat.shift();
     for (const l of this.listeners) l.onChat?.(msg);
     return msg;
+  }
+
+  /** The AI partner is thinking (typing indicator). */
+  setTyping(side: Side, on: boolean): void {
+    for (const l of this.listeners) l.onTyping?.(side, on);
   }
 
   /** New game in the same room (after a win). */

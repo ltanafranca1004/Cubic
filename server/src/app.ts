@@ -60,6 +60,7 @@ export function createApp(opts: AppOptions = {}): App {
       onState: (u) => io.to(room.code).emit('state', u),
       onChat: (m) => io.to(room.code).emit('chat', m),
       onRoom: (r) => io.to(room.code).emit('room', r),
+      onTyping: (from, on) => io.to(room.code).emit('typing', { from, on }),
     });
   }
 
