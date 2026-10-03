@@ -8,6 +8,8 @@ import {
   type DevCommand,
   type GameEvent,
   type GameState,
+  type MemberInfo,
+  type Role,
   type RoomInfo,
   type Seat,
   type ServerInfo,
@@ -58,6 +60,11 @@ export class Net {
   online = false;
   info: ServerInfo = { aiAvailable: false, ttsAvailable: false, ttsMode: 'browser' };
   code: string | null = null;
+  /** Our member id in the room: who we are in `room.members`. */
+  id: number | null = null;
+  /** Host or guest. Follows the room: the guest is promoted when the host leaves. */
+  role: Role | null = null;
+  /** Null in the lobby until we pick a side. */
   side: Side | null = null;
   room: RoomInfo | null = null;
   chat: ChatMessage[] = [];
@@ -84,7 +91,16 @@ export class Net {
       this.code = 'MOCK';
       this.state = createGame(Date.now());
       this.state.players.out.connected = this.state.players.in.connected = true;
-      this.room = { code: 'MOCK', mode: 'friend', seats: { out: { taken: true, connected: true, isAI: false }, in: { taken: true, connected: true, isAI: false } } };
+      this.id = 1;
+      this.role = 'host';
+      const member = (id: number, side: Side): MemberInfo => ({ id, connected: true, isAI: false, side, ready: true });
+      this.room = {
+        code: 'MOCK',
+        mode: 'friend',
+        phase: 'playing',
+        seats: { out: { taken: true, connected: true, isAI: false }, in: { taken: true, connected: true, isAI: false } },
+        members: { host: member(1, this.offlineSide), guest: member(2, this.offlineSide === 'out' ? 'in' : 'out') },
+      };
       this.h.onChange();
       return;
     }
@@ -105,11 +121,12 @@ export class Net {
     });
     socket.on('room', (room) => {
       this.room = room;
+      this.sync();
       this.h.onChange();
     });
     socket.on('state', (u) => {
-      if (!this.side) return;
       this.server = u.state;
+      if (!this.side) return;
       const ack = u.acks[this.side];
       this.pending = this.pending.filter((p) => p.seq > ack);
       this.repredict();
@@ -142,6 +159,19 @@ export class Net {
     this.state = s;
   }
 
+  /** Find ourselves in the room: the lobby decides our role and side, not us. */
+  private sync(): void {
+    const m = this.room?.members;
+    const role: Role | null = this.id === null ? null : m?.host?.id === this.id ? 'host' : m?.guest?.id === this.id ? 'guest' : null;
+    const side = role ? (m![role]!.side ?? null) : null;
+    this.role = role;
+    if (side === this.side) return;
+    this.side = side;
+    this.pending = [];
+    if (side) this.repredict();
+    else this.state = null;
+  }
+
   private adopt(res: ({ ok: true } & Seat) | { ok: false; error: string }): void {
     this.busy = false;
     if (!res.ok) {
@@ -151,12 +181,14 @@ export class Net {
     }
     this.error = null;
     this.code = res.code;
-    this.side = res.side;
+    this.id = res.id;
     this.room = res.room;
     this.chat = res.chat;
     this.server = res.state;
     this.pending = [];
-    this.repredict();
+    this.side = null;
+    this.state = null;
+    this.sync();
     // sessionStorage, not localStorage: two windows of one browser must be two players.
     try {
       sessionStorage.setItem(SEAT_KEY, JSON.stringify({ code: res.code, token: res.token }));
@@ -188,7 +220,7 @@ export class Net {
     } catch {
       // ignore
     }
-    this.code = this.side = this.room = this.state = this.server = null;
+    this.code = this.id = this.role = this.side = this.room = this.state = this.server = null;
     this.chat = [];
     this.pending = [];
     this.h.onChange();
@@ -221,6 +253,31 @@ export class Net {
 
   playWithAI(side: Side): void {
     if (this.begin()) this.socket!.emit('room:createAI', { side }, (res) => this.adopt(res));
+  }
+
+  /** A lobby action. The server owns the rules: on a refusal we only show its reason. */
+  private lobby(send: (ack: (res: { ok: true } | { ok: false; error: string }) => void) => void): void {
+    if (!this.socket) return;
+    this.error = null;
+    send((res) => {
+      this.error = res.ok ? null : res.error;
+      this.h.onChange();
+    });
+  }
+
+  /** Lobby: take a side, or null to step back to the middle. */
+  pickSide(side: Side | null): void {
+    this.lobby((ack) => this.socket!.emit('lobby:pick', { side }, ack));
+  }
+
+  /** Lobby, guest: ready up or take it back. */
+  setReady(ready: boolean): void {
+    this.lobby((ack) => this.socket!.emit('lobby:ready', { ready }, ack));
+  }
+
+  /** Lobby, host: start the game. */
+  startGame(): void {
+    this.lobby((ack) => this.socket!.emit('lobby:start', ack));
   }
 
   leave(): void {

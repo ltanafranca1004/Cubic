@@ -118,23 +118,30 @@ export function createApp(opts: AppOptions = {}): App {
 
   io.on('connection', (socket: Sock) => {
     let room: Room | null = null;
-    let side: Side | null = null;
+    /** Our member id in `room`. The side comes from the room: it is picked in the lobby. */
+    let me: number | null = null;
+    const side = (): Side | null => (room && me !== null ? room.sideOf(me) : null);
 
     socket.emit('info', info());
 
-    const attach = (r: Room, s: Side) => {
-      room = r;
-      side = s;
+    /** Hear the room's broadcasts. Call before taking a place, so the first ones arrive. */
+    const enter = (r: Room) => {
+      wire(r);
       socket.join(r.code);
-      socket.data = { code: r.code, side: s };
+    };
+    const attach = (r: Room, seat: Seat): Seat => {
+      room = r;
+      me = seat.id;
+      socket.data = { code: r.code, id: seat.id };
+      return seat;
     };
     const detach = (forGood: boolean) => {
-      if (!room || !side) return;
+      if (!room || me === null) return;
       socket.leave(room.code);
-      if (forGood) room.leave(side);
-      else room.drop(side);
+      if (forGood) room.leave(me);
+      else room.drop(me);
       room = null;
-      side = null;
+      me = null;
     };
     /** The other player's socket, if connected. */
     const partner = () => {
@@ -142,12 +149,12 @@ export function createApp(opts: AppOptions = {}): App {
       for (const id of io.sockets.adapter.rooms.get(room.code) ?? []) if (id !== socket.id) return io.sockets.sockets.get(id) ?? null;
       return null;
     };
-    /** Both humans are here: tell them to (re)start the voice call. */
+    /** Both humans are in the game: tell them to (re)start the voice call. */
     const voiceReady = () => {
       const r = room;
       // After the join/rejoin ack, so the newcomer knows its side before the call starts.
       setTimeout(() => {
-        if (r && r === room && r.mode === 'friend' && r.isConnected('out') && r.isConnected('in') && partner()) io.to(r.code).emit('voice:ready');
+        if (r && r === room && r.mode === 'friend' && r.phase === 'playing' && r.isConnected('out') && r.isConnected('in') && partner()) io.to(r.code).emit('voice:ready');
       }, 50);
     };
     const safe = (ack: unknown, fn: () => Seat) => {
@@ -158,14 +165,24 @@ export function createApp(opts: AppOptions = {}): App {
         (ack as Ack<Seat>)({ ok: false, error: e instanceof Error ? e.message : 'Something went wrong' });
       }
     };
+    /** A lobby action: the rules live in Room and it throws the reason when one is broken. */
+    const lobby = (ack: unknown, fn: (r: Room, id: number) => void) => {
+      const reply = typeof ack === 'function' ? (ack as Ack<object>) : () => {};
+      try {
+        if (!room || me === null) throw new Error('You are not in a room.');
+        fn(room, me);
+        reply({ ok: true });
+      } catch (e) {
+        reply({ ok: false, error: e instanceof Error ? e.message : 'Something went wrong' });
+      }
+    };
 
     socket.on('room:create', (ack) =>
       safe(ack, () => {
         detach(true);
         const r = rooms.create('friend');
-        wire(r);
-        attach(r, 'out');
-        return r.sit('out');
+        enter(r);
+        return attach(r, r.join());
       }),
     );
 
@@ -173,12 +190,10 @@ export function createApp(opts: AppOptions = {}): App {
       safe(ack, () => {
         const r = rooms.get(msg?.code);
         if (!r) throw new Error('Room not found. Check the code.');
-        const free = r.mode === 'friend' ? r.freeSide() : null;
-        if (!free) throw new Error('That room is full.');
+        if (r.mode !== 'friend' || r.isFull()) throw new Error('That room is full.');
         detach(true);
-        wire(r);
-        attach(r, free);
-        const seat = r.sit(free);
+        enter(r);
+        const seat = attach(r, r.join());
         voiceReady();
         return seat;
       }),
@@ -190,9 +205,8 @@ export function createApp(opts: AppOptions = {}): App {
         const human: Side = msg?.side === 'in' ? 'in' : 'out';
         detach(true);
         const r = rooms.create('ai');
-        wire(r);
-        attach(r, human);
-        const seat = r.sit(human);
+        enter(r);
+        const seat = attach(r, r.sit(human));
         opts.onAiRoom(r, human);
         return { ...seat, room: r.info(), state: r.state };
       }),
@@ -201,21 +215,20 @@ export function createApp(opts: AppOptions = {}): App {
     socket.on('room:rejoin', (msg, ack) =>
       safe(ack, () => {
         const r = rooms.get(msg?.code);
-        const s = r && typeof msg?.token === 'string' ? r.sideOfToken(msg.token) : null;
-        if (!r || !s) throw new Error('That room is gone.');
-        // A newer tab/socket replaces the old one for this seat.
-        for (const id of io.sockets.adapter.rooms.get(r.code) ?? []) {
-          const other = io.sockets.sockets.get(id);
-          if (other && other.id !== socket.id && other.data?.side === s) {
+        const id = r && typeof msg?.token === 'string' ? r.idOfToken(msg.token) : null;
+        if (!r || id === null) throw new Error('That room is gone.');
+        // A newer tab/socket replaces the old one for this place.
+        for (const sid of io.sockets.adapter.rooms.get(r.code) ?? []) {
+          const other = io.sockets.sockets.get(sid);
+          if (other && other.id !== socket.id && other.data?.id === id) {
             other.data.replaced = true;
             other.disconnect(true);
           }
         }
-        if (room === r && side === s) return r.resume(s);
+        if (room === r && me === id) return r.resume(id);
         detach(true);
-        wire(r);
-        attach(r, s);
-        const seat = r.resume(s);
+        enter(r);
+        const seat = attach(r, r.resume(id));
         voiceReady();
         return seat;
       }),
@@ -224,14 +237,26 @@ export function createApp(opts: AppOptions = {}): App {
     socket.on('room:leave', () => detach(true));
     socket.on('room:restart', () => room?.restart());
 
+    socket.on('lobby:pick', (msg, ack) => lobby(ack, (r, id) => r.pick(id, msg?.side ?? null)));
+    socket.on('lobby:ready', (msg, ack) => lobby(ack, (r, id) => r.setReady(id, !!msg?.ready)));
+    socket.on('lobby:start', (ack) =>
+      lobby(ack, (r, id) => {
+        r.start(id);
+        voiceReady();
+      }),
+    );
+
     socket.on('move', (msg) => {
-      if (room && side && msg) room.move(side, Number(msg.dx), Number(msg.dy), Number(msg.seq) || 0);
+      const s = side();
+      if (room && s && msg) room.move(s, Number(msg.dx), Number(msg.dy), Number(msg.seq) || 0);
     });
     socket.on('interact', (msg) => {
-      if (room && side) room.interact(side, Number(msg?.seq) || 0);
+      const s = side();
+      if (room && s) room.interact(s, Number(msg?.seq) || 0);
     });
     socket.on('chat', (msg) => {
-      if (room && side) room.say(side, msg?.text);
+      const s = side();
+      if (room && s) room.say(s, msg?.text);
     });
 
     socket.on('voice:signal', (msg) => partner()?.emit('voice:signal', { data: msg?.data }));

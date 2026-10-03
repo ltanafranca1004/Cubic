@@ -3,7 +3,7 @@ import { audio, musicForScreen } from './audio/AudioManager';
 import { createGameView, type GameHandle } from './game';
 import { playEvent } from './game/sfx';
 import { Net } from './net/client';
-import type { HudState, UIActions, UIHandle, UIHost, UIState } from './ui/hooks';
+import type { HudState, LobbyState, UIActions, UIHandle, UIHost, UIState } from './ui/hooks';
 import { Voice } from './voice/voice';
 
 // Glue: Net (server + prediction) -> UIState for the UI and GameState for the Phaser view;
@@ -41,8 +41,6 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
   root.appendChild(gameEl);
 
   let partnerTyping = false;
-  /** Both seats have been taken at some point: we are past the lobby. */
-  let started = false;
   let handle: UIHandle | null = null;
   let game: GameHandle | null = null;
 
@@ -68,9 +66,11 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
     offlineSide,
   );
 
+  /** The host has started the game (or it is an AI game): we are past the lobby. */
+  const playing = () => net.room?.phase === 'playing';
   /** How well the players hear each other right now (0 when there is no partner). */
   const proximity = () => {
-    if (!net.state || !net.side || !started) return 0;
+    if (!net.state || !net.side || !playing()) return 0;
     const partner = net.room?.seats[net.side === 'out' ? 'in' : 'out'];
     return partner?.connected ? voiceMix(net.state).gain : 0;
   };
@@ -89,10 +89,10 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
     onCreateRoom: () => net.createRoom(),
     onJoinRoom: (code) => net.joinRoom(code),
     onPlayWithAI: (side) => net.playWithAI(side),
-    onLeaveRoom: () => {
-      started = false;
-      net.leave();
-    },
+    onPickSide: (side) => net.pickSide(side),
+    onSetReady: (ready) => net.setReady(ready),
+    onStartGame: () => net.startGame(),
+    onLeaveRoom: () => net.leave(),
     onSendChat: (text) => net.sendChat(text),
     onEnableMic: () => void voice.enableMic(),
     onSetMuted: (muted) => voice.setMuted(muted),
@@ -104,31 +104,35 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
   /** The side we draw: our own, unless the dev tools show the other one. */
   const viewSide = () => (net.side ? (devHooks.viewSide ?? net.side) : null);
 
+  /** The lobby as the UI shows it. The server decides everything; this only reads it. */
+  function lobbyOf(): LobbyState | null {
+    const room = net.room;
+    if (!room || !net.role || room.phase !== 'lobby' || !room.members.host) return null;
+    const { host, guest } = room.members;
+    const blocker = !guest?.connected ? 'Waiting for a second player.' : !host.side || !guest.side ? 'Both players need to pick a side.' : !guest.ready ? 'Waiting for P2 to ready up.' : null;
+    return {
+      role: net.role,
+      host: { connected: host.connected, isAI: host.isAI, side: host.side, ready: host.ready },
+      guest: guest ? { connected: guest.connected, isAI: guest.isAI, side: guest.side, ready: guest.ready } : null,
+      startBlocker: blocker,
+    };
+  }
+
   function uiState(): UIState {
-    const seats = net.room?.seats;
-    const full = !!seats && seats.out.taken && seats.in.taken;
-    if (full) started = true;
-    if (!net.side) started = false;
-    const partner = net.side ? seats?.[net.side === 'out' ? 'in' : 'out'] : undefined;
-    const status: UIState['status'] = net.busy
-      ? 'connecting'
-      : !net.side
-        ? 'idle'
-        : partner?.connected
-          ? 'partner-joined'
-          : started
-            ? 'partner-left'
-            : 'waiting';
-    const inGame = !!net.side && !!net.state && started;
+    const room = net.room;
+    const partner = net.role ? room?.members[net.role === 'host' ? 'guest' : 'host'] : undefined;
+    const status: UIState['status'] = net.busy ? 'connecting' : !net.role ? 'idle' : partner?.connected ? 'partner-joined' : partner || playing() ? 'partner-left' : 'waiting';
+    const inGame = !!net.side && !!net.state && playing();
     return {
       screen: inGame ? 'game' : 'lobby',
       online: net.online,
       status,
       error: net.error,
       roomCode: net.code,
-      mode: net.room?.mode ?? null,
+      mode: room?.mode ?? null,
       side: viewSide(),
       aiAvailable: net.info.aiAvailable,
+      lobby: lobbyOf(),
       chat: net.chat,
       partnerTyping,
       hud: inGame ? hudOf(net.state!, viewSide()!, Date.now()) : null,
@@ -142,13 +146,13 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
     gameEl.style.visibility = playing ? 'visible' : 'hidden';
     game?.setState(playing ? net.state : null, viewSide() ?? 'out');
     // Music follows the screen: menu, then lobby once in a room, then the side being shown.
-    audio.playMusic(musicForScreen(playing ? 'game' : net.side ? 'lobby' : 'menu', viewSide()));
+    audio.playMusic(musicForScreen(playing ? 'game' : net.code ? 'lobby' : 'menu', viewSide()));
     handle?.update(state);
   }
 
   game = createGameView(gameEl, {
-    onMove: (dx, dy) => started && net.move(dx, dy),
-    onInteract: () => started && net.interact(),
+    onMove: (dx, dy) => playing() && net.move(dx, dy),
+    onInteract: () => playing() && net.interact(),
     onTalk: (down) => voice.setTalkKey(down),
   });
   handle = ui.mount(root, actions);

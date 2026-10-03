@@ -5,8 +5,8 @@ import { defaultEnv, pathTo, type ChatMessage, type ClientToServer, type GameEve
 import { createApp, type App } from '../src/app';
 import { LIMITS } from '../src/rooms';
 
-// Scripted two-client game over real sockets: rooms, codes, chat, validation, reconnect,
-// the example puzzle and the portal win.
+// Scripted two-client game over real sockets: rooms, codes, the lobby (pick sides, ready,
+// start), chat, validation, reconnect, the example puzzle and the portal win.
 
 type Sock = Socket<ServerToClient, ClientToServer>;
 
@@ -67,8 +67,21 @@ class Client {
   rejoin = (code: string, token: string) =>
     new Promise<Seat>((ok, no) => this.sock.emit('room:rejoin', { code, token }, (r) => { try { ok(this.adopt(r)); } catch (e) { no(e); } }));
 
+  private lobby = (send: (ack: (r: { ok: true } | { ok: false; error: string }) => void) => void) =>
+    new Promise<void>((ok, no) => send((r) => (r.ok ? ok() : no(new Error(r.error)))));
+  pick = (side: Side | null) => this.lobby((ack) => this.sock.emit('lobby:pick', { side }, ack));
+  ready = (ready: boolean) => this.lobby((ack) => this.sock.emit('lobby:ready', { ready }, ack));
+  start = () => this.lobby((ack) => this.sock.emit('lobby:start', ack));
+
+  /** This client's own entry in the latest room info. */
+  get member() {
+    const m = this.room?.members;
+    return m?.host?.id === this.seat.id ? m.host : m?.guest?.id === this.seat.id ? m.guest : null;
+  }
   get side(): Side {
-    return this.seat.side;
+    const side = this.member?.side ?? this.seat.side;
+    assert.ok(side, 'this client has no side yet');
+    return side;
   }
   get pose() {
     return this.last.state.players[this.side].pose;
@@ -136,13 +149,31 @@ test('two clients play a whole game online', async () => {
   // --- rooms and codes
   const seatA = await a.create();
   assert.match(seatA.code, /^[A-Z]{4}$/);
-  assert.equal(seatA.side, 'out');
-  assert.equal(seatA.room.seats.in.taken, false);
+  assert.deepEqual([seatA.role, seatA.side, seatA.room.phase], ['host', null, 'lobby']);
+  assert.equal(seatA.room.members.guest, null);
   await assert.rejects(b.join('ZZZZ'), /not found/i);
   const seatB = await b.join(seatA.code.toLowerCase()); // codes are case-insensitive
-  assert.equal(seatB.side, 'in');
-  await a.until(() => !!a.room?.seats.in.connected, 'partner joined');
+  assert.deepEqual([seatB.role, seatB.side], ['guest', null]);
+  await a.until(() => !!a.room?.members.guest?.connected, 'partner joined');
   await assert.rejects(client().join(seatA.code), /full/i);
+
+  // --- the lobby: nothing moves until both picked a side, the guest is ready and the host starts
+  a.sock.emit('move', { dx: 0, dy: 1, seq: 0 });
+  await assert.rejects(a.start(), /pick a side/i);
+  await assert.rejects(b.ready(true), /pick a side first/i);
+  await a.pick('out');
+  await assert.rejects(b.pick('out'), /already picked/i);
+  await b.pick('in');
+  await assert.rejects(a.start(), /not ready/i);
+  await assert.rejects(b.start(), /only the host/i);
+  await b.ready(true);
+  await a.until(() => !!a.room?.members.guest?.ready, 'guest ready reaches the host');
+  await a.start();
+  await b.until(() => b.room?.phase === 'playing', 'the game starts for both');
+  await a.until(() => a.room?.phase === 'playing', 'the game starts for the host');
+  assert.deepEqual([a.side, b.side], ['out', 'in']);
+  assert.equal(a.last.state.players.out.steps, 0); // the lobby move was ignored
+  await assert.rejects(a.pick('in'), /already started/i);
 
   // --- chat, both ways, rate limited and trimmed
   a.sock.emit('chat', { text: '  hello   inside  ' });
