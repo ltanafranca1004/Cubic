@@ -1,5 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
-import { REPLY_SCHEMA, SYSTEM_PROMPT } from './prompt';
+import { REPLY_SCHEMA, systemPrompt, type Persona } from './prompt';
 
 // The only place that talks to Gemini. Key and model come from the environment and stay
 // on the server.
@@ -15,9 +15,15 @@ export interface Brain {
   think(turn: string, signal: AbortSignal): Promise<BrainReply>;
 }
 
-export const DEFAULT_GEMINI_MODEL = 'gemini-flash-latest';
+/**
+ * Stable Flash model with a free tier (https://ai.google.dev/gemini-api/docs/models,
+ * https://ai.google.dev/gemini-api/docs/pricing). Newer Flash models work too but answer
+ * several seconds slower; override with GEMINI_MODEL.
+ */
+export const DEFAULT_GEMINI_MODEL = 'gemini-3.5-flash';
 
-export function geminiBrain(apiKey: string, model: string = DEFAULT_GEMINI_MODEL): Brain {
+export function geminiBrain(apiKey: string, model: string = DEFAULT_GEMINI_MODEL, persona: Persona = 'default'): Brain {
+  const system = systemPrompt(persona);
   const ai = new GoogleGenAI({ apiKey });
   return {
     async think(turn, signal) {
@@ -25,11 +31,12 @@ export function geminiBrain(apiKey: string, model: string = DEFAULT_GEMINI_MODEL
         model,
         contents: turn,
         config: {
-          systemInstruction: SYSTEM_PROMPT,
+          systemInstruction: system,
           responseMimeType: 'application/json',
           responseJsonSchema: REPLY_SCHEMA,
           temperature: 0.8,
           maxOutputTokens: 1024,
+          thinkingConfig: { thinkingBudget: 0 }, // a walking partner must answer fast
           abortSignal: signal,
         },
       });
