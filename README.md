@@ -276,8 +276,10 @@ Docs: [Open Relay](https://www.metered.ca/tools/openrelay/),
    root; `vercel.json` sets install (`npm install`), build (`npm run build -w client`),
    output (`client/dist`) and the SPA fallback.
 2. Add the env var `VITE_SERVER_URL` = the Render URL (no trailing slash). It is read at
-   build time, so redeploy after changing it.
-3. Deploy and note the URL, e.g. `https://cubic.vercel.app`.
+   build time, so redeploy after changing it. A Vercel build without it fails on purpose
+   (`client/vite.config.ts`).
+3. Settings > Build and Deployment > Node.js Version: 22.x, the same major as Render.
+4. Deploy and note the URL, e.g. `https://cubic.vercel.app`.
 
 ### 3. Connect them
 
