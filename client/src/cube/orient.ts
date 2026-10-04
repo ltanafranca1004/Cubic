@@ -1,4 +1,4 @@
-import { NORMALS, compassDrift, faceDistance, neg, neighbours, upsOn, viewRight, type FaceId, type Side, type Vec } from '@cubic/shared';
+import { NORMALS, compassDrift, neg, neighbours, upsOn, viewRight, type FaceId, type Side, type Vec } from '@cubic/shared';
 import { axisAngle, fromRows, mul, rotAxis, rotX, rotY, transpose, type Mat3 } from './mat';
 import type { CubeMapDir } from './api';
 
@@ -89,28 +89,6 @@ export function facing(view: Mat3): FaceId {
   return best;
 }
 
-export type Where = 'front' | 'back' | CubeMapDir;
-
-/** Where another face is, seen from a pose: in front, off one screen edge, or behind. */
-export function whereIs(side: Side, face: FaceId, up: Vec, other: FaceId): Where {
-  const d = faceDistance(face, other);
-  if (d === 0) return 'front';
-  if (d === 2) return 'back';
-  const n = neighbours({ side, face, up });
-  return (['up', 'down', 'left', 'right'] as const).find((dir) => n[dir] === other)!;
-}
 
 /** A small fixed tilt, so the faces above and to the right of the front face show too. */
 export const HUD_TILT: Mat3 = mul(rotX(0.32), rotY(-0.36));
-/** The screen directions whose neighbour face the tilt leaves in view. */
-export const TILT_SHOWS: readonly Where[] = ['front', 'up', 'right'];
-
-/**
- * How to point at the partner: a marker on their face when the HUD cube shows it, and the
- * edge to walk off for the shortest way there (null when they are on your face). Behind
- * the cube every edge is two faces away, so it settles on the left one.
- */
-export function partnerHint(side: Side, face: FaceId, up: Vec, partner: FaceId): { where: Where; shown: boolean; edge: CubeMapDir | null } {
-  const where = whereIs(side, face, up, partner);
-  return { where, shown: TILT_SHOWS.includes(where), edge: where === 'front' ? null : where === 'back' ? 'left' : where };
-}

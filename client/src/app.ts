@@ -53,7 +53,6 @@ export function hudOf(state: GameState, me: Side, now: number): HudState {
     elapsedMs: Math.max(0, (state.wonAt ?? now) - state.startedAt),
     won: state.wonAt !== null,
     carrying: carried ? { id: carried.id, kind: carried.kind } : null,
-    partnerFace: state.players[me === 'out' ? 'in' : 'out'].pose.face,
   };
 }
 

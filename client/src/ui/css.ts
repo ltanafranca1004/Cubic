@@ -214,8 +214,7 @@ ${ICONS.map((name, i) => `.cu-ico.${name} { background-position: -${i * 16}u 0; 
 .cu-obj { grid-area: obj; margin: 0; text-transform: none; min-height: 26t; }
 /* the cube (client/src/cube/hud.ts): a canvas in art pixels and a chip on each edge for the
    face that lies that way. The pips (one per puzzle: its face's colour once solved) are in .cu-prog. */
-.cu-cube { grid-area: cube; --pc: var(--in); align-self: center; }
-.cu-cube[data-partner="out"] { --pc: var(--out); }
+.cu-cube { grid-area: cube; align-self: center; }
 .cu-cube-box { display: grid; grid-template-columns: max(11u, 11t) 56u max(11u, 11t); grid-template-rows: max(11u, 11t) 56u max(11u, 11t); justify-items: center; align-items: center; }
 .cu-cube-c { grid-column: 2; grid-row: 2; width: 56u; height: 56u; }
 .cu-cube-e { position: relative; }
@@ -223,8 +222,6 @@ ${ICONS.map((name, i) => `.cu-ico.${name} { background-position: -${i * 16}u 0; 
 .cu-cube-e.down { grid-column: 2; grid-row: 3; }
 .cu-cube-e.left { grid-column: 1; grid-row: 2; }
 .cu-cube-e.right { grid-column: 3; grid-row: 2; }
-.cu-cube-e.partner, .cu[data-side="in"] .cu-cube-e.partner { outline: 2u solid var(--pc); animation: cu-way 0.84s steps(2) infinite; z-index: 1; }
-@keyframes cu-way { 50% { outline-color: ${ROLE.ink}; } }
 .cu-pips { display: flex; gap: 2u; }
 .cu-pips > i { position: relative; width: 9u; height: 8u; background: ${C.mist}; color: ${ROLE.ink}; outline: 1u solid ${ROLE.ink}; }
 .cu-pips .cu-tick { position: absolute; right: 1u; top: 1u; }
