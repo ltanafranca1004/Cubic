@@ -34,7 +34,7 @@ export const DEFAULT_SETTINGS: Settings = {
   voiceVolume: 1,
   micMuted: false,
   reduceMotion: false,
-  micMode: 'open',
+  micMode: 'ptt',
   textSize: 'm',
   highContrast: false,
   screenShake: true,
@@ -45,6 +45,8 @@ export const DEFAULT_SETTINGS: Settings = {
 export interface VoiceSink {
   setVolume(v: number): void;
   setMuted(muted: boolean): void;
+  /** Open mic, or push-to-talk (hold V). */
+  setMode?(mode: Settings['micMode']): void;
 }
 
 const current: Settings = { ...DEFAULT_SETTINGS };
@@ -61,6 +63,7 @@ function apply(keys: readonly (keyof Settings)[]): void {
     voice.setVolume(current.voiceOn ? current.voiceVolume : 0);
     voice.setMuted(!current.voiceOn || current.micMuted);
   }
+  if (voice && keys.includes('micMode')) voice.setMode?.(current.micMode);
 }
 
 const ALL = Object.keys(DEFAULT_SETTINGS) as (keyof Settings)[];

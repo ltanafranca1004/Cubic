@@ -68,6 +68,13 @@ export const mockGameUIState: UIState = {
     won: false,
     carrying: { id: 'rose', kind: 'rose' },
   },
+  signals: {
+    pings: [
+      { id: 1, sx: 6, sy: 3, mine: false, alpha: 1 },
+      { id: 2, sx: 2, sy: 6, mine: true, alpha: 1 },
+    ],
+    bubbles: [{ id: 3, sx: 6, sy: 5, mine: false, text: 'Here!' }],
+  },
   voice: { mic: 'on', mode: 'push', muted: false, link: 'direct', talking: false, partnerLevel: 0.4, signal: 2, partnerVolume: 1 },
 };
 
@@ -86,4 +93,7 @@ export const mockActions: UIActions = {
   onSetMicMode: (mode) => console.log('[ui] onSetMicMode', mode),
   onSetPartnerVolume: (v) => console.log('[ui] onSetPartnerVolume', v),
   onPlayAgain: () => console.log('[ui] onPlayAgain'),
+  onDrop: () => console.log('[ui] onDrop'),
+  onPing: () => console.log('[ui] onPing'),
+  onQuickChat: (index) => console.log('[ui] onQuickChat', index),
 };

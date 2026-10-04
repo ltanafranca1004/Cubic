@@ -39,6 +39,26 @@ game.
 6. Face 6 has the portal. Once every puzzle is solved, both players step on it to win.
 7. Chat: Enter to type, Esc to close. Refreshing a window puts you back in your seat.
 
+### Controls (the mouse is never needed)
+
+| Key | Gamepad | Does |
+| --- | --- | --- |
+| WASD / arrows | left stick / d-pad | move; in a menu, move the focus |
+| E | A | pick up / use (in a menu: Enter or Space select) |
+| Q | B | drop (in a menu: Esc is back) |
+| F | X | ping your tile: your partner sees it on the same face for 4 s (2 s cooldown) |
+| 1 2 3 4 | | quick chat: "Here!", "Wait", "Yes", "No" (a bubble over you, and in the chat log) |
+| Enter | | chat (Enter sends, Esc closes) |
+| V (hold) / M | | push to talk / mute the mic |
+| Tab (hold) | | the full cube map; the arrows turn it |
+| Esc | Start | pause: Resume, Settings, Leave and this list |
+
+In the menus Tab reaches the settings gear. In the join popup you type the code, Backspace
+deletes, Enter joins and the arrows reach Cancel. Settings (the gear, or the pause menu):
+left / right change the focused row. Accessibility settings: text size S / M / L, high
+contrast, screen shake, and open mic or push-to-talk. Spoken lines are captioned.
+`cd tools && npx tsx screens/a11y.ts` plays all of it with the keyboard only.
+
 ## Voice
 
 Cubic is meant to be played by voice, no Discord. In the game press **Enable microphone**
@@ -87,7 +107,7 @@ key needs the `music_generation` permission and a paid plan. Model: `ELEVENLABS_
 
 ## Items
 
-Press **E** to pick up the item you are standing on, and E again to drop it. You carry one
+Press **E** to pick up the item you are standing on, and **Q** (or E again) to drop it. You carry one
 at a time and it comes with you across faces. Example: the outside player carries the rose
 from face 1 to the pot on face 6.
 

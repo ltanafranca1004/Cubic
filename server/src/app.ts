@@ -111,6 +111,8 @@ export function createApp(opts: AppOptions = {}): App {
     room.listen({
       onState: (u) => io.to(room.code).emit('state', u),
       onChat: (m) => io.to(room.code).emit('chat', m),
+      onPing: (p) => io.to(room.code).emit('ping', p),
+      onQuick: (q) => io.to(room.code).emit('quick', q),
       onRoom: (r) => io.to(room.code).emit('room', r),
       onTyping: (from, on) => io.to(room.code).emit('typing', { from, on }),
     });
@@ -252,11 +254,19 @@ export function createApp(opts: AppOptions = {}): App {
     });
     socket.on('interact', (msg) => {
       const s = side();
-      if (room && s) room.interact(s, Number(msg?.seq) || 0);
+      if (room && s) room.interact(s, Number(msg?.seq) || 0, msg?.only === 'drop' || msg?.only === 'pick' ? msg.only : undefined);
     });
     socket.on('chat', (msg) => {
       const s = side();
       if (room && s) room.say(s, msg?.text);
+    });
+    socket.on('ping', () => {
+      const s = side();
+      if (room && s) room.ping(s);
+    });
+    socket.on('quick', (msg) => {
+      const s = side();
+      if (room && s) room.quick(s, msg?.index);
     });
 
     socket.on('voice:signal', (msg) => partner()?.emit('voice:signal', { data: msg?.data }));

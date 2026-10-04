@@ -1,9 +1,30 @@
-import { FACE_NAMES, compassDrift, neighbours, objectiveFor, portalOpen, signalBars, voiceMix, type GameEvent, type GameState, type Side } from '@cubic/shared';
+import {
+  FACE_NAMES,
+  NO_SIGNALS,
+  PING_FADE_MS,
+  BUBBLE_MS,
+  bubbleAlive,
+  compassDrift,
+  neighbours,
+  objectiveFor,
+  pingAlive,
+  portalOpen,
+  sameWall,
+  signalBars,
+  signalsFor,
+  voiceMix,
+  type GameEvent,
+  type GameState,
+  type Ping,
+  type QuickChat,
+  type Side,
+} from '@cubic/shared';
 import { audio, musicForScreen } from './audio/AudioManager';
 import { heardSfx } from './audio/hearing';
 import { createGameView, type GameHandle } from './game';
 import { sfx } from './game/sfx';
 import { Net } from './net/client';
+import { setPartnerLevel, showCaption } from './ui/captions';
 import type { HudState, LobbyState, UIActions, UIHandle, UIHost, UIState } from './ui/hooks';
 import { Voice } from './voice/voice';
 
@@ -42,6 +63,11 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
   root.appendChild(gameEl);
 
   let partnerTyping = false;
+  /** Live ping markers and quick-chat bubbles, stamped with OUR clock when they arrived. */
+  let pings: Ping[] = [];
+  let quicks: QuickChat[] = [];
+  /** Is something on that face on our wall (do we see and hear it)? */
+  const onMyWall = (face: Ping['face']) => !!net.state && !!net.side && sameWall(face, net.state.players[net.side].pose.face);
   let handle: UIHandle | null = null;
   let game: GameHandle | null = null;
 
@@ -55,6 +81,21 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
         game?.handle(events);
       },
       onChat: () => {},
+      onPing: (ping) => {
+        const now = Date.now();
+        pings = [...pings.filter((p) => pingAlive(p.at, now)), { ...ping, at: now }];
+        // heard as well as seen, by whoever can see it: you, and a partner on the same wall
+        if (ping.from === net.side || onMyWall(ping.face)) sfx.ping?.();
+        render();
+        setTimeout(render, PING_FADE_MS + 20); // take it down when it has faded
+      },
+      onQuick: (quick) => {
+        const now = Date.now();
+        quicks = [...quicks.filter((q) => bubbleAlive(q.at, now)), { ...quick, at: now }];
+        if (net.state && quick.from !== net.side && onMyWall(net.state.players[quick.from].pose.face)) sfx.quick?.();
+        render();
+        setTimeout(render, BUBBLE_MS + 20);
+      },
       onTyping: (on) => {
         partnerTyping = on;
         render();
@@ -62,8 +103,16 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
       onVoiceReady: () => voice.onReady(),
       onVoiceSignal: (data) => void voice.onSignal(data),
       onVoiceChunk: (chunk) => voice.onChunk(chunk),
-      onTts: (clip) => void voice.playClip(clip),
-      onSpeak: (text) => voice.speakText(text),
+      // whatever the AI partner says out loud is also captioned
+      onTts: (clip) => {
+        const line = net.chat.find((m) => m.id === clip.chatId);
+        if (line) showCaption(line.text, { speaker: 'AI' });
+        void voice.playClip(clip);
+      },
+      onSpeak: (text) => {
+        showCaption(text, { speaker: 'AI' });
+        voice.speakText(text);
+      },
     },
     offlineSide,
   );
@@ -101,6 +150,9 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
     onSetMicMode: (mode) => voice.setMode(mode),
     onSetPartnerVolume: (v) => voice.setVolume(v),
     onPlayAgain: () => net.restart(),
+    onDrop: () => playing() && net.interact('drop'),
+    onPing: () => playing() && net.ping(),
+    onQuickChat: (index) => playing() && net.quick(index),
   };
 
   /** The side we draw: our own, unless the dev tools show the other one. */
@@ -139,6 +191,7 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
       partnerTyping,
       hud: inGame ? hudOf(net.state!, viewSide()!, Date.now()) : null,
       voice: voice.snapshot(signalBars(proximity())),
+      signals: inGame ? signalsFor(net.state!, viewSide()!, pings, quicks, Date.now()) : NO_SIGNALS,
     };
   }
 
@@ -165,5 +218,8 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
   if (!offlineSide) void voice.resumeMic();
   render();
   setInterval(render, 500); // keeps the clock ticking
-  setInterval(() => audio.setVoiceLevel(voice.partnerLevelNow), 50); // music ducks under the partner's voice
+  setInterval(() => {
+    audio.setVoiceLevel(voice.partnerLevelNow); // music ducks under the partner's voice
+    setPartnerLevel(voice.partnerLevelNow); // and the "Partner speaking" tag follows it
+  }, 50);
 }

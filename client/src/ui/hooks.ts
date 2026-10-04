@@ -1,4 +1,4 @@
-import type { ChatMessage, FaceId, Role, RoomMode, Side } from '@cubic/shared';
+import type { ChatMessage, FaceId, Role, RoomMode, Side, SignalView } from '@cubic/shared';
 
 // THE UI HOOK INTERFACE.
 // Everything outside the Phaser canvas (lobby, HUD, chat, voice controls, win screen) is a
@@ -30,6 +30,12 @@ export interface UIActions {
   /** Partner volume, 0..1. */
   onSetPartnerVolume(volume: number): void;
   onPlayAgain(): void;
+  /** Q: put down the carried item (never picks one up). */
+  onDrop(): void;
+  /** F: drop a ping marker on your tile. */
+  onPing(): void;
+  /** 1 to 4: say a fixed line. `index` is 0..3 into QUICK_CHATS. */
+  onQuickChat(index: number): void;
 }
 
 export type LobbyStatus =
@@ -119,6 +125,8 @@ export interface UIState {
   /** null until the game starts. */
   hud: HudState | null;
   voice: VoiceState;
+  /** Ping markers and quick-chat bubbles to draw over the game view, in screen tiles. */
+  signals?: SignalView;
 }
 
 export interface UIHandle {

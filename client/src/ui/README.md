@@ -43,8 +43,21 @@ handle.update(state);                   // on every change
 | Room code (top middle, from the side select on) and settings gear (top right, always) | `cubicUI.ts` | `roomCode`, `mode` |
 | Win screen | `cubicUI.ts` | `hud.won`, `hud.elapsedMs`, `hud.strikes` |
 
-Movement keys (WASD / arrows), E (pick up / drop) and V (push to talk) are handled by the
-game, not the UI. While a text input is focused the game ignores them.
+| Pause menu (Esc): Resume, Settings, Leave, the controls reference | `pauseMenu.ts` | |
+| Ping markers and quick-chat bubbles over the game view | `cubicUI.ts` | `signals` |
+| Captions and the "Partner speaking" tag | `captions.ts` (store), `cubicUI.ts` | |
+
+Movement keys (WASD / arrows), E (pick up) and V (push to talk) are handled by the
+game, not the UI. While a text input is focused, a panel is open or Tab holds the cube map
+(`../input/gate.ts`) the game ignores them. Every other key is the UI's: what a key means
+is in `../input/keymap.ts` (pure, tested), `cubicUI.ts` acts on it (Q drop, F ping, 1 to 4
+quick chat, M mute, Tab cube map, Esc pause), and `focus.ts` keeps the keyboard focus
+inside the open panel. The gamepad (`../input/gamepad.ts`) sends the same keys.
+
+Captions: `showCaption(text, { speaker?, ms? })` and `clearCaption()` from `captions.ts`
+show one line at the bottom of the screen; call them from anywhere (the narrator does).
+
+Settings rows are data: add a line to `ROWS` in `settingsPanel.ts`.
 
 Sound: the UI never plays audio itself. The settings sliders set volumes through
 `../style/audioApi.ts`, which `main.ts` connects to the AudioManager with `setAudioApi()`.

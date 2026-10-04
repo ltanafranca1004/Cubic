@@ -57,3 +57,12 @@ second client), side select, ready, start and settings with a real mouse, at 192
 browser without WebGL gets). It fails on any console error, any button that is missing,
 see-through, without a panel or dead, and any step that does not arrive. Pictures go to
 `docs/screens/check/`. Needs `npm run dev` running.
+
+## `npx tsx screens/a11y.ts`: the keyboard-only check
+
+Plays the whole game without a mouse: title, settings by keyboard, mode menu and Back, the
+join popup, side select, then two clients in a real game (chat, ping, quick chat, Tab,
+pause, accessibility settings, captions, Leave), E / Q on an item, and a faked gamepad.
+Menus run in WebGL and in Canvas. Pictures go to `docs/screens/a11y/`. Needs a server and
+a client (ports at the top of the file); `npx tsx screens/a11y.ts game` runs one part
+(`menus`, `game`, `items`, `gamepad`).

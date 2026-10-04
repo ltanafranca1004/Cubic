@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import type { Role, Side } from '@cubic/shared';
+import { menuAction } from '../input/keymap';
 import { C, EASE, ROLE, TIME, hex, type Ramp } from '../style/tokens';
 import type { LobbyPlayer, LobbyState } from '../ui/hooks';
 import { Sky } from './clouds';
@@ -34,6 +35,9 @@ export class SideSelectScene extends MenuScene {
   private centreHint!: Text;
   private status!: Text;
   private main!: Button;
+  private leave!: Button;
+  /** The bottom bar's keyboard focus: the main action, unless up / down moved it to Leave. */
+  private onLeave = false;
   private last: { host: Side | null; guest: Side | null; error: string | null } = { host: null, guest: null, error: null };
   private first = true;
 
@@ -111,12 +115,14 @@ export class SideSelectScene extends MenuScene {
 
     // bottom bar: leave on the left, the one action that matters on the right
     const barY = H - 30;
-    new Button(this, { label: 'LEAVE', variant: 'light', width: 64, onClick: () => this.ctx.actions.onLeaveRoom() }).setPosition(8, barY);
+    this.leave = new Button(this, { label: 'LEAVE', variant: 'light', width: 64, onClick: () => this.ctx.actions.onLeaveRoom() }).setPosition(8, barY);
+    this.onLeave = false;
     this.main = new Button(this, { label: 'START', variant: 'in', width: 112, onClick: () => this.mainAction() }).setPosition(W - 120, barY);
     this.status = text(this, 0, barY + 3, '', ROLE.paper, 1, true);
 
     this.keys((e) => this.key(e));
     this.begin(data);
+    this.main.setFocus(true);
   }
 
   private get lobby(): LobbyState | null {
@@ -150,13 +156,26 @@ export class SideSelectScene extends MenuScene {
   private key(e: KeyboardEvent): void {
     const me = this.me();
     if (!me) return;
-    const k = e.key.toLowerCase();
+    const action = menuAction(e);
     // one step at a time, through the middle, like moving a controller icon
     const order: (Side | null)[] = ['out', null, 'in'];
     const at = order.indexOf(me.side);
-    if (k === 'arrowleft' || k === 'a') this.pick(order[Math.max(0, at - 1)]!);
-    else if (k === 'arrowright' || k === 'd') this.pick(order[Math.min(2, at + 1)]!);
-    else if (k === 'enter' || k === ' ') this.main.press();
+    if (action === 'left') this.pick(order[Math.max(0, at - 1)]!);
+    else if (action === 'right') this.pick(order[Math.min(2, at + 1)]!);
+    // left / right are the sides, so up / down move the focus between LEAVE and the action
+    else if (action === 'up' || action === 'down' || action === 'next' || action === 'prev') this.focusLeave(!this.onLeave);
+    else if (action === 'select') (this.onLeave ? this.leave : this.main).press();
+    else if (action === 'back') {
+      // Esc is back: out of the lobby
+      this.focusLeave(true);
+      this.leave.press();
+    }
+  }
+
+  private focusLeave(on: boolean): void {
+    this.onLeave = on;
+    this.leave.setFocus(on);
+    this.main.setFocus(!on);
   }
 
   private mainAction(): void {
@@ -202,7 +221,7 @@ export class SideSelectScene extends MenuScene {
     }
 
     const waiting = !g;
-        centre(this.centreHint.setText(waiting ? 'WAITING FOR P2' : 'A / D  OR  CLICK'), this.slotX.mid, this.centreHint.y + 7.5);
+        centre(this.centreHint.setText(waiting ? 'WAITING FOR P2' : 'A / D  OR  ARROWS'), this.slotX.mid, this.centreHint.y + 7.5);
 
     if (you === 'host') {
       this.main.setLabel('START').setEnabled(l.startBlocker === null);

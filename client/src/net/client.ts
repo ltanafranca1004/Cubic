@@ -2,13 +2,20 @@ import { io, type Socket } from 'socket.io-client';
 import {
   applyInteract,
   applyMove,
+  canPing,
   createGame,
+  makePing,
+  quickIndex,
+  QUICK_CHATS,
   type ChatMessage,
   type ClientToServer,
   type DevCommand,
   type GameEvent,
   type GameState,
+  type InteractOnly,
   type MemberInfo,
+  type Ping,
+  type QuickChat,
   type Role,
   type RoomInfo,
   type Seat,
@@ -39,7 +46,7 @@ export function wakeServer(): void {
 }
 const SEAT_KEY = 'cubic.seat';
 
-type Pending = { seq: number; kind: 'move'; dx: number; dy: number } | { seq: number; kind: 'interact' };
+type Pending = { seq: number; kind: 'move'; dx: number; dy: number } | { seq: number; kind: 'interact'; only?: InteractOnly };
 
 export interface NetHandlers {
   /** Connection, seat, room or game state changed. */
@@ -47,6 +54,10 @@ export interface NetHandlers {
   /** Things that just happened. `local` = predicted from our own input. */
   onEvents(events: GameEvent[], local: boolean): void;
   onChat(msg: ChatMessage): void;
+  /** A ping marker was dropped (by either player). */
+  onPing?(ping: Ping): void;
+  /** A quick-chat line was said (by either player). */
+  onQuick?(quick: QuickChat): void;
   onTyping(on: boolean): void;
   onVoiceReady(): void;
   onVoiceSignal(data: unknown): void;
@@ -77,6 +88,8 @@ export class Net {
   private server: GameState | null = null;
   private pending: Pending[] = [];
   private seq = 0;
+  private pingAt: number | null = null;
+  private localId = 0;
 
   constructor(
     private h: NetHandlers,
@@ -141,6 +154,8 @@ export class Net {
       this.h.onChat(msg);
       this.h.onChange();
     });
+    socket.on('ping', (p) => this.h.onPing?.(p));
+    socket.on('quick', (q) => this.h.onQuick?.(q));
     socket.on('typing', (t) => this.h.onTyping(t.on));
     socket.on('voice:ready', () => this.h.onVoiceReady());
     socket.on('voice:signal', (m) => this.h.onVoiceSignal(m.data));
@@ -154,7 +169,7 @@ export class Net {
     const s = structuredClone(this.server);
     for (const p of this.pending) {
       if (p.kind === 'move') applyMove(s, this.side, p.dx, p.dy);
-      else applyInteract(s, this.side);
+      else applyInteract(s, this.side, undefined, undefined, p.only);
     }
     this.state = s;
   }
@@ -304,15 +319,41 @@ export class Net {
     this.finish(events);
   }
 
-  interact(): void {
+  /** E: pick up or drop. `only: 'drop'` (Q) drops and never picks up. */
+  interact(only?: InteractOnly): void {
     if (!this.state || !this.side) return;
-    const events = applyInteract(this.state, this.side);
+    const events = applyInteract(this.state, this.side, undefined, undefined, only);
     if (this.socket) {
       const seq = ++this.seq;
-      this.pending.push({ seq, kind: 'interact' });
-      this.socket.emit('interact', { seq });
+      this.pending.push({ seq, kind: 'interact', ...(only ? { only } : {}) });
+      this.socket.emit('interact', { seq, ...(only ? { only } : {}) });
     }
     this.finish(events);
+  }
+
+  /** Drop a ping marker on our tile. The server owns the cooldown; we skip the obvious no. */
+  ping(): void {
+    if (!this.state || !this.side) return;
+    const now = Date.now();
+    if (!canPing(this.pingAt, now)) return;
+    this.pingAt = now;
+    if (this.socket) this.socket.emit('ping');
+    else this.h.onPing?.(makePing(this.state, this.side, ++this.localId, now));
+  }
+
+  /** Say one of the fixed quick-chat lines (0..3). */
+  quick(index: number): void {
+    const i = quickIndex(index);
+    if (i === null || !this.state || !this.side) return;
+    if (this.socket) {
+      this.socket.emit('quick', { index: i });
+      return;
+    }
+    // offline (?mock): the same two things the server would send
+    const msg: ChatMessage = { id: ++this.localId, from: this.side, isAI: false, text: QUICK_CHATS[i], at: Date.now() };
+    this.chat = [...this.chat, msg];
+    this.h.onQuick?.({ id: ++this.localId, from: this.side, index: i, chatId: msg.id, at: msg.at });
+    this.h.onChange();
   }
 
   private finish(events: GameEvent[]): void {

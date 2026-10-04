@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { FACE_SIZE, TILE_PX, canonToScreen, itemsOn, screenToCanon, tileAt, visibleObjects, defaultEnv, type FaceId, type GameEvent, type GameState, type Side, type Vec } from '@cubic/shared';
+import { inputPaused } from '../input/gate';
 import { settings } from '../style/settings';
 import { CodeArt, type ArtProvider } from './art';
 import { InputBuffer, easeInOut, hopLift, mirrorStrip, rollPoint, rollStrips, rollWalker, transitionKind, transitionMs, upBeforeFlip, type Buffered, type TransitionKind } from './transition';
@@ -141,7 +142,7 @@ export class GameScene extends Phaser.Scene {
   handle(events: GameEvent[]): void {
     for (const e of events) {
       if (e.type === 'flip' && e.side === this.me) this.startTransition(e.from, e.to, e.dx, e.dy);
-      if (e.type === 'strike') this.cameras.main.shake(250, 0.01);
+      if (e.type === 'strike' && settings().screenShake) this.cameras.main.shake(250, 0.01);
     }
   }
 
@@ -182,7 +183,8 @@ export class GameScene extends Phaser.Scene {
   private keyDown(e: KeyboardEvent): void {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     const k = e.key.toLowerCase();
-    if (typing()) return;
+    // typing, or a menu / the cube map is on top: the keys are not the game's
+    if (typing() || inputPaused()) return;
     if (KEYS[k]) {
       e.preventDefault();
       if (!this.held.includes(k)) {
@@ -210,7 +212,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     // Input waits while a transition plays: the buffered presses go first, then the held key.
-    if (typing() && this.held.length) this.held = [];
+    if ((typing() || inputPaused()) && this.held.length) this.held = [];
     while (!this.trans) {
       const input = this.buffer.next(now);
       if (!input) break;
