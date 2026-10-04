@@ -185,7 +185,7 @@ const apart = (room: Room) => faceDistance(room.state.players.out.pose.face, roo
 const say = (text: string | null, action: object | null = null) => JSON.stringify({ say: text, action });
 
 test('scripted partner (AI_FAKE): after face 1 is solved it stays within one face of the human, and suggests the next goal after 20s', async (t) => {
-  // Fake clock, real timings: 6 s throttle, 200 ms steps, 20 s idle hint.
+  // Fake clock, real timings: 6 s throttle, AI_STEP_MS steps (267 ms at the default pace), 20 s idle hint.
   t.mock.timers.enable({ apis: ['setInterval', 'setTimeout', 'Date'] });
   const pass = async (ms: number) => {
     for (let at = 0; at < ms; at += 100) {

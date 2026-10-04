@@ -2,11 +2,12 @@
 //
 //   server:  PORT=3423 AI_FAKE=1 TTS_MODE=browser DEV_COMMANDS=1 npm start -w server
 //   client:  VITE_SERVER_URL=http://localhost:3423 npm run dev -w client -- --port 5523
-//   then:    cd tools && BASE=http://localhost:5523 npx tsx screens/props.ts [shots|fade|pace|edge]
+//   then:    cd tools && BASE=http://localhost:5523 npx tsx screens/props.ts [shots|item|fade|pace|edge]
 //
 // shots  the turtle on every side of a tree (Forest, outside face 4) and of a cactus
 //        (Desert, outside face 2): a picture of each place into docs/status/props, and a
 //        check of what the depth sort says there (client/src/world/biomes/depth.ts).
+// item   an item lying under a crown: under it, and the prop faded, wherever the turtle is.
 // fade   the fade through a face transition (roll, and the reduce-motion fade), and the
 //        instant fade with reduce motion.
 // pace   a direction held for 3 s: tiles walked against 1 + floor(3000 / STEP_MS).
@@ -14,7 +15,7 @@
 //        every pose the client showed must be one step on from the one before (no
 //        correction), drawn where the pose says, and the same walk as the partner saw.
 //
-// shots, fade and pace use the offline game (?mock=game): only the client has to run.
+// shots, item, fade and pace use the offline game (?mock=game): only the client has to run.
 import { mkdirSync } from 'node:fs';
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
 import { STEP_MS, canonToScreen, eq, stepPose, type FaceId, type Pose } from '../../shared/src/index';
@@ -135,6 +136,47 @@ async function shots(browser: Browser): Promise<void> {
         }
       }
     }
+    await page.context().close();
+  }
+}
+
+/** An item lying under the tree's crown: it is under the crown and the tree is faded, wherever the turtle is. */
+async function item(browser: Browser): Promise<void> {
+  const key = `${TREE.face}:${TREE.x},${TREE.y}`;
+  for (const renderer of ['canvas', 'webgl'] as const) {
+    console.log(`item (${renderer})`);
+    const page = await openMock(browser, renderer);
+    await page.waitForTimeout(12_000); // the narrator's opening lines lie over the bottom rows
+    const lay = (on: boolean) =>
+      page.evaluate(
+        ({ on, face, x, y }) => {
+          const state = (window as unknown as { __cubic: { state: { items: Record<string, object> } } }).__cubic.state;
+          if (on) state.items.lying = { id: 'lying', kind: 'rose', side: 'out', face, x, y, carriedBy: null, placedOn: null, props: {} };
+          else delete state.items.lying;
+        },
+        { on, face: TREE.face, x: TREE.x, y: TREE.y - 1 },
+      );
+    const places: [string, number, number, boolean][] = [
+      ['turtle-away', 2, -3, true],
+      ['turtle-on-it', 0, -1, true],
+      ['turtle-below', 0, 1, false],
+      ['turtle-beside', 1, 0, false],
+    ];
+    await lay(true);
+    for (const [where, dx, dy, over] of places) {
+      await stand(page, TREE.face, TREE.x + dx, TREE.y + dy);
+      const p = await probe(page);
+      const alpha = p.faded.find(([k]) => k === key)?.[1];
+      const lifted = p.lifted.some((l) => l.key === key);
+      const name = `item-under-crown-${where}${renderer === 'webgl' ? '-webgl' : ''}`;
+      check(alpha === 0.5, `${name}: the tree is at 50% (${alpha})`);
+      check(lifted === over, `${name}: the tree is ${over ? 'over the turtle (it is in front of it)' : 'in the painted face (the turtle is in front of it)'}`);
+      await shoot(page, name, TREE.x, TREE.y);
+    }
+    await lay(false);
+    await stand(page, TREE.face, TREE.x + 2, TREE.y - 3);
+    const p = await probe(page);
+    check(p.faded.length === 0 && p.lifted.length === 0, 'item gone: the tree is back to full');
     await page.context().close();
   }
 }
@@ -383,6 +425,7 @@ async function edge(browser: Browser): Promise<void> {
 const browser = await chromium.launch({ headless: true, args: ['--mute-audio'] });
 try {
   if (!ONLY || ONLY === 'shots') await shots(browser);
+  if (!ONLY || ONLY === 'item') await item(browser);
   if (!ONLY || ONLY === 'fade') await fade(browser);
   if (!ONLY || ONLY === 'pace') await pace(browser);
   if (!ONLY || ONLY === 'edge') await edge(browser);

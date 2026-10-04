@@ -105,3 +105,53 @@ test('the walk animation follows the pace', () => {
   assert.equal(TURTLE_HOLD, WALK_HOLD_MS);
   assert.ok(WALK_HOLD_MS > STEP_MS, 'the walk frame outlasts the gap between two held steps');
 });
+
+test('after a frame hitch: one catch-up step, never a burst', () => {
+  // What HoldRepeat does today, written down. A frame that comes late takes ONE step, however
+  // late it is. If it was late by less than a step, the next one keeps its old slot (so the
+  // gap after a hitch is shorter than STEP_MS, down to almost nothing); if it was late by a
+  // step or more, the clock restarts from now. Lost steps are never made up.
+  const steps = (frames: number[]): number[] => {
+    const repeat = new HoldRepeat();
+    repeat.restart(0);
+    return frames.filter((now) => repeat.take(now));
+  };
+  // a hitch of half a step: the late step, then the next on its old slot
+  const half = Math.round(STEP_MS / 2);
+  assert.deepEqual(steps([STEP_MS + half, 2 * STEP_MS - 1, 2 * STEP_MS, 3 * STEP_MS]), [STEP_MS + half, 2 * STEP_MS, 3 * STEP_MS]);
+  // the worst case: late by one millisecond less than a whole step. The next step is 1 ms later, and that is all.
+  const late = 2 * STEP_MS - 1;
+  const worst = steps([late, late + 1, late + 2, late + 3, late + 1 + STEP_MS - 1, late + 1 + STEP_MS]);
+  assert.deepEqual(worst, [late, late + 1, late + 1 + STEP_MS], 'two steps 1 ms apart (the minimum gap), then the normal pace: no third');
+  // a hitch of ten steps: one step, not ten, and the next a whole step later
+  const long = 10 * STEP_MS + 5;
+  assert.deepEqual(steps([long, long + 1, long + 16, long + STEP_MS - 1, long + STEP_MS]), [long, long + STEP_MS]);
+
+  // Against the budget: hitches as bad as they get, back to back, for a minute. Each pair
+  // costs 2 and the two steps of slack before it earned 2 x 173 / 90 = 3.8.
+  const server = new ServerBudget();
+  const repeat = new HoldRepeat();
+  repeat.restart(0);
+  server.take(0);
+  let sent = 1;
+  let pairs = 0;
+  let last = 0;
+  let minGap = Infinity;
+  const frame = (now: number) => {
+    if (!repeat.take(now)) return;
+    server.take(now);
+    sent++;
+    minGap = Math.min(minGap, now - last);
+    if (now - last <= 1) pairs++;
+    last = now;
+  };
+  for (let now = 0; now < 60_000; ) {
+    now += 2 * STEP_MS - 1; // a frame that hung until 1 ms before the step after the one that was due
+    frame(now);
+    frame(++now);
+  }
+  assert.ok(pairs > 100 && minGap === 1, `${pairs} catch-up pairs, minimum gap ${minGap} ms`);
+  assert.ok(sent <= 1 + Math.ceil(last / STEP_MS), `${sent} steps in ${last} ms: never more than the pace allows over the whole run`);
+  assert.equal(server.dropped, 0);
+  assert.ok(server.low >= 3, `the budget never went under ${server.low.toFixed(2)} of 5`);
+});

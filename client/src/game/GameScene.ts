@@ -4,7 +4,7 @@ import { inputPaused } from '../input/gate';
 import { settings } from '../style/settings';
 import type { PropPass } from '../world/biomes/dress';
 import { CodeArt, type ArtProvider } from './art';
-import { PropFades, fadingProps, liftedProps, tallProps, type TallProp } from '../world/biomes/depth';
+import { PropFades, fadingProps, liftedProps, propsOver, tallProps, type TallProp } from '../world/biomes/depth';
 import { GameKeys, HoldRepeat } from './keys';
 import { InputBuffer, easeInOut, hopBoxes, hopFrame, mirrorStrip, rollPoint, rollStrips, rollWalker, transitionKind, transitionMs, upBeforeFlip, type Buffered, type TransitionKind } from './transition';
 import { CARRY_PX, ITEM_HOP_MS, WALK_HOLD_MS, carryBob, facingFromStep, facingOf, itemHop, playerFlip, type Facing } from './turtle';
@@ -362,12 +362,30 @@ export class GameScene extends Phaser.Scene {
     const { face, up } = player.pose;
     const [sx, sy] = canonToScreen(this.me, face, up, player.pose.x, player.pose.y);
     const props = tallProps(this.me, face, up);
-    this.fades.aim(fadingProps({ sx, sy, carrying: !!player.carrying }, props).map((p) => p.key));
+    // an item lying under a crown keeps that prop faded, turtle or not: also on the face a transition is leaving
+    const hiding = this.hidingProps(face, up);
+    if (this.trans) hiding.push(...this.hidingProps(this.trans.from.face, this.trans.from.up));
+    this.fades.aim(fadingProps({ sx, sy, carrying: !!player.carrying }, props).map((p) => p.key), hiding.map((p) => p.key));
     const moving = this.fades.moving;
     this.fades.step(delta, settings().reduceMotion);
-    const lifted = liftedProps(props, (p) => this.fades.faded(p.key));
+    const lifted = liftedProps(props, (p) => this.fades.faded(p.key), { sx, sy });
     if (moving || lifted.length !== this.lifted.length || lifted.some((p, i) => p !== this.lifted[i])) this.dirty = true;
     this.lifted = lifted;
+  }
+
+  /** The items lying on a face (not the one hopping to or from the head), as screen tiles. */
+  private lyingItems(face: FaceId, up: Vec): { sx: number; sy: number; kind: string }[] {
+    return itemsOn(this.state!, this.me, face)
+      .filter((it) => it.id !== this.hop?.item)
+      .map((it) => {
+        const [sx, sy] = canonToScreen(this.me, face, up, it.x, it.y);
+        return { sx, sy, kind: it.kind };
+      });
+  }
+
+  /** The tall props of a face with an item lying under their crown. */
+  private hidingProps(face: FaceId, up: Vec): TallProp[] {
+    return propsOver(this.lyingItems(face, up), tallProps(this.me, face, up));
   }
 
   /** The alpha of the prop on a screen tile of `face`, for a face painted whole (a transition): the fade is baked in. */
@@ -414,17 +432,19 @@ export class GameScene extends Phaser.Scene {
         put(this.art.tile(me, face, tileAt(world, me, face, x, y), x, y, this.frame), sx, sy);
       }
     }
+    // An item lying under the crown of a tall prop is behind it (the prop is lower on the
+    // screen): it goes down before the props. Every other item is painted over them, as before.
+    // (The item on its way down from the head is not here: the sprite shows it.)
+    const items = this.lyingItems(face, up);
+    const under = new Set(propsOver(items, tallProps(me, face, up)).map((p) => `${p.sx},${p.sy - 1}`));
+    for (const it of items) if (under.has(`${it.sx},${it.sy}`)) put(this.art.item(it.kind), it.sx, it.sy);
     this.art.dress?.(g, me, face, up, this.frame, pass);
     const objects = visibleObjects(state, me, face);
     for (const o of objects) {
       const [sx, sy] = canonToScreen(me, face, up, o.x, o.y);
       put(this.art.object(me, o.type, o.state, this.frame), sx, sy);
     }
-    for (const it of itemsOn(state, me, face)) {
-      if (it.id === this.hop?.item) continue; // on its way down from the head: the sprite shows it
-      const [sx, sy] = canonToScreen(me, face, up, it.x, it.y);
-      put(this.art.item(it.kind), sx, sy);
-    }
+    for (const it of items) if (!under.has(`${it.sx},${it.sy}`)) put(this.art.item(it.kind), it.sx, it.sy);
 
     if (me === 'in' && !brightFace(face)) {
       // The inside is dark: light falls off by tile distance from the player. A room whose
@@ -514,9 +534,11 @@ export class GameScene extends Phaser.Scene {
     const { face, up } = player.pose;
     const [sx, sy] = canonToScreen(this.me, face, up, player.pose.x, player.pose.y);
     if (this.dirty) {
-      // the lifted props are not on the ground: they are painted over the character below
+      // the lifted props are not on the ground: they are painted over the character below.
+      // A faded prop that is not lifted (it hides an item, the turtle is not behind it) is painted here, as faded as it is.
       const lifted = this.lifted;
-      this.paint(this.face.context, face, up, { sx, sy }, lifted.length ? { water: true, alpha: (px, py) => (lifted.some((p) => p.sx === px && p.sy === py) ? 0 : 1) } : undefined);
+      const baked = this.bakedPass(face, up);
+      this.paint(this.face.context, face, up, { sx, sy }, { water: true, alpha: (px, py) => (lifted.some((p) => p.sx === px && p.sy === py) ? 0 : baked.alpha(px, py)) });
       this.face.refresh();
     }
     this.paintFront(face, up);

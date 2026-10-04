@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { FACES, FACE_SIZE, SIDES, canonToScreen, defaultEnv, upsOn } from '@cubic/shared';
 import { isTall, propAt } from '../src/world/biomes/decor';
-import { FADE_ALPHA, PROP_FADE_MS, PropFades, fadingProps, inFront, liftedProps, overlaps, propKey, propTiles, tallProps, turtleTiles, type Tile } from '../src/world/biomes/depth';
+import { FADE_ALPHA, PROP_FADE_MS, PropFades, fadingProps, inFront, liftedProps, overlaps, propKey, propTiles, propsOver, tallProps, turtleTiles, type Tile } from '../src/world/biomes/depth';
 
 // The depth sort between the turtle and the tall props, and the fade (world/biomes/depth.ts).
 
@@ -171,4 +171,53 @@ test('inside: no biome layer, nothing tall, nothing fades or is lifted', () => {
       for (let sy = 0; sy < FACE_SIZE; sy++) assert.deepEqual(fadingProps({ sx: 3, sy, carrying: true }, tallProps('in', face, up)), []);
     }
   assert.equal(SIDES.length, 2);
+});
+
+test('an item lying under a crown: it is behind the prop, and the prop stays faded, turtle or not', () => {
+  const tree = prop(5, 5);
+  const other = prop(8, 5);
+  const top = prop(3, 0);
+  const at = (sx: number, sy: number) => keys(propsOver([{ sx, sy }], [top, tree, other]));
+  assert.deepEqual(at(5, 4), ['5,5'], 'on the tile above the base: under that crown');
+  assert.deepEqual(at(5, 6), [], 'below the prop: the item is in front, painted over it as before');
+  assert.deepEqual(at(4, 5), []);
+  assert.deepEqual(at(6, 5), []);
+  assert.deepEqual(at(5, 3), [], 'two above: the crown does not reach');
+  assert.deepEqual(at(3, FACE_SIZE - 1), [], 'the crown of a prop on the top row is clipped, it does not wrap to the bottom row');
+  assert.deepEqual(keys(propsOver([{ sx: 5, sy: 4 }, { sx: 8, sy: 4 }], [tree, other])), ['5,5', '8,5'], 'two items, two props');
+  assert.deepEqual(propsOver([], [tree]), []);
+
+  // the fade: at once when the item is found there (nobody watched it fade), and it stays with no turtle near
+  const fades = new PropFades();
+  fades.aim([], ['5,5']);
+  assert.equal(fades.alpha('5,5'), FADE_ALPHA);
+  assert.equal(fades.moving, false);
+  fades.step(1000, false);
+  assert.equal(fades.alpha('5,5'), FADE_ALPHA);
+  // the turtle walking behind it and away again changes nothing
+  fades.aim(['5,5'], ['5,5']);
+  fades.step(PROP_FADE_MS, false);
+  fades.aim([], ['5,5']);
+  fades.step(PROP_FADE_MS, false);
+  assert.equal(fades.alpha('5,5'), FADE_ALPHA);
+  // picked up: the prop comes back with the usual tween
+  fades.aim([]);
+  fades.step(PROP_FADE_MS / 2, false);
+  assert.equal(fades.alpha('5,5'), 0.75);
+  fades.step(PROP_FADE_MS, false);
+  assert.equal(fades.faded('5,5'), false);
+  // a prop already fading because of the turtle is not snapped when the item lands (it is dropped from behind the crown)
+  fades.aim(['5,5']);
+  fades.step(PROP_FADE_MS / 2, false);
+  fades.aim(['5,5'], ['5,5']);
+  assert.equal(fades.alpha('5,5'), 0.75);
+});
+
+test('a faded prop is drawn over the turtle only when it is in front of it', () => {
+  const tree = prop(5, 5);
+  const faded = () => true;
+  assert.deepEqual(keys(liftedProps([tree], faded, { sx: 5, sy: 4 })), ['5,5'], 'the turtle behind the crown');
+  assert.deepEqual(keys(liftedProps([tree], faded, { sx: 2, sy: 1 })), ['5,5'], 'anywhere higher on the screen: still in front of the turtle');
+  assert.deepEqual(liftedProps([tree], faded, { sx: 5, sy: 6 }), [], 'the turtle below it (its item over the trunk): the prop stays in the painted face, faded there');
+  assert.deepEqual(liftedProps([tree], faded, { sx: 4, sy: 5 }), [], 'beside it, on its row');
 });

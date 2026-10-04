@@ -32,6 +32,7 @@ import { mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { chromium, type Browser, type Page } from 'playwright';
 import {
+  STEP_MS,
   FACES,
   PUZZLES,
   QUICK_CHATS,
@@ -295,8 +296,7 @@ const REPO = resolve(process.env.REPO ?? new URL('../../', import.meta.url).path
 const OUT = resolve(process.env.OUT ?? join(REPO, 'docs/status/playtest')) + '/';
 const FFMPEG = process.env.FFMPEG ?? 'ffmpeg';
 const SIZE = { width: 1280, height: 720 };
-/** Key pacing: the server allows a burst of 5 moves, then one per 90 ms. */
-const STEP_MS = 130;
+/** Key pacing: one tap per step of the walking pace (STEP_MS in shared/src/pace.ts). The server allows a burst of 5 moves, then one per 90 ms. */
 /** A face transition (roll 500 ms, hop 400 ms) and a little air. */
 const FLIP_MS = 650;
 const RENDERERS = ['webgl', 'canvas'] as const;
@@ -1117,7 +1117,7 @@ async function walk(run: Run): Promise<void> {
       return `drift ${start} -> ${drift}`;
     });
   }
-  await step(run, 'both: no key was dropped or rolled back at 130 ms pacing', async () => {
+  await step(run, `both: no key was dropped or rolled back at ${STEP_MS} ms pacing`, async () => {
     check(lost.length === 0, `${lost.length} walk(s) ended somewhere else: ${lost.slice(0, 3).join(' || ')}`);
   });
 }

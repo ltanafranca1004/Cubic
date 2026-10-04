@@ -122,6 +122,11 @@ Every owned folder has a README that says exactly what goes there.
   canvas texture, so it is the same in WebGL and Canvas. The server state is untouched.
 - Keys pressed during a transition are buffered and applied after it, paced to stay under
   the server's move budget (`LIMITS` in `server/src/rooms.ts`).
+- Pace: `WALK_PACE` in `shared/src/pace.ts` is the one knob for walking speed (0.75 = 25%
+  slower than the original 130 ms step). `STEP_MS` (the held-direction repeat for keyboard,
+  gamepad and touch d-pad: `HoldRepeat` in `client/src/game/keys.ts`), `WALK_HOLD_MS` (the
+  walk frame) and `AI_STEP_MS` derive from it. A tap always steps at once. Keep `STEP_MS`
+  over the server's refill (`LIMITS.moveRefillMs`): `server/test/pace.test.ts` checks it.
 - `client/src/audio/hearing.ts` decides who hears what: the partner's footsteps only when
   they are on the same face number as you, and never the partner's face-change ding.
 - Check and GIFs: `tools/screens/transitions.ts` (output in `docs/screens/transitions/`).
@@ -245,8 +250,16 @@ Tall props (two tiles high) may only stand on solid tiles with no puzzle object 
 neighbour; `client/test/biomes.test.ts` fails if a decor tile, a crown or a landmark ever
 covers a puzzle object, an item or the forest clearing. Sprites: `tools/art/biomes.ts`
 (cell order in `world/biomes/sheet.ts`). Sway follows one gust across the screen (250 ms
-steps, off with reduce motion). The ambience layer draws what goes OVER the player: the
-crown of a tree they stand behind (dithered), tall grass over their feet, drips, snow.
+steps, off with reduce motion). The ambience layer draws tall grass over the player's
+feet, drips and snow.
+Depth (`world/biomes/depth.ts`, pure, drawn by `GameScene`): sorted by SCREEN row, lower on
+the screen is in front. A tall prop (`TALL` in `sheet.ts`) stands on its base tile and
+reaches over the tile above (clipped at the face edge), so a turtle on that tile is behind
+it: the prop is taken out of the painted face, painted into a canvas layer over the turtle
+and the item on its head, and fades to 50% (`FADE_ALPHA`, 150 ms, instant with reduce
+motion); it comes back when the turtle leaves. An item lying on that tile is under the
+crown too and keeps the prop faded. In a face transition the fade is baked into the two
+painted faces. A turtle below or beside a prop is in front of it and nothing fades.
 When you move a map tile, run `npm test`: the biome test tells you what it now covers.
 
 ## Items (carryable)
@@ -289,8 +302,8 @@ speech (`tts`), goes through one Web Audio gain driven by `voiceMix`.
 own screen orientation), `pathTo` / `findPath` (BFS across faces with the real blockers)
 and `planAction` (goto, go_face, step_on, move, pick_up, drop, wait). `/server/src/ai` is
 the brain: `AiPlayer` sits in the empty seat, sends Gemini the rules + observation + chat,
-validates the JSON reply `{ say, action }` and walks the action one step per 200 ms
-through the same `Room` methods a human's socket uses. Max one Gemini call per 6 s per
+validates the JSON reply `{ say, action }` and walks the action one step per `AI_STEP_MS`
+(`shared/src/pace.ts`: 267 ms at the default pace) through the same `Room` methods a human's socket uses. Max one Gemini call per 6 s per
 room (no backlog), 12 s timeout; on errors it backs off and the scripted partner
 (`scripted.ts`, also `AI_FAKE=1`) plays that turn. Lines are capped at 80 characters.
 `AI_PERSONA` (default | tsundere) changes tone only. Speech: `TTS_MODE` browser |

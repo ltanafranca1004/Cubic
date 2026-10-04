@@ -93,13 +93,23 @@ export function fadingProps<P extends Tile>(turtle: Turtle, props: readonly P[])
 }
 
 /**
+ * The props whose crown hangs over one of `tiles` (an item lying on the floor): the tall
+ * props based on the tile right below. Such an item is drawn UNDER the crown, like the
+ * turtle would be, and the prop stays faded for as long as it lies there, so it can be found.
+ */
+export function propsOver<P extends Tile>(tiles: readonly Tile[], props: readonly P[]): P[] {
+  return props.filter((p) => p.sy > 0 && tiles.some((t) => t.sx === p.sx && t.sy === p.sy - 1));
+}
+
+/**
  * The props taken out of the painted face and drawn over the turtle instead: every prop
- * that is `faded` (fading, or still on its way back), and with each of them the tall props
- * standing right below it in the same column, because those are in front of IT and would
+ * that is `faded` (fading, or still on its way back) and in front of the turtle, and with
+ * each of them the tall props standing right below it in the same column, because those are in front of IT and would
  * otherwise end up under its trunk. In paint order: top row first.
  */
-export function liftedProps<P extends Tile>(props: readonly P[], faded: (p: P) => boolean): P[] {
-  const lifted = new Set<P>(props.filter(faded));
+export function liftedProps<P extends Tile>(props: readonly P[], faded: (p: P) => boolean, turtle?: Tile): P[] {
+  // a faded prop BEHIND the turtle (it hides an item, not the turtle) stays in the painted face, faded there
+  const lifted = new Set<P>(props.filter((p) => faded(p) && (!turtle || inFront(p, turtle))));
   for (let grew = true; grew; ) {
     grew = false;
     for (const p of props) {
@@ -121,9 +131,17 @@ export class PropFades {
   private alphas = new Map<string, number>();
   private goals = new Set<string>();
 
-  /** The props to fade from now on (keys): every other one goes back to full. */
-  aim(keys: Iterable<string>): void {
+  /**
+   * The props to fade from now on (keys): every other one goes back to full. The ones in
+   * `settled` (an item lies under their crown) are faded at once when they are new here:
+   * nobody watched them fade, the face was just entered or the item just appeared.
+   */
+  aim(keys: Iterable<string>, settled: Iterable<string> = []): void {
     this.goals = new Set(keys);
+    for (const key of settled) {
+      this.goals.add(key);
+      if (!this.alphas.has(key)) this.alphas.set(key, FADE_ALPHA);
+    }
     for (const key of this.goals) if (!this.alphas.has(key)) this.alphas.set(key, 1);
   }
 
