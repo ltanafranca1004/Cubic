@@ -38,7 +38,7 @@ async function open(browser: Browser, query = ''): Promise<Page> {
   return page;
 }
 
-const browser = await chromium.launch();
+const browser = await chromium.launch({ args: ['--mute-audio'] });
 try {
   // title: the cube turns, so take it at several moments; the thumb is the same frame cut to 3:2
   const title = await open(browser);

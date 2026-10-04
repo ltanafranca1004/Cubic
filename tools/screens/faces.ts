@@ -107,7 +107,7 @@ async function click(page: Page, label: string): Promise<void> {
 
 // ---------- into a game: A outside (host), B inside (guest) ----------
 
-const browser = await chromium.launch();
+const browser = await chromium.launch({ args: ['--mute-audio'] });
 
 async function open(): Promise<Page> {
   const page = await (await browser.newContext({ viewport: SIZE })).newPage();

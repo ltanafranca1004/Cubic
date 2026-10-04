@@ -42,7 +42,7 @@ export async function metrics(page: Page): Promise<Record<string, unknown>> {
 const SCREENS = { title: '/', lobby: '/?mock=lobby', 'game-out': '/?mock=game', 'game-in': '/?mock=game&side=in' };
 
 async function oracle(out: string): Promise<void> {
-  const browser = await chromium.launch();
+  const browser = await chromium.launch({ args: ['--mute-audio'] });
   const result: Record<string, unknown> = {};
   for (const [w, h] of [[1920, 1080], [1280, 720]] as const) {
     for (const [name, path] of Object.entries(SCREENS)) {

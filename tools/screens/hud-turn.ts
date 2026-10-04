@@ -97,7 +97,7 @@ function sheet(frames: PNG[]): PNG {
 
 const same = (a: PNG, b: PNG) => a.width === b.width && a.data.equals(b.data);
 
-const browser = await chromium.launch({ args: ['--enable-unsafe-swiftshader', '--use-gl=angle', '--use-angle=swiftshader'] });
+const browser = await chromium.launch({ args: ['--mute-audio', '--enable-unsafe-swiftshader', '--use-gl=angle', '--use-angle=swiftshader'] });
 for (const side of ['in', 'out'] as Side[]) {
   const last: Partial<Record<string, PNG>> = {};
   for (const renderer of ['canvas', 'webgl']) {

@@ -285,7 +285,7 @@ async function gif(browser: Browser): Promise<void> {
   console.log('   cloud-dive.gif');
 }
 
-const browser = await chromium.launch();
+const browser = await chromium.launch({ args: ['--mute-audio'] });
 try {
   if (!ONLY || ONLY === 'flow') await flow(browser);
   if (!ONLY || ONLY === 'faces') await faces(browser);

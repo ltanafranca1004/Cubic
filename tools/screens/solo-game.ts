@@ -6,8 +6,10 @@
 //
 // What the driver knows: only what the OUTSIDE player's own screen shows (observe(state,
 // 'out') and visibleObjects(state, 'out', face) on the dev hook's state) and the chat lines
-// the AI sends. It answers the AI's questions by their words, never by a line key, so it
-// also plays against a server whose lines are reworded.
+// the AI sends. It answers the AI's questions by their LINE KEY (ChatMessage.key, e.g.
+// "laser-path.in.tile"), never by their words, so it also plays against a server whose
+// lines are reworded. Only an answer is read from the words: a relay line, which is
+// vocabulary pieces ("the pot is row three column nine").
 //
 // It starts no server and reads no env but its own:
 //   servers (never with real keys):
@@ -29,6 +31,7 @@ import { chromium, type Page } from 'playwright';
 import {
   VEC,
   VOCAB_NUMBERS,
+  isPuzzleLine,
   canonOf,
   defaultEnv,
   dirOf,
@@ -50,6 +53,7 @@ import { canonDir, partnerCell, runsOf, turnOf } from '../../shared/src/bot/scri
 import { opposite, pathOf } from '../../shared/src/bot/scripts/laserPath';
 import { watchShow } from '../../shared/src/bot/scripts/sequenceLaser';
 import { readCode } from '../../shared/src/puzzles/hiddenCode';
+import { QUIET_ARGS, quiet } from './quiet';
 
 const BASE = process.env.BASE ?? 'http://localhost:5515';
 const REPO = resolve(new URL('../../', import.meta.url).pathname);
@@ -61,8 +65,13 @@ mkdirSync(OUT, { recursive: true });
 const STEP_MS = 130;
 /** A face transition (the roll is 500 ms) and a little air. */
 const FLIP_MS = 650;
-/** Lines of the AI that are about no puzzle: not what a picture of a face should show. */
-const SMALL_TALK = /it worked|more to solve|barely hear|cannot hear|we did it/i;
+/** One line of the AI: its words and its line key (none on a line a model wrote). */
+interface Line {
+  text: string;
+  key: string;
+}
+/** Is this one of these lines of a puzzle script? `is(l, 'laser-path', 'in.ready', 'in.done')`. */
+const is = (l: Line, id: string, ...names: string[]): boolean => names.some((n) => l.key === `${id}.${n}`);
 const ARROW: Record<string, string> = { '0,-1': 'ArrowUp', '0,1': 'ArrowDown', '-1,0': 'ArrowLeft', '1,0': 'ArrowRight' };
 
 interface Snap {
@@ -122,6 +131,8 @@ const WATCH = `(() => {
   w.__soloSpoken = [];
   w.__soloSpeechErrors = [];
   if (typeof speechSynthesis !== 'undefined') {
+    // speak() is already the silent stub of ./quiet.ts (the context's init script runs first):
+    // this only records what the app asked the browser voice to say. Nothing is spoken.
     const speak = speechSynthesis.speak.bind(speechSynthesis);
     speechSynthesis.speak = (u) => {
       if (u.text && u.volume > 0) w.__soloSpoken.push(u.text);
@@ -152,9 +163,9 @@ const WATCH = `(() => {
 
 class Player {
   /** Every chat line in the order it was seen, with the game clock. */
-  readonly log: { who: 'YOU' | 'AI'; text: string; clock: string }[] = [];
+  readonly log: { who: 'YOU' | 'AI'; text: string; key: string; clock: string }[] = [];
   /** AI lines not yet handed to a puzzle. */
-  private inbox: string[] = [];
+  private inbox: Line[] = [];
   private lastId = 0;
   /** What the AI said in the eight seconds after each strike. */
   readonly afterStrike: { strikes: number; puzzle: string; lines: string[]; until: number }[] = [];
@@ -174,9 +185,9 @@ class Player {
     for (const m of s.chat) {
       if (m.id <= this.lastId) continue;
       this.lastId = m.id;
-      this.log.push({ who: m.isAI ? 'AI' : 'YOU', text: m.text, clock: s.clock });
+      this.log.push({ who: m.isAI ? 'AI' : 'YOU', text: m.text, key: m.key ?? '', clock: s.clock });
       if (m.isAI) {
-        this.inbox.push(m.text);
+        this.inbox.push({ text: m.text, key: m.key ?? '' });
         for (const a of this.afterStrike) if (Date.now() < a.until) a.lines.push(m.text);
       }
     }
@@ -186,7 +197,8 @@ class Player {
     }
     // one picture per face: me on that face, with a line of the AI about its puzzle as the caption
     const face = this.wantShot;
-    if (face && !this.shotOf.has(face) && s.state?.players.out.pose.face === face && s.caption.startsWith('AI') && !SMALL_TALK.test(s.caption)) {
+    const shown = s.caption.startsWith('AI') ? [...s.chat].reverse().find((m) => m.isAI && s.caption.includes(m.text)) : undefined;
+    if (face && !this.shotOf.has(face) && s.state?.players.out.pose.face === face && shown?.key && isPuzzleLine(shown.key)) {
       this.shotOf.add(face);
       await this.page.screenshot({ path: `${OUT}face-${face}.png` });
     }
@@ -213,12 +225,12 @@ class Player {
     return voiceMix(this.state).gain >= 1;
   }
   /** The AI lines that came in since the last call. */
-  heard(): string[] {
+  heard(): Line[] {
     return this.inbox.splice(0);
   }
 
   /** Poll until `done` says so. It is handed the AI's new lines each time. */
-  async until(what: string, ms: number, done: (lines: string[]) => Promise<boolean> | boolean): Promise<void> {
+  async until(what: string, ms: number, done: (lines: Line[]) => Promise<boolean> | boolean): Promise<void> {
     const end = Date.now() + ms;
     for (;;) {
       await this.look();
@@ -303,7 +315,7 @@ async function hiddenCode(p: Player): Promise<void> {
   await p.until('face 1 solved', 90_000, async (lines) => {
     if (p.solved(1)) return true;
     // "What's the first digit?", "That code was wrong. Tell me the three digits again."
-    if (lines.some((l) => /digit/i.test(l)) && again()) await p.tell(spaced(code));
+    if (lines.some((l) => is(l, 'hidden-code', 'ask.first', 'ask.next', 'wrong')) && again()) await p.tell(spaced(code));
     return false;
   });
 }
@@ -322,18 +334,30 @@ function rowLine(y: number, xs: number[]): string {
   return `row ${y + 1} ${parts.join(' ')}`;
 }
 
-/** Face 3: read the symbol in the snow out row by row, one row each time the AI says the last is done. */
+/**
+ * Face 3: read the symbol in the snow out row by row, one row each time the AI says the last
+ * is done. After an empty row the AI has nothing to flip and says nothing: the next row
+ * follows at once, as a person would say it.
+ */
 async function mirroredGlyph(p: Player): Promise<void> {
   await p.meetOn(3);
   let y = 0;
   let cleared = false;
-  const row = () => p.tell(rowLine(y, p.seen(3, 'f3-glyph').filter((g) => g.y === y).map((g) => g.x)));
+  const xs = () => p.seen(3, 'f3-glyph').filter((g) => g.y === y).map((g) => g.x);
+  const row = async () => {
+    for (;;) {
+      const empty = xs().length === 0;
+      await p.tell(rowLine(y, xs()));
+      if (!empty || y >= 11) return;
+      y++;
+    }
+  };
   await row();
   const again = paced(4000);
   await p.until('face 3 solved', 240_000, async (lines) => {
     if (p.solved(3)) return true;
     for (const l of lines) {
-      if (/row done/i.test(l)) {
+      if (is(l, 'mirrored-glyph', 'in.next')) {
         y++;
         if (y < 12) await row();
         else if (!cleared) {
@@ -341,10 +365,10 @@ async function mirroredGlyph(p: Player): Promise<void> {
           cleared = true;
           await p.tell('clear');
         }
-      } else if (/tiles are off/i.test(l)) {
+      } else if (is(l, 'mirrored-glyph', 'in.cleared')) {
         y = 0;
         await row();
-      } else if (/tell me a row/i.test(l) && y < 12 && again()) await row();
+      } else if (is(l, 'mirrored-glyph', 'in.ask') && y < 12 && again()) await row();
     }
     return false;
   });
@@ -360,9 +384,9 @@ async function equationSafe(p: Player): Promise<void> {
   await p.until('face 2 solved', 90_000, async (lines) => {
     if (p.solved(2)) return true;
     for (const l of lines) {
-      const asked = /how many (bushes|birds|rocks)/i.exec(l);
-      if (asked) await p.tell(String(n()[asked[1]!.toLowerCase() as 'bushes']));
-      else if (/count again/i.test(l) && again()) await all();
+      const asked = (['bushes', 'birds', 'rocks'] as const).find((k) => is(l, 'equation-safe', `ask.${k}`));
+      if (asked) await p.tell(String(n()[asked]));
+      else if (is(l, 'equation-safe', 'wrong') && again()) await all();
     }
     return false;
   });
@@ -401,7 +425,7 @@ async function sequenceLaser(p: Player): Promise<void> {
   await p.until('face 5 solved', 150_000, async (lines) => {
     if (p.solved(5)) return true;
     // "What is the first symbol?", "What is next?", "Tell me the order again from the start."
-    if (lines.some((l) => /first symbol|what is next|order again/i.test(l)) && again()) await all();
+    if (lines.some((l) => is(l, 'sequence-laser', 'in.first', 'in.next', 'in.strike')) && again()) await all();
     return false;
   });
 }
@@ -467,26 +491,26 @@ async function laserPath(p: Player): Promise<void> {
   await p.until('face 6 solved', 300_000, async (lines) => {
     if (p.solved(6)) return true;
     for (const l of lines) {
-      const lava = /lava is (up|down|left|right)/i.exec(l);
+      const lava = (['up', 'down', 'left', 'right'] as const).find((d) => is(l, 'laser-path', `in.lava.${d}`));
       if (lava) {
         // the same step on my screen and on theirs: now I know how their screen is turned
-        const said = lava[1]!.toLowerCase() as Dir;
+        const said: Dir = lava;
         k = turnOf(inward, said);
         const theirs = partnerCell(path.ring, k);
         tile = said === 'left' || said === 'right' ? `row ${theirs.row + 1}` : `column ${theirs.col + 1}`;
         i = 0;
         tileAgain();
         await p.tell(tile);
-      } else if (/which face/i.test(l)) {
+      } else if (is(l, 'laser-path', 'in.side')) {
         if (sideAgain()) await p.tell(side);
-      } else if (/which tile/i.test(l)) {
+      } else if (is(l, 'laser-path', 'in.tile')) {
         if (tile && tileAgain()) await p.tell(tile);
-      } else if (/fell/i.test(l)) {
+      } else if (is(l, 'laser-path', 'in.fell')) {
         i = 0;
         await steps();
-      } else if (/on that tile|^done/i.test(l)) {
+      } else if (is(l, 'laser-path', 'in.ready', 'in.done')) {
         if (i < path.steps.length) await steps();
-      } else if (/^which way now/i.test(l) && chunk) {
+      } else if (is(l, 'laser-path', 'in.ask') && chunk) {
         // it heard nothing it could walk: the last line once more
         i -= chunk;
         await steps();
@@ -508,12 +532,13 @@ async function botanicalMirror(p: Player): Promise<void> {
   await p.until('face 4 solved', 180_000, async (lines) => {
     if (p.solved(4)) return true;
     for (const l of lines) {
-      const pot = /pot is row (\w+) column (\w+)/i.exec(l);
+      // the answer itself is read from the relay line's words (vocabulary pieces)
+      const pot = is(l, 'botanical-mirror', 'relay') ? /pot is row (\w+) column (\w+)/i.exec(l.text) : null;
       if (pot) {
         // rows from the edge beside face 5, columns from the edge beside face 3: the tile both can count
         await p.goToTile({ face: 4, x: numberOf(pot[2]!.toLowerCase()) - 1, y: numberOf(pot[1]!.toLowerCase()) - 1 });
         await p.press('e');
-      } else if (/what colou?r/i.test(l) && colourAgain()) {
+      } else if (is(l, 'botanical-mirror', 'in.ask') && colourAgain()) {
         said = true;
         await p.tell(`it is ${colour}`);
       }
@@ -537,8 +562,10 @@ const CHAIN: { face: FaceId; id: string; play: (p: Player) => Promise<void> }[] 
 
 // ---------- the run ----------
 
-const browser = await chromium.launch();
+// headless and silent: no sound from Chromium, and the browser voice is a stub (./quiet.ts)
+const browser = await chromium.launch({ headless: true, args: QUIET_ARGS });
 const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+await quiet(context);
 const page = await context.newPage();
 const errors: string[] = [];
 const warnings: string[] = [];
@@ -599,7 +626,7 @@ try {
     }
     const lines = player.log.slice(from);
     say(`${error ? 'FAIL' : 'PASS'}  face ${step.face} ${step.id}  time ${player.last.clock}  strikes ${player.last.state?.strikes ?? '?'}  chat: you ${lines.filter((l) => l.who === 'YOU').length}, AI ${lines.filter((l) => l.who === 'AI').length}${error ? `  (${error})` : ''}`);
-    for (const l of lines) say(`      ${l.clock} ${l.who.padEnd(3)} ${l.text}`);
+    for (const l of lines) say(`      ${l.clock} ${l.who.padEnd(3)} ${l.text}${l.key ? `   [${l.key}]` : ''}`);
     if (error) throw new Error(`face ${step.face} ${step.id}: ${error}`);
   }
 
@@ -623,7 +650,7 @@ const spoken = await js<string[]>(page, 'window.__soloSpoken ?? []').catch(() =>
 const speechErrors = await js<string[]>(page, 'window.__soloSpeechErrors ?? []').catch(() => []);
 const ai = player.log.filter((l) => l.who === 'AI');
 say();
-say(`voice: ${ai.length} AI lines; socket events tts ${voiced.tts}, tts:chain ${voiced['tts:chain']}, speak ${voiced.speak}; the browser voice read ${spoken.length}; voice warnings ${warnings.length}, speech errors ${speechErrors.length}`);
+say(`voice: ${ai.length} AI lines; socket events tts ${voiced.tts}, tts:chain ${voiced['tts:chain']}, speak ${voiced.speak}; the browser voice was asked for ${spoken.length} (stubbed: nothing is spoken); voice warnings ${warnings.length}, speech errors ${speechErrors.length}`);
 for (const w of [...warnings, ...speechErrors]) say(`      ${w}`);
 
 // A relay line only comes as tts:chain once every vocabulary piece has a banked clip. Until
@@ -654,7 +681,7 @@ for (const a of player.afterStrike) {
   say(`      strike ${a.strikes} (${a.puzzle}): the AI then said ${a.lines.length} line(s)`);
   for (const l of a.lines) say(`        AI  ${l}`);
 }
-const huh = ai.filter((l) => /did not get that/i.test(l.text));
+const huh = ai.filter((l) => l.key === 'huh');
 if (huh.length) say(`not understood: the AI said "I did not get that" ${huh.length} time(s)`);
 
 const aiCaptions = captions.filter((c) => c.text.startsWith('AI'));

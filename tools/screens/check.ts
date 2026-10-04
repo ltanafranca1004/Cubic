@@ -668,7 +668,7 @@ async function run(browser: Browser, size: { width: number; height: number }, re
   await b.close();
 }
 
-const browser = await chromium.launch();
+const browser = await chromium.launch({ args: ['--mute-audio'] });
 try {
   await coldLoad(browser);
   await blockedOrigin(browser);

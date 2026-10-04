@@ -16,6 +16,7 @@
 //            CHAT="how are you doing in there?" npx tsx screens/ai.ts webgl   (also send a free-form line)
 //
 // The steps are plain data (STEPS). Nothing in them names a puzzle.
+import { SILENCE } from './quiet';
 import { mkdirSync } from 'node:fs';
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
 import { FACES, faceDistance, findPath, type FaceId, type GameState, type Side } from '../../shared/src/index';
@@ -315,6 +316,7 @@ async function play(browser: Browser, renderer: 'webgl' | 'canvas'): Promise<voi
   for (const part of STEPS) {
     console.log(` ${part.name}`);
     const context = await browser.newContext({ viewport: SIZE, hasTouch: !!part.touch });
+    await context.addInitScript(SILENCE);
     const page = await open(context, renderer === 'canvas' ? '?renderer=canvas' : '');
     // title -> mode screen (the dive takes 1.2 s)
     if (part.touch) await pressButton(page, 'PLAY', 'touch');
@@ -329,7 +331,7 @@ async function play(browser: Browser, renderer: 'webgl' | 'canvas'): Promise<voi
 }
 
 const ONLY = process.argv[2]; // webgl | canvas
-const browser = await chromium.launch();
+const browser = await chromium.launch({ args: ['--mute-audio'] });
 try {
   if (!ONLY || ONLY === 'webgl') await play(browser, 'webgl');
   if (!ONLY || ONLY === 'canvas') await play(browser, 'canvas');

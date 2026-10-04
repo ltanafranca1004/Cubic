@@ -7,6 +7,7 @@
 //     AI_FAKE=1 TTS_MODE=browser PORT=3413 npm start -w server
 //     VITE_SERVER_URL=http://localhost:3413 npm run dev -w client -- --port 5513
 //   run:  cd tools && npx tsx screens/solo.ts
+import { SILENCE } from './quiet';
 import { mkdirSync } from 'node:fs';
 import { chromium, type Browser, type Page } from 'playwright';
 
@@ -84,6 +85,7 @@ const POPUP = 'BACK|CANCEL|CREATE LOBBY|INSIDE|JOIN LOBBY|OUTSIDE|PLAY SOLO';
 
 async function open(browser: Browser, size: { width: number; height: number }, touch: boolean): Promise<Page> {
   const ctx = await browser.newContext({ viewport: size, hasTouch: touch, deviceScaleFactor: touch ? 3 : 1 });
+  await ctx.addInitScript(SILENCE);
   const page = await ctx.newPage();
   page.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`));
   await page.goto(`${BASE}/?renderer=canvas${touch ? '&touch' : ''}`);
@@ -204,7 +206,7 @@ async function phone(browser: Browser): Promise<void> {
   await page.context().close();
 }
 
-const browser = await chromium.launch();
+const browser = await chromium.launch({ args: ['--mute-audio'] });
 try {
   await desktop(browser);
   await phone(browser);

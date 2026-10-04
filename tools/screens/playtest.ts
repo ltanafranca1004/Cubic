@@ -27,6 +27,7 @@
 //
 // NEW PUZZLE? Add one entry to PUZZLE_SCRIPTS below. The run fails if a puzzle registered
 // in shared/src/puzzles/index.ts has no entry.
+import { SILENCE } from './quiet';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -533,6 +534,7 @@ const clickCube = (page: Page, side: Side) => clickStage(page, SIDE_CUBE[side], 
 
 async function open(run: Run, who: string, video = false): Promise<Page> {
   const context = await run.browser.newContext({ viewport: SIZE, ...(video ? { recordVideo: { dir: `${OUT}.video-${who}`, size: SIZE } } : {}) });
+  await context.addInitScript(SILENCE);
   const page = await context.newPage();
   const renderer = run.renderer;
   page.on('pageerror', (e) => problems.push({ at: Date.now(), renderer, who, text: `pageerror: ${e.message}` }));
@@ -1887,7 +1889,7 @@ const SECTIONS: Record<Section, (run: Run) => Promise<void>> = { lobby, hud, wal
 const only = process.env.RENDERER as Renderer | undefined;
 if (only && !RENDERERS.includes(only)) throw new Error(`RENDERER must be one of ${RENDERERS.join(', ')}`);
 
-const browser = await chromium.launch();
+const browser = await chromium.launch({ args: ['--mute-audio'] });
 const started = Date.now();
 try {
   for (const renderer of RENDERERS) {
