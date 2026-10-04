@@ -223,11 +223,27 @@ function bundle(): Img {
 export interface SpriteManifest {
   objects: Record<string, { image: string; frames: Record<string, number | number[]>; sides?: Partial<Record<'out' | 'in', Record<string, number | number[]>>> }>;
   items: Record<string, { image: string; frame: number }>;
-  players: Record<'out' | 'in', { image: string; idle: number[]; walk: number[] }>;
+  /** `walk` is the walk for a game that knows no directions; the three rows by direction follow it. */
+  players: Record<'out' | 'in', { image: string; idle: number[]; walk: number[]; walkDown: number[]; walkUp: number[]; walkRight: number[] }>;
 }
 
+/**
+ * The turtle sheets: 6 columns, 9 rows. Rows 0-4 are idles (all facing down), then 4-frame
+ * walks: 5 down, 6 up, 7 right, 8 left (the exact mirror of 7: the game mirrors row 7 instead).
+ */
+const TURTLE_COLS = 6;
+const turtleRow = (row: number, frames = 4): number[] => Array.from({ length: frames }, (_, i) => row * TURTLE_COLS + i);
+const turtle = (image: string): SpriteManifest['players']['out'] => ({
+  image,
+  idle: [0, 1],
+  walk: turtleRow(5),
+  walkDown: turtleRow(5),
+  walkUp: turtleRow(6),
+  walkRight: turtleRow(7),
+});
+
 export function buildSprites(dir: string): SpriteManifest {
-  // The player sheets are the team's turtle art (6 columns: rows 0-4 idle, 5-7 walk down, up, right).
+  // The player sheets are the team's turtle art (rows and columns: see `turtle` above).
   // Never overwrite them; the code-drawn characters are only a stand-in for a missing sheet.
   const stand = (file: string, frames: Img[]): void => {
     if (!existsSync(file)) strip(frames).save(file);
@@ -294,8 +310,8 @@ export function buildSprites(dir: string): SpriteManifest {
       ...puzzleItems,
     },
     players: {
-      out: { image: 'sprites/player-out.png', idle: [0, 1], walk: [30, 31, 32, 33] },
-      in: { image: 'sprites/player-in.png', idle: [0, 1], walk: [30, 31, 32, 33] },
+      out: turtle('sprites/player-out.png'),
+      in: turtle('sprites/player-in.png'),
     },
   };
 }

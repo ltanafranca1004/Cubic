@@ -69,8 +69,11 @@ assets/
   animate. `default` is used when there is no state. `sides.in` / `sides.out` replace
   `frames` for that side. The `unknown` entry is drawn for a type with no art.
 - `items`: key is the item `kind`; `default` is used for a kind with no art.
-- `players`: frames face right; the game flips them for left. `idle` plays while the
-  player stands still.
+- `players`: `walk` frames face right; the game flips them for left. `idle` plays while the
+  player stands still. A sheet with a walk per direction also lists `walkDown`, `walkUp`
+  and `walkRight` (left is `walkRight` mirrored): the game then plays the row for the way
+  the player walks on their own screen. Optional `idleUp` / `idleRight` keep that facing
+  while standing; without them `idle` (facing down) plays.
 - `biomes`: the biome layer of the outside faces, read by `client/src/world/biomes`.
   `props.image` is a sheet of cells one tile wide and two high (`cellWidth`, `cellHeight`,
   `columns`): the lower half sits on the prop's tile, the upper half hangs over the tile
