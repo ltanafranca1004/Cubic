@@ -302,7 +302,7 @@ pixels.
 - **Drawn by `client/src/cube`**: a small software rasterizer (backface culling, painter's
   order, nearest-neighbour, one flat shade per face, a 1px ink outline) over six textures
   baked from the real maps, tiles, objects and the turtle. It writes plain pixels, so WebGL
-  and Canvas show the same cube. The spin is baked once into 96 frames (one turn in 48 s).
+  and Canvas show the same cube. The faces are baked once and the cube is redrawn live 15 times a second (one turn in 48 s).
   A turntable alone never shows the cave underneath, so the cube also rolls half over twice
   per turn: all six biomes come past.
 - **Title**: sky and far clouds behind the cube, near clouds in front of it, logo and Play

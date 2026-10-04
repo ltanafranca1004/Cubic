@@ -7,7 +7,9 @@ import { clearTarget, createTarget, drawCube, type CubeFaces } from './raster';
 
 /** How far the cube is tipped towards the viewer, so its top shows. */
 export const SPIN_TILT = (27 * Math.PI) / 180;
-/** Frames in one full turn. */
+/** How often the menu cube moves: it is redrawn live, a small step each time. */
+export const SPIN_FPS = 15;
+/** Frames in one full turn of a baked strip (bakeSpin: tests and stills). */
 export const SPIN_FRAMES = 96;
 
 const smooth = (t: number): number => {

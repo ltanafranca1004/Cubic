@@ -1,8 +1,8 @@
 import Phaser from 'phaser';
 import { bakeFaces, type CubeArt } from '../cube/faces';
 import { texelFor } from '../cube/layout';
-import { pack } from '../cube/raster';
-import { SPIN_FRAMES, bakeSpin } from '../cube/spin';
+import { clearTarget, createTarget, drawCube, pack, type CubeFaces, type Target } from '../cube/raster';
+import { SPIN_FPS, frameSize, spinView } from '../cube/spin';
 import { settings } from '../style/settings';
 import { C, EASE, ROLE, hex } from '../style/tokens';
 import { Sky } from './clouds';
@@ -14,9 +14,21 @@ export type CubeMode = 'start' | 'mode' | 'side' | 'off';
 const TURN_MS = 48_000;
 /** The cube's edge as a share of the screen height (with its tilt it fills about 65%). */
 const EDGE = 0.4;
-/** The largest half-edge we bake: keeps the frame strip inside a 4096px texture. */
+/** The largest half-edge we draw: one frame of it costs about a millisecond. */
 const MAX_HALF = 72;
-const ATLAS_MAX = 4096;
+/** Steps in one turn: the cube moves SPIN_FPS times a second, a small crisp step each time. */
+const TURN_STEPS = Math.round((TURN_MS / 1000) * SPIN_FPS);
+
+/** The cube at one size: its baked faces and the one canvas it is redrawn on. */
+interface LiveCube {
+  faces: CubeFaces;
+  target: Target;
+  g: CanvasRenderingContext2D;
+  image: ImageData;
+  texture: Phaser.Textures.CanvasTexture;
+  /** The step of the turn that is on the canvas now. */
+  step: number;
+}
 
 interface Rest {
   x: number;
@@ -40,8 +52,9 @@ if (import.meta.env.DEV) Object.assign(window, { __cubicCube: cubeStats });
  * white of the mode screen, the sky and the dark of the side select), because the cube
  * has to be drawn between those and the menus.
  *
- * The cube is drawn by the software renderer in client/src/cube from the real face maps,
- * once, into a strip of frames; after that a frame is one image.
+ * The cube is drawn by the software renderer in client/src/cube from the real face maps.
+ * The faces are baked once; the cube itself is redrawn on one small canvas SPIN_FPS times a
+ * second (about a millisecond each), so the turn is smooth and every frame is whole pixels.
  */
 export class CubeBackdropScene extends Phaser.Scene {
   private mode: CubeMode = 'start';
@@ -57,6 +70,7 @@ export class CubeBackdropScene extends Phaser.Scene {
   /** Where the cube is now (the bob is added on top of y). */
   private at = { x: 0, y: 0, alpha: 1, scale: 1 };
   private half = 0;
+  private live = new Map<number, LiveCube>();
 
   constructor() {
     super('cube');
@@ -83,7 +97,7 @@ export class CubeBackdropScene extends Phaser.Scene {
 
     this.half = Math.min(MAX_HALF, Math.round((H * EDGE) / 2));
     this.shadow = this.add.image(0, 0, this.shadowTexture(this.half));
-    this.cube = this.add.image(0, 0, this.spinTexture(this.half), 0);
+    this.cube = this.add.image(0, 0, this.spinTexture(this.half));
 
     const rebuild = () => this.scene.restart();
     this.scale.on(Phaser.Scale.Events.RESIZE, rebuild);
@@ -191,8 +205,8 @@ export class CubeBackdropScene extends Phaser.Scene {
   }
 
   private place(): void {
-    const turn = cubeStats.hold ?? (this.clock % TURN_MS) / TURN_MS;
-    this.cube.setFrame(Math.floor(turn * SPIN_FRAMES) % SPIN_FRAMES);
+    const step = cubeStats.hold !== null ? Math.round(cubeStats.hold * TURN_STEPS) % TURN_STEPS : Math.floor(((this.clock % TURN_MS) / TURN_MS) * TURN_STEPS) % TURN_STEPS;
+    this.draw(step);
     // it hangs in the air: two pixels up and down, landing on whole pixels
     const bob = settings().reduceMotion || cubeStats.hold !== null ? 0 : Math.round(Math.sin(this.clock / 1100) * 2);
     const { x, y, alpha, scale } = this.at;
@@ -200,29 +214,34 @@ export class CubeBackdropScene extends Phaser.Scene {
     this.shadow.setPosition(Math.round(x), Math.round(y + this.half * 2.05 * scale)).setAlpha(alpha).setScale(scale);
   }
 
-  /** The spin as one texture of frames. Baked once per cube size. */
+  /** The cube's canvas texture at this size. The faces are baked once per size. */
   private spinTexture(half: number): string {
     const key = `cube-spin:${half}`;
-    if (this.textures.exists(key)) return key;
+    if (this.live.has(half) && this.textures.exists(key)) return key;
     const art = (this.registry.get('cubeArt') as CubeArt | null) ?? null;
     const t0 = performance.now();
-    const strip = bakeSpin(bakeFaces(art, 'out', texelFor(half * 2), true), half, pack(ROLE.ink));
-    const n = strip.size;
-    const cols = Math.max(1, Math.floor(ATLAS_MAX / n));
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.min(cols, strip.count) * n;
-    canvas.height = Math.ceil(strip.count / cols) * n;
-    const g = canvas.getContext('2d')!;
-    const bytes = new Uint8ClampedArray(strip.px.buffer);
-    const frame = g.createImageData(n, n);
-    for (let i = 0; i < strip.count; i++) {
-      frame.data.set(bytes.subarray(i * n * n * 4, (i + 1) * n * n * 4));
-      g.putImageData(frame, (i % cols) * n, Math.floor(i / cols) * n);
-    }
-    const texture = this.textures.addCanvas(key, canvas)!;
-    for (let i = 0; i < strip.count; i++) texture.add(i, 0, (i % cols) * n, Math.floor(i / cols) * n, n, n);
-    Object.assign(cubeStats, { bakeMs: Math.round(performance.now() - t0), frames: strip.count, size: n });
+    const faces = bakeFaces(art, 'out', texelFor(half * 2), true);
+    const n = frameSize(half);
+    if (this.textures.exists(key)) this.textures.remove(key);
+    const texture = this.textures.createCanvas(key, n, n)!;
+    const g = texture.getContext();
+    this.live.set(half, { faces, target: createTarget(n, n), g, image: g.createImageData(n, n), texture, step: -1 });
+    this.draw(0, half);
+    Object.assign(cubeStats, { bakeMs: Math.round(performance.now() - t0), frames: TURN_STEPS, size: n });
     return key;
+  }
+
+  /** Put one step of the turn on the cube's canvas (only when the step changed). */
+  private draw(step: number, half = this.half): void {
+    const live = this.live.get(half);
+    if (!live || live.step === step) return;
+    live.step = step;
+    const n = live.target.width;
+    clearTarget(live.target);
+    drawCube(live.target, live.faces, spinView(step / TURN_STEPS), { cx: n / 2, cy: n / 2, half, ink: pack(ROLE.ink) });
+    live.image.data.set(new Uint8ClampedArray(live.target.px.buffer));
+    live.g.putImageData(live.image, 0, 0);
+    live.texture.refresh();
   }
 
   /** A soft pixel shadow under the floating cube: solid in the middle, dithered out to nothing. */
