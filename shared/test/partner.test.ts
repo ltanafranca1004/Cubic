@@ -466,8 +466,8 @@ test('a script and a simulated human solve the real face 1 through chat: ask, re
   const relay = r.decisions.flatMap((d) => d.say).find((x) => x.key === 'hidden-code.typing')!;
   assert.equal(relay.args!.code, r.human.said[0]!.slice(8));
   assert.ok(!r.lines.includes('unknown'));
-  // with the registry as it is (no script) the same game does not stall: the bot greets, says so, and waits
-  const none = play('in', { humans: [reader], maxMs: 20_000 });
+  // with no script for the puzzle the same game does not stall: the bot greets, says so, and waits
+  const none = play('in', { scripts: [], humans: [reader], maxMs: 20_000 });
   assert.deepEqual(none.lines.slice(0, 2), ['hello.in', 'unknown']);
   assert.equal(none.state.solved.length, 0);
 });
