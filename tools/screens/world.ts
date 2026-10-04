@@ -64,6 +64,8 @@ async function open(browser: Browser, side: string, renderer: string, size = { w
   const page = await browser.newPage({ viewport: size });
   watch(page);
   await page.goto(`${BASE}/?mock=game&side=${side}${renderer === 'canvas' ? '&renderer=canvas' : ''}`);
+  // the pictures are of the world: no onboarding cards or hints over it
+  await page.evaluate(`import('/src/style/settings.ts').then((m) => m.setSetting('hints', false))`);
   await page.waitForTimeout(1500);
   await page.keyboard.press('d'); // the first gesture: unlocks audio, so the loops load too
   return page;
@@ -154,8 +156,9 @@ async function checks(browser: Browser): Promise<void> {
   await goTo(page, 'out', 1, 8, 6);
   await page.waitForTimeout(400);
   const before = (await stats(page)).key;
-  for (const key of 'ddd') {
-    await page.keyboard.press(key);
+  // however wide the face is: step right until the face changes
+  for (let i = 0; i < 8 && (await stats(page)).key === before; i++) {
+    await page.keyboard.press('d');
     await page.waitForTimeout(170);
   }
   await page.waitForTimeout(900);
