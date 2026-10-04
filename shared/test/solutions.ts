@@ -1,5 +1,6 @@
 import type { FaceId, Side } from '../src/index';
 import type { SolutionScript, Solver } from './harness';
+import { solveLaserPath, solveSequenceLaser } from './laser-solutions'; // faces 5 and 6
 
 // ONE SOLUTION SCRIPT PER PUZZLE, keyed by the module's `id`.
 // A script plays the puzzle the way two players would: it walks (t.go / t.move), presses E
@@ -42,10 +43,12 @@ export const SOLUTIONS: Record<string, SolutionScript> = {
   // ---------- end face 4 ----------
 
   // ---------- face 5: sequence-laser ----------
-  'sequence-laser': stub(5),
+  // Needs the battery: plays face 2 first on a fresh game. Scripts: ./laser-solutions.ts.
+  'sequence-laser': (t) => solveSequenceLaser(SOLUTIONS['equation-safe']!)(t),
   // ---------- end face 5 ----------
 
   // ---------- face 6: laser-path ----------
-  'laser-path': stub(6, 'in'),
+  // Needs the laser: plays face 5 (and so face 2) first on a fresh game.
+  'laser-path': (t) => solveLaserPath(SOLUTIONS['sequence-laser']!)(t),
   // ---------- end face 6 ----------
 };

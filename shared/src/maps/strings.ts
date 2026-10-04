@@ -29,8 +29,21 @@ export const LEGEND: Readonly<Record<string, { tile: TileKind } | { object: stri
   // ---------- face 4: botanical-mirror ----------
 
   // ---------- face 5: sequence-laser ----------
+  // A symbol tile (seven per side, same tiles; the i-th in map order is the i-th symbol).
+  u: { object: 'f5-symbol' },
+  v: { object: 'f5-replay' },
+  // The laser emitter: a target. The puzzle hands back anything that is not the battery.
+  w: { object: 'target', name: 'f5-emitter' },
 
   // ---------- face 6: laser-path ----------
+  // A rock (stops the beam and the player), the wooden crate the beam burns, the RESET
+  // tile, where the beam comes up, and the button in the lava. The mirrors move, so they
+  // are not map objects: their start tiles are in the module.
+  x: { object: 'f6-rock' },
+  y: { object: 'f6-crate' },
+  z: { object: 'reset' },
+  Y: { object: 'f6-source' },
+  X: { object: 'button' },
 };
 
 /** Build a FaceMap from FACE_SIZE strings of FACE_SIZE legend characters. Throws on bad input. */
