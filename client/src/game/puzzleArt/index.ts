@@ -17,7 +17,7 @@ import type { Draw, Rect, Sprite } from './common';
 // calls in `C.*` colours (style/tokens.ts, nothing else: the generator rejects any other
 // colour), add it to DRAW under the map object's `type`, and list every state the puzzle's
 // `visible()` can return for it in SPRITES. The first state listed is the frame shown for
-// an unknown state. Shared things (keypad, button, RESET, CLEAR) are in ./common.ts.
+// an unknown state. A state that animates is listed once per frame (`frame: 1`, `2`...). Shared things (keypad, button, RESET, CLEAR) are in ./common.ts.
 // Then `cd tools && npm run art` redraws the sheet and the manifest. Items: ./items.ts.
 
 export type { Draw, Rect, Sprite } from './common';
@@ -36,9 +36,12 @@ for (const set of SETS)
 export const PUZZLE_SPRITES: readonly Sprite[] = SETS.flatMap((set) => set.SPRITES);
 
 /** Draw a co-op puzzle object. False if `type` is not one of them (nothing was drawn). */
-export function drawPuzzleObject(rect: Rect, type: string, state: string | undefined): boolean {
+export function drawPuzzleObject(rect: Rect, type: string, state: string | undefined, frame = 0): boolean {
   const draw = DRAW[type];
   if (!draw) return false;
-  draw(rect, state ?? 'default');
+  draw(rect, state ?? 'default', frame);
   return true;
 }
+
+/** How many animation frames a (type, state) has: 1 unless SPRITES lists more (the hot lava). */
+export const puzzleFrames = (type: string, state: string | undefined): number => PUZZLE_SPRITES.filter((s) => s.type === type && s.state === state).length || 1;

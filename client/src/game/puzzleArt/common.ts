@@ -5,12 +5,19 @@ import { C } from '../../style/tokens';
 
 /** Fill w x h pixels at x,y with a palette colour. */
 export type Rect = (x: number, y: number, w: number, h: number, colour: string) => void;
-/** Draws one object type into a 16x16 cell. `state` is the object's state (`default` when it has none). */
-export type Draw = (rect: Rect, state: string) => void;
-/** One cell of the sheet. The first sprite of a type is also its `default` frame. */
+/**
+ * Draws one object type into a 16x16 cell. `state` is the object's state (`default` when it
+ * has none), `frame` the animation frame of a state that has more than one (else 0).
+ */
+export type Draw = (rect: Rect, state: string, frame: number) => void;
+/**
+ * One cell of the sheet. The first sprite of a type is also its `default` frame. A state
+ * that animates is listed once per frame: `frame` 1, 2... after the first (which has none).
+ */
 export interface Sprite {
   type: string;
   state: string;
+  frame?: number;
 }
 
 /** Rows of `#` and `.` drawn at x,y, `scale` pixels per character. */

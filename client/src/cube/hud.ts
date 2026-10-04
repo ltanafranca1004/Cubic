@@ -5,7 +5,7 @@ import { cubeMap, registerCubeMap, type CubeMapDir } from './api';
 import { bakeFaces, loadCubeArt, type CubeArt } from './faces';
 import { texelFor } from './layout';
 import { apply, ease, mul, snap, type Mat3, type V3 } from './mat';
-import { HUD_TILT, QUARTER, ROOM_CAM, facing, hudView, partnerHint, poseView, turnAt, upFromDrift } from './orient';
+import { HUD_TILT, QUARTER, ROOM_CAM, facing, hudView, poseView, turnAt, upFromDrift } from './orient';
 import { clearTarget, createTarget, drawCube, drawRoom, pack, projectRoom, roomFaces, visibleFaces, type CubeFaces, type FaceTex, type Target } from './raster';
 
 // THE CUBE IN THE HUD. A small pixel cube that always shows the face you are on flat
@@ -27,8 +27,6 @@ export interface CubeHudState {
   face: FaceId;
   /** 0 | 90 | 180 | 270, as in the compass. */
   drift: number;
-  /** The face the partner is on, if we know. */
-  partnerFace: FaceId | null;
   solved: readonly FaceId[];
   portalOpen: boolean;
   /** The face of each puzzle: one progress pip per entry. Without it, one per face. */
@@ -232,7 +230,6 @@ export function createCubeHud(mount: HTMLElement, pips: HTMLElement): CubeHud {
   const dots = (s: CubeHudState, you: boolean) => {
     const list: { face: FaceId; color: string }[] = [];
     if (you) list.push({ face: s.face, color: ROLE.focus });
-    if (s.partnerFace) list.push({ face: s.partnerFace, color: s.side === 'out' ? ROLE.in.base : ROLE.out.base });
     return list;
   };
 
@@ -262,19 +259,16 @@ export function createCubeHud(mount: HTMLElement, pips: HTMLElement): CubeHud {
   /** The chips on the four edges and the six pips: redrawn only when they change. */
   function labels(s: CubeHudState): boolean {
     const pipFaces = s.puzzleFaces ?? FACES;
-    const next = [s.side, s.face, s.drift, s.partnerFace, s.solved.join(''), s.portalOpen, pipFaces.join('')].join('|');
+    const next = [s.side, s.face, s.drift, s.solved.join(''), s.portalOpen, pipFaces.join('')].join('|');
     if (next === sig) return false;
     sig = next;
     const around = neighbours({ side: s.side, face: s.face, up: up(s) });
-    const hint = s.partnerFace ? partnerHint(s.side, s.face, up(s), s.partnerFace) : null;
-    mount.dataset.partner = s.side === 'out' ? 'in' : 'out';
     for (const dir of DIRS) {
       const chip = box.querySelector<HTMLElement>(`.cu-cube-e.${dir}`)!;
       const face = around[dir];
       chip.dataset.face = String(face);
       chip.classList.toggle('ok', s.solved.includes(face));
-      chip.classList.toggle('partner', hint?.edge === dir);
-      chip.title = `Face ${face} ${FACE_NAMES[s.side][face]}${hint?.edge === dir ? ': the way to your partner' : ''}`;
+      chip.title = `Face ${face} ${FACE_NAMES[s.side][face]}`;
       chip.textContent = String(face);
     }
     // one pip per puzzle (so n/total fills them all), in the colour of its face once solved
@@ -293,9 +287,9 @@ export function createCubeHud(mount: HTMLElement, pips: HTMLElement): CubeHud {
   }
 
   const timer = window.setInterval(() => {
-    // the partner's marker and the portal's frame pulse (not with reduced motion)
+    // the portal's frame pulses (not with reduced motion)
     if (settings().reduceMotion || !state || !mount.isConnected || mount.offsetParent === null) return;
-    if (!state.partnerFace && !(state.portalOpen && PORTAL_FACE !== null)) return;
+    if (!(state.portalOpen && PORTAL_FACE !== null)) return;
     pulse = !pulse;
     draw();
   }, PULSE_MS);

@@ -73,7 +73,12 @@ test('frames: the walk row matches the facing, left plays the right row mirrored
 });
 
 test('frames: standing uses the idle for the facing when the sheet has one, else the one idle', () => {
-  for (const facing of ['down', 'up', 'left', 'right'] as const) assert.deepEqual(playerFrames(ROWS, facing, false), ROWS.idle);
+  assert.deepEqual(playerFrames(ROWS, 'down', false), ROWS.idle);
+  // No idle for the facing: it holds the first frame of that walk row (left = right, mirrored).
+  assert.deepEqual(playerFrames(ROWS, 'up', false), [36]);
+  assert.deepEqual(playerFrames(ROWS, 'left', false), [42]);
+  assert.deepEqual(playerFrames(ROWS, 'right', false), [42]);
+  for (const facing of ['down', 'up', 'left', 'right'] as const) assert.deepEqual(playerFrames(PLAIN, facing, false), PLAIN.idle);
   const more = { ...ROWS, idleUp: [36], idleRight: [42] };
   assert.deepEqual(playerFrames(more, 'up', false), [36]);
   assert.deepEqual(playerFrames(more, 'left', false), [42]);

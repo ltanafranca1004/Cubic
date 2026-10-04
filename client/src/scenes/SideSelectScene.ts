@@ -104,6 +104,15 @@ export class SideSelectScene extends MenuScene {
       Object.assign(window, {
         __cubicHeroes: () => ({ out: at('out'), in: at('in') }),
         __cubicSide: () => ({ width: W, height: H, zoom: z, hover: this.hover, touch: device().touch, out: seen('out'), in: seen('in') }),
+        /** Get marker positions for alignment verification. */
+        __cubicMarkers: () => {
+          const marker = (role: Role) => {
+            const m = this.markers[role];
+            const b = m.root.getBounds();
+            return { x: b.x, y: b.y, w: b.width, h: b.height, cx: b.x + b.width / 2, cy: b.y + b.height / 2 };
+          };
+          return { host: marker('host'), guest: marker('guest') };
+        },
         /** Put a line in the status bar and say where it and its neighbours are (the panel above, LEAVE on its left). */
         __cubicSideStatus: (msg: string) => {
           this.setStatus(msg, ROLE.paper);
@@ -385,7 +394,7 @@ export class SideSelectScene extends MenuScene {
       dx = 0;
       dy = role === 'host' ? -20 : 20; // host above, guest below
     } else {
-      dx = role === 'host' ? -30 : 30;
+      dx = 0;
       dy = 0;
     }
     // (both heroes stand within their cube, so the arrow hangs over the cube itself)
