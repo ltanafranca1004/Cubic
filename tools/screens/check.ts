@@ -47,7 +47,7 @@ interface StageProbe {
   /** Time stamp of the last press the stage's Phaser input saw. */
   lastDown: number;
 }
-declare const window: { __cubic: Cubic; __cubicButtons(): Btn[]; __cubicStage(): StageProbe; __cubicHeroes(): { out: Spot; in: Spot } };
+declare const window: { __cubicJoinCode(): string | null; __cubicModeStatus(): string; __cubic: Cubic; __cubicButtons(): Btn[]; __cubicStage(): StageProbe; __cubicHeroes(): { out: Spot; in: Spot } };
 
 const problems: string[] = [];
 const fail = (msg: string) => {
@@ -73,6 +73,17 @@ const screenOf = (page: Page) => page.evaluate(() => (document.querySelector('.c
 const stage = (page: Page) => page.evaluate(() => window.__cubicStage());
 const heroes = (page: Page) => page.evaluate(() => window.__cubicHeroes());
 const labelsOf = async (page: Page) => (await buttons(page)).map((b) => b.label).join('|');
+/** The letters in the join popup's code boxes, or null when the popup is not open. */
+const joinCode = (page: Page) => page.evaluate(() => window.__cubicJoinCode());
+/** The line under the mode screen's panel (connecting, an error, or nothing). */
+const statusLine = (page: Page) => page.evaluate(() => window.__cubicModeStatus());
+/** Paste text into the page, as Ctrl/Cmd+V does (a real `paste` event with clipboard data). */
+const paste = (page: Page, text: string) =>
+  page.evaluate((t) => {
+    const data = new DataTransfer();
+    data.setData('text/plain', t);
+    window.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+  }, text);
 const settingsOpen = (page: Page) => page.evaluate(() => !!document.querySelector('#cu-settings.on'));
 
 /** Art pixels on the stage canvas to window pixels. */
@@ -254,6 +265,36 @@ async function resizeMidTransition(browser: Browser, size: { width: number; heig
   await a.waitForTimeout(600);
   await click(a, 'PLAY', tag);
   await a.waitForTimeout(2200);
+
+  // The join popup: a room code can be pasted, the popup and its letters survive a
+  // resize, and the error of a refused code does not linger on the mode screen after Cancel.
+  await click(a, 'JOIN LOBBY', tag);
+  await expect(tag, 'the join popup opens', async () => (await joinCode(a)) === '');
+  await a.waitForTimeout(300);
+  await paste(a, ' room: qz-7w k\n');
+  await expect(tag, 'a pasted code is cleaned to letters, upper-cased, four at most', async () => (await joinCode(a)) === 'ROOM');
+  await paste(a, 'zzzz');
+  await expect(tag, 'a paste replaces what was typed', async () => (await joinCode(a)) === 'ZZZZ');
+  await click(a, 'JOIN', tag);
+  await expect(tag, 'the pasted code is sent (and refused: no such room)', async () => /not found/i.test((await net(a, (c) => c.error)) ?? ''));
+  await a.keyboard.press('Backspace');
+  await a.keyboard.press('Backspace');
+  await expect(tag, 'two letters left in the popup', async () => (await joinCode(a)) === 'ZZ');
+  await a.setViewportSize({ width: size.width - 180, height: size.height - 20 });
+  await a.waitForTimeout(600);
+  if ((await joinCode(a)) !== 'ZZ') fail(`${tag}: a resize closed the join popup or lost its letters (now ${JSON.stringify(await joinCode(a))})`);
+  else console.log('   ok: the join popup and its letters survive a resize');
+  await a.keyboard.type('qq');
+  await expect(tag, 'typing goes on in the popup after the resize', async () => (await joinCode(a)) === 'ZZQQ');
+  await a.keyboard.press('Escape');
+  await expect(tag, 'Esc closes the popup', async () => (await joinCode(a)) === null);
+  await a.waitForTimeout(300);
+  if (await statusLine(a)) fail(`${tag}: the mode screen shows "${await statusLine(a)}" after the join popup was cancelled`);
+  await a.setViewportSize(size);
+  await a.waitForTimeout(600);
+  if ((await joinCode(a)) !== null) fail(`${tag}: a resize re-opened the cancelled join popup`);
+  if (await statusLine(a)) fail(`${tag}: the mode screen shows "${await statusLine(a)}" after a resize, from the cancelled join`);
+  else console.log('   ok: no stale error on the mode screen after Cancel, also after a resize');
 
   // during the fade from the mode screen to side select
   // (the storm starts the moment the room exists, which is when the fade starts)

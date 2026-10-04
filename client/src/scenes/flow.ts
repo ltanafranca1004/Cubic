@@ -178,6 +178,8 @@ export interface SceneData {
   soft?: boolean;
   /** Mode screen only: arrive through the clouds. */
   intro?: boolean;
+  /** The scene was restarted where it stood (a resize): keep what the player was doing. */
+  rebuilt?: boolean;
 }
 
 /** Base for the menu scenes: state access, fade in, rebuild on resize. */
@@ -219,10 +221,10 @@ export abstract class MenuScene extends Phaser.Scene {
     this.stale = false;
     const rebuild = () => {
       if (this.ctx.flow.moving) this.stale = true;
-      else this.scene.restart({});
+      else this.scene.restart({ rebuilt: true });
     };
     const settled = () => {
-      if (this.stale && this.ctx.flow.current === this.scene.key) this.scene.restart({});
+      if (this.stale && this.ctx.flow.current === this.scene.key) this.scene.restart({ rebuilt: true });
     };
     this.game.events.on(UI_EVENT, this.onUi);
     this.game.events.on(SETTLED_EVENT, settled);

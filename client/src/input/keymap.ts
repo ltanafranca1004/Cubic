@@ -129,6 +129,16 @@ export function typeCode(code: string, e: KeyLike, length = 4): string {
   return code;
 }
 
+/**
+ * The join popup's code field: what pasted text becomes. A word of exactly `length`
+ * capitals standing on its own is the code as the game shows it ("Join me: QZWK"), so it
+ * wins; otherwise the letters, upper-cased and cut to length.
+ */
+export function pasteCode(text: string, length = 4): string {
+  const shown = text.match(new RegExp(`(?<![A-Za-z])[A-Z]{${length}}(?![A-Za-z])`));
+  return (shown?.[0] ?? text.replace(/[^a-zA-Z]/g, '')).toUpperCase().slice(0, length);
+}
+
 // ---------- gamepad ----------
 
 /** A pad as the Gamepad API reports it, in the standard mapping. */

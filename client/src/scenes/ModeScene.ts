@@ -1,6 +1,7 @@
 import type Phaser from 'phaser';
 import { ENABLE_AI } from '../config';
-import { menuAction, stepFocus, typeCode } from '../input/keymap';
+import { menuAction, pasteCode, stepFocus, typeCode } from '../input/keymap';
+import { overlayOwnsInput } from '../input/overlay';
 import { EASE, ROLE, TIME, hex } from '../style/tokens';
 import { MenuScene, type SceneData } from './flow';
 import { Button, centre, paint, shake, slice, text, textCentred, type Text } from './kit';
@@ -24,6 +25,11 @@ export class ModeScene extends MenuScene {
   private popup: JoinPopup | null = null;
   /** The join request we are waiting on, to tell its error from an old one. */
   private joining = false;
+  /**
+   * The error the join popup was closed on. It belonged to the popup (a refused code) and
+   * went with it: it is not shown again under the menu. Forgotten once the error changes.
+   */
+  private dismissed: string | null = null;
 
   constructor() {
     super('mode');
@@ -31,8 +37,10 @@ export class ModeScene extends MenuScene {
 
   create(data: SceneData): void {
     const { W, H } = this;
+    // rebuilt by a resize with the join popup open: it comes back with the letters typed so far
+    const draft = data.rebuilt && this.popup?.open ? this.popup.value : null;
     this.popup = null;
-    this.joining = false;
+    if (!data.rebuilt) this.joining = false;
     this.focus = -1;
     // the menu sits left of centre; the cube has the right of the screen
     const cx = Math.round(W * 0.31);
@@ -73,6 +81,19 @@ export class ModeScene extends MenuScene {
     this.statusX = cx;
 
     this.keys((e) => this.key(e));
+    // Ctrl/Cmd+V in the join popup: the pasted room code (the keys themselves are not ours,
+    // MenuScene.keys leaves modified keys to the browser, which then fires `paste`)
+    const onPaste = (e: ClipboardEvent) => {
+      if (!this.popup || !this.scene.isActive() || overlayOwnsInput()) return;
+      e.preventDefault();
+      this.popup.paste(e.clipboardData?.getData('text') ?? '');
+    };
+    window.addEventListener('paste', onPaste);
+    this.events.once('shutdown', () => window.removeEventListener('paste', onPaste));
+    if (import.meta.env.DEV) {
+      // the letters in the join popup (null = not open) and the status line (tools/screens/check.ts)
+      Object.assign(window, { __cubicJoinCode: () => (this.scene.isActive() ? (this.popup?.value ?? null) : null), __cubicModeStatus: () => (this.scene.isActive() ? this.status.text : '') });
+    }
 
     if (data.intro) {
       // arriving through the clouds: the cube settles, then the choices land
@@ -82,18 +103,21 @@ export class ModeScene extends MenuScene {
         this.tweens.add({ targets: o, y, alpha: 1, delay: TIME.dive * 0.8 + i * 50, duration: TIME.panel, ease: EASE.out });
       });
     }
+    if (draft !== null) this.openJoin(draft);
     this.begin(data);
   }
 
   protected sync(): void {
     const s = this.ui;
+    if (s.error !== this.dismissed) this.dismissed = null;
+    const error = this.popup || s.error === this.dismissed ? null : s.error;
     const busy = s.status === 'connecting' || !s.online;
     this.buttons.forEach((b) => b.setEnabled(!busy && !this.popup));
     this.aiButtons.forEach((b) => b.setEnabled(!busy && !this.popup && s.aiAvailable));
     // while we wait for a room, Back would only bounce straight into it
     this.back.setEnabled(s.status !== 'connecting' && !this.popup);
-    const msg = !s.online ? 'WAKING THE SERVER... THIS CAN TAKE A MINUTE.' : s.status === 'connecting' ? 'CONNECTING...' : !this.popup && s.error ? s.error.toUpperCase() : ENABLE_AI && !s.aiAvailable ? 'THE AI PARTNER IS NOT AVAILABLE ON THIS SERVER.' : '';
-    paint(this.status.setText(msg), !this.popup && s.error && s.online ? ROLE.danger : ROLE.ink);
+    const msg = !s.online ? 'WAKING THE SERVER... THIS CAN TAKE A MINUTE.' : s.status === 'connecting' ? 'CONNECTING...' : error ? error.toUpperCase() : ENABLE_AI && !s.aiAvailable ? 'THE AI PARTNER IS NOT AVAILABLE ON THIS SERVER.' : '';
+    paint(this.status.setText(msg), error && s.online ? ROLE.danger : ROLE.ink);
     // centred under the panel, but never off the left of the screen
     this.status.x = Math.max(6, Math.round(this.statusX - this.status.width / 2));
 
@@ -106,7 +130,8 @@ export class ModeScene extends MenuScene {
     }
   }
 
-  private openJoin(): void {
+  /** Open the join popup. `draft`: letters to start with, when a resize rebuilt the scene under it. */
+  private openJoin(draft: string | null = null): void {
     if (this.popup) return;
     this.popup = new JoinPopup(
       this,
@@ -116,8 +141,10 @@ export class ModeScene extends MenuScene {
       },
       () => {
         this.popup = null;
+        this.dismissed = this.ui.error;
         this.sync();
       },
+      draft,
     );
     this.setFocus(-1);
     this.sync();
@@ -169,6 +196,14 @@ class JoinPopup {
   private failed = false;
   private busy = false;
   private closed = false;
+  /** The letters typed so far. */
+  get value(): string {
+    return this.code;
+  }
+  /** Still up (not cancelled). */
+  get open(): boolean {
+    return !this.closed;
+  }
   private readonly w = 196;
   private readonly h = 126;
 
@@ -176,7 +211,10 @@ class JoinPopup {
     private scene: ModeScene,
     private onJoin: (code: string) => void,
     private onClose: () => void,
+    /** Letters already typed: the popup is being put back after a resize, so it does not drop in again. */
+    draft: string | null = null,
   ) {
+    this.code = pasteCode(draft ?? '', CODE_LEN);
     const W = scene.scale.width;
     const H = scene.scale.height;
     const { w, h } = this;
@@ -207,11 +245,13 @@ class JoinPopup {
     const y = Math.round((H - h) / 2);
     const body = scene.add.container(x, y, [panel, title, hint, this.boxes, this.message, cancel.root, this.join.root]);
     this.root = scene.add.container(0, 0, [veil, body]).setDepth(10);
-    // it drops in from just above
-    body.setY(y - 8).setAlpha(0);
-    scene.tweens.add({ targets: body, y, alpha: 1, duration: TIME.panel, ease: EASE.back });
-    veil.setAlpha(0);
-    scene.tweens.add({ targets: veil, alpha: 1, duration: TIME.panel });
+    if (draft === null) {
+      // it drops in from just above
+      body.setY(y - 8).setAlpha(0);
+      scene.tweens.add({ targets: body, y, alpha: 1, duration: TIME.panel, ease: EASE.back });
+      veil.setAlpha(0);
+      scene.tweens.add({ targets: veil, alpha: 1, duration: TIME.panel });
+    }
     this.draw();
   }
 
@@ -244,10 +284,17 @@ class JoinPopup {
     this.draw();
   }
 
+  /** Pasted text replaces the code, if there is a letter in it. */
+  paste(text: string): void {
+    if (this.closed || !pasteCode(text, CODE_LEN)) return;
+    this.setFocus('code');
+    this.set(text);
+  }
+
   /** Pasted or typed text: keep the letters, upper-cased, at most four. */
   private set(code: string): void {
     if (this.busy) return;
-    this.code = code.replace(/[^a-zA-Z]/g, '').toUpperCase().slice(0, CODE_LEN);
+    this.code = pasteCode(code, CODE_LEN);
     this.failed = false;
     this.message.setText('');
     this.draw();
