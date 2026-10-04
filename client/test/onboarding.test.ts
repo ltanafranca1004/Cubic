@@ -270,5 +270,5 @@ test('onboarding: the rules stay pure and the layer is mounted once, with a repo
   assert.match(rules, /FACE_SIZE - 1/, 'the face edge comes from FACE_SIZE');
   assert.equal(src('app.ts').match(/mountOnboarding\(/g)?.length, 1);
   assert.match(src('ui/onboarding/anchors.ts'), /cube: '\.cu-net'/);
-  assert.match(src('ui/settingsPanel.ts'), /toggle\('hints', 'Hints'\)/);
+  assert.match(src('ui/settingsPanel.ts'), /kind: 'toggle', key: 'hints', label: 'Hints'/);
 });
