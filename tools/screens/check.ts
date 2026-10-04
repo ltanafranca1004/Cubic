@@ -318,7 +318,7 @@ async function resizeStorm(page: Page, size: { width: number; height: number }, 
 async function resizeMidTransition(browser: Browser, size: { width: number; height: number }, renderer: 'webgl' | 'canvas'): Promise<void> {
   const tag = `${size.width}x${size.height} ${renderer} resize`;
   const q = renderer === 'canvas' ? '?renderer=canvas' : '';
-  const MODE = 'BACK|CREATE LOBBY|JOIN LOBBY';
+  const MODE = 'BACK|CREATE LOBBY|JOIN LOBBY|PLAY WITH AI';
   const a = await open(browser, size, q, `${tag} host`);
 
   // during the dive after Play

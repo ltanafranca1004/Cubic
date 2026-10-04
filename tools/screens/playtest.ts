@@ -618,7 +618,7 @@ async function lobby(run: Run): Promise<void> {
   await step(run, 'title: PLAY dives to the mode screen (Create, Join, Back)', async () => {
     await toMode(a);
     const labels = (await buttons(a)).map((x) => x.label).sort().join('|');
-    check(labels === 'BACK|CREATE LOBBY|JOIN LOBBY', `mode screen buttons are ${labels}`);
+    check(labels === 'BACK|CREATE LOBBY|JOIN LOBBY|PLAY WITH AI', `mode screen buttons are ${labels}`);
   });
   await step(run, 'mode: BACK returns to the title, PLAY dives again', async () => {
     await click(a, 'BACK');
@@ -1601,7 +1601,7 @@ async function menus(run: Run): Promise<void> {
     await click(a, 'PLAY', { double: true });
     await until('the mode screen', async () => (await button(a, 'CREATE LOBBY'))?.alpha === 1 && !(await has(a, 'PLAY')), 8000);
     const labels = (await buttons(a)).map((x) => x.label).sort().join('|');
-    check(labels === 'BACK|CREATE LOBBY|JOIN LOBBY', `buttons after a double click: ${labels}`);
+    check(labels === 'BACK|CREATE LOBBY|JOIN LOBBY|PLAY WITH AI', `buttons after a double click: ${labels}`);
   });
   await step(run, 'title: Enter, Space and Esc mashed during the dive leave a working menu', async () => {
     for (const k of ['Enter', ' ', 'Enter', 'Escape', 'Enter', ' ', 'Escape', 'Enter']) {
@@ -1610,7 +1610,7 @@ async function menus(run: Run): Promise<void> {
     }
     await b.waitForTimeout(3000);
     const labels = (await buttons(b)).map((x) => x.label).sort().join('|');
-    check(labels === 'PLAY' || labels === 'BACK|CREATE LOBBY|JOIN LOBBY', `buttons after mashing: ${labels}`);
+    check(labels === 'PLAY' || labels === 'BACK|CREATE LOBBY|JOIN LOBBY|PLAY WITH AI', `buttons after mashing: ${labels}`);
     if (labels === 'PLAY') await toMode(b);
     check((await snap(b)).code === null, 'mashing made a room');
     return labels === 'PLAY' ? 'ended on the title' : 'ended on the mode screen';
