@@ -12,8 +12,10 @@ import type { ChatMessage, FaceId, Role, RoomMode, Side, SignalView } from '@cub
 export interface UIActions {
   onCreateRoom(): void;
   onJoinRoom(code: string): void;
-  /** Phase 2. `side` is the side the human wants to play. */
+  /** Solo: straight into a game with the AI partner. `side` is the side the human wants to play. */
   onPlayWithAI(side: Side): void;
+  /** Solo: back into the solo game this tab pressed Leave in (see `UIState.soloLeft`). */
+  onResumeSolo(): void;
   /** Lobby: take a side, or null to step back to the middle. Refused if the partner has it. */
   onPickSide(side: Side | null): void;
   /** Lobby, guest only: ready up (needs a side) or take it back. */
@@ -129,6 +131,12 @@ export interface UIState {
   mode: RoomMode | null;
   side: Side | null;
   aiAvailable: boolean;
+  /**
+   * This tab pressed Leave in a solo game and the server still holds the seat (the AI
+   * waits): until when, in epoch ms on THIS clock. A solo game has no room code to come
+   * back with, so the solo popup offers it. Null when there is none.
+   */
+  soloLeft?: number | null;
   /** Set while you are in a room whose game has not started (pick sides, ready, start). */
   lobby: LobbyState | null;
   chat: ChatMessage[];

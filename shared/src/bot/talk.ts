@@ -77,6 +77,12 @@ const FILLER = new Set(
   'a an the it is its it\'s i im i\'m am on at to of in my me you your now then and please pls step steps stone sign tile pane bridge shows show one more times time x im going go'.split(' '),
 );
 
+// ---- faces 1-3 (scripts-a) ----
+// Words the scripts of faces 1 to 3 read from Heard.text themselves (digits, counts, rows):
+// a line made of them is plain, so it goes straight to the script and never earns a "huh".
+for (const w of 'zero nine ten eleven twelve code digit digits number numbers first second third last says reads bush bushes berry berries bird birds rock rocks stone stones row skip flip blank empty clear reset enter press'.split(' ')) FILLER.add(w);
+// ---- end faces 1-3 ----
+
 export interface Heard {
   /** The line as typed (trimmed). A puzzle script reads its own words (digits, colours) from this. */
   text: string;
@@ -119,6 +125,10 @@ export function parseHuman(text: string): Heard {
       if (after !== null) used = ++i;
     } else if (WORDS[w]) {
       tokens.push({ t: WORDS[w] });
+      // ---- faces 1-3 (scripts-a) ----
+    } else if (/^\d{1,4}$/.test(w)) {
+      // a bare number ("472", "row 10", "0"): plain, the script reads it from the text
+      // ---- end faces 1-3 ----
     } else if (count(w) === null && !FILLER.has(w)) {
       plain = false;
     }

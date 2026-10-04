@@ -139,6 +139,30 @@ for (const humanSide of ['out', 'in'] as const) {
   });
 }
 
+// ---- faces 1-3 (scripts-a) ----
+for (const humanSide of ['out', 'in'] as const) {
+  test(`no Gemini key: faces 1, 2 and 3 with a human ${humanSide}side on a real Room: solved, no strike, no "huh"`, async (t) => {
+    const pass = clock(t);
+    const { room, ai, said, lines } = setup(humanSide, null);
+    const { tick, human } = humanOn(room, humanSide, lines, { order: [1, 2, 3] });
+    const done = () => [1, 2, 3].every((f) => room.state.solved.includes(f as FaceId));
+    for (let i = 0; i < 4500 && !done(); i++) {
+      await pass(200, 200);
+      tick();
+    }
+    assert.ok(done(), `solved ${room.state.solved.join()}; AI said: ${said().slice(-6).join(' | ')}; human said: ${human.said.slice(-4).join(' | ')}`);
+    assert.equal(room.state.strikes, 0);
+    assert.equal(ai.calls, 0);
+    assert.ok(said().every((line) => line.length <= MAX_SAY_CHARS));
+    // everything the human typed was plain protocol: the bot never had to say it did not understand
+    assert.ok(!said().includes(L('huh')) && !said().includes(L('unknown')), said().join(' | '));
+    // a relay line is vocabulary pieces only, filled into its words
+    assert.ok(said().some((line) => /^(the code is|press) (\w+ ?)+$/.test(line)), said().join(' | '));
+    assert.ok(!said().some((line) => line.includes('{')));
+  });
+}
+// ---- end faces 1-3 ----
+
 // ---------- Gemini is advisory: slow, failing, rate limited ----------
 
 test('Gemini slower than 3 s: the body never waits, and at 3 s the script answers by itself', async (t) => {

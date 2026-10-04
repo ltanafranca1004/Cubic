@@ -61,7 +61,28 @@ export const eventLine = (persona: Persona, key: EventKey): string => (persona =
  * {placeholders} that the script fills with what it sees: say('hidden-code.read', { args:
  * { code: '4 7 2' } }) with the words 'The number is {code}.' (Empty: no V2 script yet.)
  */
-const PUZZLE: Record<string, string> = {};
+const PUZZLE: Record<string, string> = {
+  // ---- faces 1-3 (scripts-a) ----
+  // A '{words}' line is a relay line: vocabulary pieces only (shared/src/bot/vocab.ts), joined.
+  'hidden-code.out.intro': 'I see a number in the grass. Type it on your keypad, then press ENTER.',
+  'hidden-code.relay': '{words}',
+  'hidden-code.ask.first': "What's the first digit?",
+  'hidden-code.ask.next': "What's the next digit?",
+  'hidden-code.wrong': 'That code was wrong. Tell me the three digits again.',
+  'equation-safe.out.intro': 'I will count for you: the bushes, the birds and the rocks I see.',
+  'equation-safe.relay': '{words}',
+  'equation-safe.ask.bushes': 'How many bushes do you see?',
+  'equation-safe.ask.birds': 'How many birds do you see?',
+  'equation-safe.ask.rocks': 'How many rocks do you see?',
+  'equation-safe.wrong': 'The safe said no. Count again: bushes, birds, rocks.',
+  'mirrored-glyph.out.intro': 'Rows from the top. Upright, count from YOUR RIGHT. Say next or again.',
+  'mirrored-glyph.relay': '{words}',
+  'mirrored-glyph.out.done': 'That was the last row. Say row and a number to hear one again.',
+  'mirrored-glyph.in.ask': 'Upright, count from your left. Tell me a row like: row 1 skip 3 flip 7.',
+  'mirrored-glyph.in.next': 'Row done. What is the next row?',
+  'mirrored-glyph.in.cleared': 'All tiles are off. Start again from row 1.',
+  // ---- end faces 1-3 ----
+};
 
 /** Fill the {placeholders} of a line. One that has no value stays as written. */
 export const fillLine = (words: string, args: LineArgs = {}): string => words.replace(/\{(\w+)\}/g, (all, name: string) => (name in args ? String(args[name]) : all));

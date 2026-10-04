@@ -24,6 +24,7 @@ import {
   type TtsClip,
   type VoiceChunk,
 } from '@cubic/shared';
+import { soloLeftUntil, type Saved } from './left';
 
 // Socket client + move prediction. The local player's input is applied at once to a
 // predicted copy of the state with the same /shared code the server runs; every server
@@ -58,7 +59,6 @@ const SEAT_KEY = 'cubic.seat';
  */
 const LEFT_KEY = 'cubic.left';
 
-type Saved = { code: string; token: string };
 function saved(key: string): Saved | null {
   try {
     return JSON.parse(sessionStorage.getItem(key) ?? 'null');
@@ -326,6 +326,32 @@ export class Net {
     if (this.begin()) this.socket!.emit('room:createAI', { side }, (res) => this.adopt(res));
   }
 
+  /** The solo game this tab left and can still go back to: until when, or null. */
+  leftSolo(): number | null {
+    return soloLeftUntil(saved(LEFT_KEY), Date.now());
+  }
+
+  /**
+   * Back into the solo game we pressed Leave in: the same path as a friend room (the code
+   * and our token give the held seat back), only the code is not typed.
+   */
+  resumeSolo(): void {
+    const left = saved(LEFT_KEY);
+    if (!left?.solo) return;
+    if (!this.begin()) return;
+    this.socket!.emit('room:join', { code: left.code, token: left.token }, (res) => {
+      if (!res.ok) {
+        // the window passed: the room is closed and the AI has stopped
+        try {
+          sessionStorage.removeItem(LEFT_KEY);
+        } catch {
+          // ignore
+        }
+      }
+      this.adopt(res.ok ? res : { ok: false, error: 'That game is over. Start a new one.' });
+    });
+  }
+
   /** A lobby action. The server owns the rules: on a refusal we only show its reason. */
   private lobby(send: (ack: (res: { ok: true } | { ok: false; error: string }) => void) => void): void {
     if (!this.socket) return;
@@ -353,10 +379,12 @@ export class Net {
 
   leave(): void {
     const seat = saved(SEAT_KEY);
+    // a solo game has no code to come back with: remember that it was one, and when we left
+    const solo = this.room?.mode === 'ai';
     this.socket?.emit('room:leave');
     this.forget();
     try {
-      if (seat) sessionStorage.setItem(LEFT_KEY, JSON.stringify(seat));
+      if (seat) sessionStorage.setItem(LEFT_KEY, JSON.stringify(solo ? { ...seat, solo, at: Date.now() } : seat));
     } catch {
       // storage blocked: coming back with the code will be a new join
     }

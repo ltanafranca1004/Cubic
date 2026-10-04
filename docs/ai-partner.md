@@ -378,3 +378,41 @@ otherSide, advisor, { persona, onSay })`, which takes the other seat (`room.sit(
 true)`, `isAI`) and starts its 200 ms timer. The AI stops when the room closes (60 s after
 the human leaves). A two-player room never creates an `AiPlayer`, so it never calls Gemini
 or ElevenLabs.
+
+<!-- ---- faces 1-3 (scripts-a) ---- -->
+## Scripts for faces 1 to 3
+
+`shared/src/bot/scripts/hiddenCode.ts`, `equationSafe.ts`, `mirroredGlyph.ts`; their
+simulated humans are in `shared/test/humans/` (the `HumanScript` type lives in the test
+harness, so they cannot sit beside the script in `src`). Each plays either side.
+
+- **Relay lines.** Each script has one key `<id>.relay` whose words are `{words}`.
+  `relay(ctx, key, pieces)` (`scripts/relayKit.ts`) fills it with `relayText(pieces)`: the
+  pieces are vocabulary only (`vocab.ts`) and joined with spaces, so the caption is e.g.
+  `the code is four seven two`. To chain banked clips, split `args.words` back into pieces
+  by matching the vocabulary greedily (the phrases have spaces in them).
+- **The doing side** says nothing and presses nothing until the human speaks. After 15 s
+  with nothing it can use (`ASK_MS`) it asks, then every 20 s (`REASK_MS`). It says back
+  what it understood before typing (`press four seven two`). After a strike it forgets
+  what it was told and asks again.
+- **hidden-code.** Relay: `the code is <d> <d> <d>`. Heard: `4 7 2`, `472`, `four seven
+  two`, or one digit per line (`digitsIn`).
+- **equation-safe.** Relay: `<n> bushes <n> birds <n> rocks`. Heard: counts beside their
+  kind in any order, or bare numbers (three = bushes, birds, rocks; one = the kind it asked
+  for last) (`countsIn`). The product is read off the row on the inside wall.
+- **mirrored-glyph.** The row convention, both directions: `row <n> skip <a> flip <b> skip
+  <c> ...`. Rows one to twelve from the top; inside a row the count runs over the canonical
+  tiles from x = 0: the outside player's LEFT and the inside player's RIGHT, compass
+  upright. A row that starts on a symbol tile starts with `flip`; what is left after the
+  last piece is off; an empty row is `row <n> skip`. Relay side: one row per line, on with
+  "next" / "ok", "again" repeats, "row 5" jumps. Doing side: makes each told row look
+  exactly like that, asks for the next, presses CLEAR only on "clear" / "reset".
+- **The battery.** An errand is only asked of a script whose puzzle is unsolved, so the
+  carry from face 2 to face 5 cannot be the equation-safe script's own. `carryBattery(o)`
+  (`equationSafe.ts`, built on `carryTo(o, job)` in `scripts/carry.ts`) is the whole errand:
+  the sequence-laser script returns it from `errand()`.
+- `canonOf(o, cell)` / `cellOf(o, tile)` (`relayKit.ts`) turn the bot's screen tiles into
+  canonical tiles and back from `o.you` and `o.compassDrift`.
+- `talk.ts`: bare numbers of up to four digits and the words these scripts read are plain,
+  so they never earn a `huh`.
+<!-- ---- end faces 1-3 ---- -->
