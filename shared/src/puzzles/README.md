@@ -16,6 +16,28 @@ so a module must be deterministic and must never touch sockets, the DOM, timers,
 5. Add a solution script for it in `shared/test/solutions.ts`: a few lines that solve it
    with real moves. `npm test` fails until it exists. How: [docs/puzzle-tests.md](../../../docs/puzzle-tests.md).
 
+## The puzzles in the game
+
+| Face | File | id | In one line |
+| --- | --- | --- | --- |
+| 1 | `plateDoor.ts` | `plate-door` | Inside holds a plate, outside walks through the door it opens. |
+| 3 | `glyphCode.ts` | `glyph-code` | Inside reads one sign at a time from a tablet, outside steps on the stone with that sign. |
+| 4 | `mirrorMaze.ts` | `mirror-maze` | Outside sees the safe tiles of a trap floor, inside walks them, mirrored. |
+| 5 | `skylight.ts` | `skylight` | Outside stands on glass panes to light bridges, inside crosses them. |
+| 6 | `rosePot.ts` | `rose-pot` | Outside carries the rose from face 1 to the pot. |
+
+What each player does, why each one needs both players and the exact solve steps:
+[docs/puzzle-tests.md](../../../docs/puzzle-tests.md).
+
+**Variation without randomness.** A module may not call `Math.random` or `Date.now`, and
+`init` gets no seed. Use `ctx.state.startedAt` instead: it is different every game and the
+same on the server and on both clients. `mix(...)` in `util.ts` turns it (plus an attempt
+counter, a tile, ...) into a number; the code of `glyph-code` and the safe line of
+`mirror-maze` are made that way. `util.ts` also has `at`, `around` and `flood`.
+
+**A puzzle that can trap or block someone** says in its header comment how the player gets
+out again, and has a test for it in `shared/test/coop.test.ts`.
+
 ## The hooks
 
 | Hook | When | Use it for |

@@ -489,6 +489,6 @@ test('co-op puzzles: both sides get an objective line on every puzzle face, and 
     assert.ok(out.length > 10 && inn.length > 10);
     assert.ok(out.length <= 100 && inn.length <= 100, `face ${face}: an objective line is too long for the HUD`);
     assert.notEqual(out, inn);
-    assert.ok(!/—/.test(out + inn));
+    assert.ok(!(out + inn).includes(String.fromCharCode(0x2014)), 'no long dashes in objective text');
   }
 });
