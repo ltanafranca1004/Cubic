@@ -25,6 +25,27 @@ authored. Their levels are matched in code (`client/src/audio/tracks.ts`).
 The other sound effects (steps, bumps, chimes) are synthesized in code by us
 (`client/src/game/sfx.ts`).
 
+### Ambience loops (our own work)
+
+The quiet loop of the face you are on (`client/public/assets/audio/ambience/`) is **made by
+us, not sampled**: `tools/ambience/make_audio.py` synthesizes every loop from filtered
+noise and sine tones with a fixed seed (numpy), and ffmpeg encodes them. No third-party
+recording or sample is used, so there is nothing to license; we release them under CC0 1.0
+like the rest of our assets.
+
+| File (`.ogg` Ogg Opus and `.mp3`, mono, 8.5 s) | Face | What it is |
+| --- | --- | --- |
+| `grass` | outside 1 | soft wind, grass rustle, a few bird chirps (sine sweeps) |
+| `desert` | outside 2 | low dry wind, two whistling bands, sand hiss |
+| `snow` | outside 3 | airy wind with a faint howl |
+| `forest` | outside 4 | leaf rustle, crickets (pulsed tones), a distant hoot |
+| `rooftop` | outside 5 | open wind with gusts, cloth flaps (noise bursts) |
+| `cave` | outside 6 | low rumble, drips with echoes (sine blips) |
+| `hum` | every inside room | a 55 Hz hum with harmonics; each room plays it at its own pitch |
+
+The per-surface footstep sounds are noise bursts synthesized at runtime
+(`client/src/world/ambience/loops.ts`).
+
 ## Art and fonts
 
 Only CC0 (public domain) art and fonts are used, so nothing here is legally required, but
@@ -39,3 +60,8 @@ credit is owed.
 Everything else in `client/public/assets/` outside `audio/` (the logo, clouds, sky, UI
 kit, icons, cursor, player markers, both characters, the inside tiles, doors, portal, pot,
 key) is our own work, drawn by the generator in `tools/art`.
+
+The living-world effect sprites (`client/public/assets/sprites/fx/fx.png` and
+`cloud-shadow.png`: grass tufts, flowers, butterflies, leaves, birds, gulls, the
+tumbleweed, flags, splashes, breath, sparkles, crystal shards, wall lamps) are also our own
+work, drawn pixel by pixel in the Resurrect 64 palette by `tools/ambience/make_fx.py`.
