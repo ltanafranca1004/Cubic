@@ -1,4 +1,5 @@
 // The two playable characters, the puzzle objects and the items. 16x16 frames.
+import { PUZZLE_SPRITES, drawPuzzleObject } from '../../client/src/game/puzzleArt';
 import { C, ROLE } from '../../client/src/style/tokens';
 import { existsSync } from 'node:fs';
 import { Img, strip, type Color } from './img';
@@ -247,8 +248,20 @@ export function buildSprites(dir: string): SpriteManifest {
     pot(), // 14
     unknown(), // 15
   ];
-  const sheet = new Img(T * 8, T * 2);
-  objects.forEach((o, i) => sheet.blit(o, (i % 8) * T, Math.floor(i / 8) * T));
+  // The co-op puzzle objects (frames 16 and up) are drawn by the game's own code, so the
+  // sheet and the in-code placeholder can never disagree: client/src/game/puzzleArt.ts.
+  const first = objects.length;
+  const puzzle: SpriteManifest['objects'] = {};
+  PUZZLE_SPRITES.forEach(({ type, state }, i) => {
+    const g = new Img(T, T);
+    drawPuzzleObject((x, y, w, h, c) => g.rect(x, y, w, h, c), type, state);
+    objects.push(g);
+    const entry = (puzzle[type] ??= { image: 'sprites/objects.png', frames: { default: first + i } });
+    entry.frames[state] = first + i;
+  });
+  const COLS = 8;
+  const sheet = new Img(T * COLS, T * Math.ceil(objects.length / COLS));
+  objects.forEach((o, i) => sheet.blit(o, (i % COLS) * T, Math.floor(i / COLS) * T));
   sheet.save(`${dir}/sprites/objects.png`);
 
   strip([cut('N', 3, 11).quantize(), key(), bundle()]).save(`${dir}/sprites/items.png`);
@@ -262,6 +275,7 @@ export function buildSprites(dir: string): SpriteManifest {
       portal: { image, frames: { closed: 9, open: [10, 11, 12, 13], default: 9 } },
       target: { image, frames: { default: 14 } },
       unknown: { image, frames: { default: 15 } },
+      ...puzzle,
     },
     items: {
       rose: { image: 'sprites/items.png', frame: 0 },

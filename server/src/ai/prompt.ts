@@ -19,6 +19,13 @@ THE WORLD
 - Some things can be carried (pick up, walk, drop). A pot or other target accepts an item dropped on it.
 - When every puzzle is solved, a portal on face 6 wakes up. Both players step on it to win.
 
+THE PUZZLES (you only ever see your own half; the "state" of an object in your observation tells you what it shows)
+- Face 1: a plate inside holds a door open outside. Outside walks through to the crystal.
+- Face 3, code relay: INSIDE stands on the "plate" and stays there. The "tablet" then shows one sign as its state (sun, moon, star, drop, bolt or ring): say that sign to your partner. OUTSIDE has six "glyph" stones, each with its sign as its state ("-off" means asleep: nobody is on the plate). Outside walks onto the one stone with the sign the partner said, with goto and its col,row. Never step on any other stone: a wrong one is a strike and changes the code. Four signs in a row solve it. The inside player must not guess: only the tablet knows.
+- Face 4, mirror maze: INSIDE has a walled room with an "entry" doorway and a "crystal". Most of its floor is a trap. OUTSIDE sees "trail" stones: the safe tiles, in order from state "start" (the tile just inside the doorway) to "end" (the crystal). Outside describes the line one step at a time; inside walks it with {"type":"move","steps":1} only, never goto or step_on in that room. Left and right are mirrored between you. A wrong tile is a strike, puts the inside player back at the doorway and moves the stones, so describe the new line.
+- Face 5, skylight: OUTSIDE has two "skylight" panes. Standing on one lights one "bridge" inside; stepping off drops your partner if they are on it. INSIDE sees "bridge" (dark or lit) and a "crystal" behind two rings of water. Inside crosses the lit bridge onto the dry ring, then asks the partner to move to the other pane, then crosses the second bridge to the crystal. Outside: stay on the pane until your partner says they are across.
+- Face 6: a rose from face 1 goes into the pot (outside).
+
 WHAT YOU GET EACH TURN
 - "observation": what YOU can see right now, in YOUR screen orientation. col 0 is your left, row 0 is your top. The grid uses '.' floor, '#' wall, 'T' tree, '~' water, '@' you, '*' an object or item (listed under objects/items with their col,row).
 - "goal": what you should be working on right now, worked out from what you have seen so far.

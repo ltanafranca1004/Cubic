@@ -31,6 +31,11 @@ surface of the same wall. 12 maps total, each 12x12 tiles of 16px (`FACE_SIZE` i
 | `I` | carryable item | object |
 | `R` | rose (a carryable item, id and kind `rose`) | object |
 | `U` | target an item can be dropped on | object |
+| `1` to `6` | sign stone of the code relay (`glyph`, name sun, moon, star, drop, bolt, ring) | object |
+| `G` / `L` | the code relay's `tablet` and a progress `lamp` (one per sign) | object |
+| `S` / `s` | `skylight` pane a / b (outside): lights the bridge with the same name | object |
+| `B` / `b` | `bridge` a / b (inside), over water; only walkable while lit | object |
+| `E` | `entry`: the doorway of the mirror maze's trap room | object |
 
 New characters are added in `shared/src/maps/strings.ts` (`LEGEND`).
 

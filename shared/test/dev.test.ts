@@ -22,7 +22,7 @@ test('devSolve force-latches a face once, without touching the puzzle state', ()
   assert.deepEqual(s.solved, [1]);
   assert.equal(JSON.stringify(s.puzzles), before);
   assert.deepEqual(devSolve(s, 1, 1000), []); // already latched
-  assert.deepEqual(devSolve(s, 3, 1000), []); // no puzzle on face 3
+  assert.deepEqual(devSolve(s, 2, 1000), []); // no puzzle on face 2
   assert.deepEqual(s.solved, [1]);
   assert.equal(portalOpen(s), false);
 });
@@ -32,6 +32,9 @@ test('devSolve on every puzzle wakes the portal, and the game can then be won', 
   devSolve(s, 6, 1000);
   devSolve(s, 1, 1000);
   assert.deepEqual(s.solved, [1, 6]); // kept sorted
+  assert.equal(portalOpen(s), false); // three more to go
+  for (const face of [5, 3, 4] as const) devSolve(s, face, 1000);
+  assert.deepEqual(s.solved, [1, 3, 4, 5, 6]);
   assert.equal(portalOpen(s), true);
   devTeleport(s, 'out', 6, 1000);
   devTeleport(s, 'in', 6, 1000);
