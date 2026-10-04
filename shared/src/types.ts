@@ -160,8 +160,34 @@ export interface ChatMessage {
   text: string;
   /** Epoch ms. */
   at: number;
+  /** Set on a line the server wrote itself (inactivity). Nobody said it: `from` means nothing. */
+  system?: SystemNote;
   /** An AI line said as the script wrote it: its line key (e.g. "laser-path.in.tile"). Tools match on it, never on the words. */
   key?: string;
+}
+
+/**
+ * A system line in the chat. One line per countdown: what follows (`back`, `removed`,
+ * `gone`) arrives with the SAME message id and replaces the `idle` line in place.
+ */
+export interface SystemNote {
+  /**
+   * idle: `who` has done nothing for a while and is removed at `until`. back: they did
+   * something, the countdown is off. removed: the countdown ran out, they are out of the
+   * room. gone: they disconnected or left during the countdown (the seat hold covers it).
+   */
+  kind: 'idle' | 'back' | 'removed' | 'gone';
+  /**
+   * The player it is about, as the chat named them when the countdown began: OUTSIDE /
+   * INSIDE in a game, P1 / P2 in the lobby. It is who they WERE: it never changes after.
+   */
+  who: string;
+  /** Their member id (compare with your own: a countdown about you is shown louder). */
+  id: number;
+  /** `idle` only: when they are removed (epoch ms, server clock). */
+  until?: number;
+  /** The server's clock when this was sent: `at` and `until` are on that clock. */
+  now: number;
 }
 
 export const CHAT_MAX_LEN = 200;
@@ -278,6 +304,11 @@ export interface ClientToServer {
   chat: (msg: { text: string }) => void;
   /** Say one of the fixed QUICK_CHATS lines (keys 1 to 4). Rate limited like chat. */
   quick: (msg: { index: number }) => void;
+  /**
+   * "I am here": a key, a tap or the player talking into the mic, none of which reach the
+   * server by themselves. The client sends at most one every few seconds.
+   */
+  activity: () => void;
   /** WebRTC signaling (offer/answer/ICE), relayed untouched to the partner. */
   'voice:signal': (msg: { data: unknown }) => void;
   /** Fallback audio relay when the direct connection fails. */
@@ -290,7 +321,14 @@ export interface ServerToClient {
   info: (msg: ServerInfo) => void;
   state: (msg: StateUpdate) => void;
   room: (msg: RoomInfo) => void;
+  /** A new line, or (same id as one you have) a system line that replaces its earlier form. */
   chat: (msg: ChatMessage) => void;
+  /**
+   * You are out of the room: back to the mode screen. `inactive`: removed for inactivity,
+   * your token is dead. `replaced`: this seat was opened in another tab with the same
+   * token, which still holds it (forget the seat, do not leave the room).
+   */
+  removed: (msg: { reason: 'inactive' | 'replaced' }) => void;
   quick: (msg: QuickChat) => void;
   /** The AI partner is thinking. */
   typing: (msg: { from: Side; on: boolean }) => void;

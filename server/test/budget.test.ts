@@ -14,7 +14,12 @@ import { RELAY_GAP_MS, relayPieces } from '../src/ai/relay';
 import { eventLine, fixedLines, humanSays, lineText } from '../src/ai/scripted';
 import { bankFileName, bankLines, createTts } from '../src/ai/tts';
 import { createAiPartner, type Send } from '../src/ai/wire';
-import { LIMITS, Rooms } from '../src/rooms';
+import { INACTIVITY, INACTIVITY_RANGE, LIMITS, Rooms } from '../src/rooms';
+
+// Tests here let the human sit silent for minutes to watch what the AI is allowed to call.
+// A real room would remove that human for inactivity (see inactivity.test.ts), so here
+// that clock is as long as it goes.
+INACTIVITY.idleMs = INACTIVITY_RANGE.max;
 
 // The budget of both APIs, the Gemini client, the events that may cost a call, the voice
 // bank and its script. Nothing here touches the network: Gemini is a fake SDK client or a

@@ -67,6 +67,22 @@ function saved(key: string): Saved | null {
   }
 }
 
+/** At most one `activity` message per this long. */
+const ACTIVITY_EVERY_MS = 3000;
+
+/**
+ * A system line as the UI gets it: stamped with OUR clock. `at` is when it arrived, and a
+ * countdown's `until` is moved from the server's clock to ours (`until - Date.now()` is
+ * what is left).
+ */
+function localNote(msg: ChatMessage): ChatMessage {
+  const s = msg.system;
+  if (!s) return msg;
+  const now = Date.now();
+  const skew = now - s.now; // our clock minus the server's
+  return { ...msg, at: msg.at + skew, system: { ...s, now, ...(s.until !== undefined ? { until: s.until + skew } : {}) } };
+}
+
 type Pending = { seq: number; kind: 'move'; dx: number; dy: number } | { seq: number; kind: 'interact'; only?: InteractOnly };
 
 export interface NetHandlers {
@@ -117,6 +133,7 @@ export class Net {
   private localId = 0;
   /** The server's clock minus ours, from the last room info that carried the server's time. */
   private skew = 0;
+  private activityAt = 0;
 
   constructor(
     private h: NetHandlers,
@@ -163,9 +180,13 @@ export class Net {
       this.h.onChange();
       this.tryRejoin();
     });
-    socket.on('disconnect', () => {
+    socket.on('disconnect', (reason) => {
       this.online = false;
       this.h.onChange();
+      // The server closed this socket (our seat was opened in another tab, see `removed`):
+      // socket.io does not reconnect after that by itself. We have no seat any more, so
+      // connecting again only puts the menus back online.
+      if (reason === 'io server disconnect') socket.connect();
     });
     socket.on('info', (info) => {
       this.info = info;
@@ -188,10 +209,24 @@ export class Net {
       const news = u.events.filter((e: GameEvent) => !('side' in e) || e.side !== me);
       if (news.length) this.h.onEvents(news, false);
     });
-    socket.on('chat', (msg) => {
-      this.chat = [...this.chat, msg];
+    socket.on('chat', (raw) => {
+      const msg = localNote(raw);
+      // a system line that has changed (the countdown ended) takes the place of its old form
+      this.chat = this.chat.some((m) => m.id === msg.id) ? this.chat.map((m) => (m.id === msg.id ? msg : m)) : [...this.chat, msg];
       this.h.onChat(msg);
       this.h.onChange();
+    });
+    socket.on('removed', (msg) => {
+      // The server took us out of the room: say why on the mode screen. Not a Leave: there
+      // is no seat to come back to (nothing is kept for "continue"), and when another tab
+      // took the seat the room is not told anything, the token is that tab's now.
+      this.error = msg?.reason === 'replaced' ? 'This seat was opened in another tab.' : 'You were removed for inactivity.';
+      try {
+        if (saved(LEFT_KEY)?.code === this.code) sessionStorage.removeItem(LEFT_KEY);
+      } catch {
+        // ignore
+      }
+      this.forget();
     });
     socket.on('quick', (q) => this.h.onQuick?.(q));
     socket.on('typing', (t) => this.h.onTyping(t.on));
@@ -252,7 +287,7 @@ export class Net {
     this.code = res.code;
     this.id = res.id;
     this.setRoom(res.room);
-    this.chat = res.chat;
+    this.chat = res.chat.map(localNote);
     this.server = res.state;
     // a new seat, or the same one after a reconnect: the server counts our moves from 0
     this.pending = [];
@@ -450,6 +485,26 @@ export class Net {
       if (!this.socket || !this.online) resolve({ ok: false, error: 'Not connected to a server.' });
       else this.socket.emit('dev', cmd, resolve);
     });
+  }
+
+  /**
+   * The player is here: a key, a tap, or talking. Most of those never reach the server by
+   * themselves, so this tells it, at most once every few seconds, while we are in a room.
+   */
+  activity(): void {
+    const now = Date.now();
+    if (!this.socket || !this.online || !this.code || now - this.activityAt < ACTIVITY_EVERY_MS) return;
+    this.activityAt = now;
+    this.socket.emit('activity');
+  }
+
+  /**
+   * Our own inactivity countdown is running: when we are removed, on OUR clock. Null when
+   * there is none.
+   */
+  idleUntil(): number | null {
+    const s = this.chat.find((m) => m.system?.kind === 'idle' && m.system.id === this.id)?.system;
+    return s?.until ?? null;
   }
 
   sendChat(text: string): void {

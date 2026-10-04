@@ -335,6 +335,37 @@ greets, follows, talks, stays off hot lava and says it does not know the puzzle)
 puzzle block in `prompt.ts` is still a placeholder (between the `PUZZLES V2 PLACEHOLDER`
 markers). Its body can press E (`use` action). The interfaces, exactly: `docs/ai-partner.md`.
 
+## Inactivity
+
+- Each connected human has their own clock in `Room` (`server/src/rooms.ts`, section
+  "inactivity"). Nothing one player does, or fails to do, ever removes the other.
+- Activity = a move, use, chat, quick chat, a lobby action, or the client's `activity`
+  message (any key or tap, or talking into the mic: `Net.activity()` in
+  `client/src/net/client.ts`, at most one per 3 s; the mic level is `Voice.talkingNow`, so
+  it also works through the relay). Tab focus alone is not activity.
+- Idle for `INACTIVE_MS` (default 240000): ONE system line in the chat, "[name] inactive,
+  removed in m:ss", sent once with a deadline; the client counts it down in place
+  (`chatText` in `client/src/ui/hooks.ts`). What ends it ("is back", "left due to
+  inactivity", "disconnected") comes with the same message id and replaces it. The idle
+  player also gets it in the banner ("You are inactive. Press any key."). The lobby has no
+  chat: there the line is in the banner. Names: OUTSIDE / INSIDE in a game, P1 / P2 in the
+  lobby, frozen when the countdown starts.
+- `INACTIVE_WARN_MS` later (default 60000) only that player is removed (`removed` socket
+  message, back to the mode screen with the reason). The other keeps the room, becomes the
+  host, and the seat opens. The room is deleted only when no human is left, present or held.
+- Not inactive: the AI; a player who is disconnected or pressed Leave (that is the seat
+  hold; the clock stands still and goes on where it was when they come back); a host
+  waiting alone in a lobby (the clocks start when the second player sits).
+- Both env vars are kept between 1 s and 24 h (`inactivityMs`). System lines live in
+  `Room.notes`, never in `Room.chat`, so the AI partner and Gemini never see them.
+- A seat opened in a second tab with the same token: the old tab gets `removed` with
+  reason `replaced` and goes to the mode screen; the token stays with the new tab.
+- Rooms live in memory only: a server restart or a redeploy (every merge to `main` on
+  Render, and the free tier's sleep) ends every room, and both players land on the mode
+  screen with "That room is gone."
+- Tests: `server/test/inactivity.test.ts`; in real browsers `tools/screens/inactivity.ts`
+  (logs and screenshots in `docs/status/inactivity/`).
+
 ## Git workflow
 
 - `main` is always runnable. Nobody commits to it directly after the initial setup.

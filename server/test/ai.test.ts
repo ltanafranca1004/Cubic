@@ -7,7 +7,12 @@ import { Budget, GEMINI_PAUSE_MS } from '../src/ai/budget';
 import type { Brain } from '../src/ai/gemini';
 import { MAX_SAY_CHARS, REPLY_SCHEMA, parsePersona, systemPrompt } from '../src/ai/prompt';
 import { allScriptedLines, bankedScriptLines, hasLine, lineText } from '../src/ai/scripted';
-import { LIMITS, Rooms, type Room } from '../src/rooms';
+import { INACTIVITY, INACTIVITY_RANGE, LIMITS, Rooms, type Room } from '../src/rooms';
+
+// Several tests here let the human sit silent for ten minutes and more to watch the AI.
+// A real room would remove that human for inactivity (inactivity.test.ts has those rules,
+// with the real AiPlayer too), so here that clock is as long as it goes.
+INACTIVITY.idleMs = INACTIVITY_RANGE.max;
 
 // The AI partner on a real Room. The clock is fake and the timings are the real ones:
 // a step every AI_STEP_MS, one Gemini call per 6 s, a 3 s deadline. Gemini is only asked on

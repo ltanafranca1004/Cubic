@@ -157,6 +157,18 @@ export function createApp(opts: AppOptions = {}): App {
         }
       },
       onChat: (m) => io.to(room.code).emit('chat', m),
+      onNote: (m) => io.to(room.code).emit('chat', m),
+      // Taken out for inactivity: told why, and cut off from the room at once. Nobody else
+      // in the room is touched.
+      onRemoved: (id, reason) => {
+        for (const sid of [...(io.sockets.adapter.rooms.get(room.code) ?? [])]) {
+          const s = io.sockets.sockets.get(sid);
+          if (s?.data?.id !== id) continue;
+          s.emit('removed', { reason });
+          s.leave(room.code);
+          s.data.evict?.();
+        }
+      },
       onQuick: (q) => io.to(room.code).emit('quick', q),
       onRoom: (r) => io.to(room.code).emit('room', r),
       onTyping: (from, on) => io.to(room.code).emit('typing', { from, on }),
@@ -181,7 +193,8 @@ export function createApp(opts: AppOptions = {}): App {
     const attach = (r: Room, seat: Seat): Seat => {
       room = r;
       me = seat.id;
-      socket.data = { code: r.code, id: seat.id };
+      // evict: the room removed us (inactivity), this socket is in no room any more
+      socket.data = { code: r.code, id: seat.id, evict: () => ((room = null), (me = null)) };
       return seat;
     };
     const detach = (forGood: boolean) => {
@@ -213,6 +226,10 @@ export function createApp(opts: AppOptions = {}): App {
         const other = io.sockets.sockets.get(sid);
         if (other && other.id !== socket.id && other.data?.id === id) {
           other.data.replaced = true;
+          // Tell it why first: a socket the server disconnects does not come back by itself,
+          // and that tab would sit on "reconnecting" for ever. It forgets the seat (the
+          // token is now this tab's) and goes back to the mode screen.
+          other.emit('removed', { reason: 'replaced' });
           other.disconnect(true);
         }
       }
@@ -320,6 +337,10 @@ export function createApp(opts: AppOptions = {}): App {
     socket.on('quick', (msg) => {
       const s = side();
       if (room && s) room.quick(s, msg?.index);
+    });
+    // a key, a tap or talking that nothing else told us about (lobby and game alike)
+    socket.on('activity', () => {
+      if (room && me !== null) room.activity(me);
     });
 
     // Voice is relayed only where the client uses it: between the two humans of a running

@@ -1,5 +1,6 @@
 import { createApp } from './app';
 import { devCommandsEnabled } from './dev';
+import { INACTIVITY, inactivityMs } from './rooms';
 import { createAiPartner } from './ai/wire';
 
 try {
@@ -19,6 +20,10 @@ const ai = createAiPartner(env);
 // TURN relay for voice (optional). All three are needed, otherwise clients get STUN only.
 const turnUrls = (env.TURN_URLS ?? '').split(',').map((u) => u.trim()).filter(Boolean);
 const turn = turnUrls.length && env.TURN_USERNAME && env.TURN_CREDENTIAL ? { urls: turnUrls, username: env.TURN_USERNAME, credential: env.TURN_CREDENTIAL } : null;
+
+// Inactivity timers in ms (defaults: 4 minutes, then a 60 second countdown).
+INACTIVITY.idleMs = inactivityMs(env.INACTIVE_MS, INACTIVITY.idleMs);
+INACTIVITY.warnMs = inactivityMs(env.INACTIVE_WARN_MS, INACTIVITY.warnMs);
 
 const app = createApp({
   origins: (env.CLIENT_ORIGIN ?? '').split(','),
