@@ -6,7 +6,8 @@
 // heroes land back where they started however fast the sides are switched.
 // Before that it resizes the window in the middle of every screen transition (the dive,
 // the fade to side select, the fade into the game and the fade back out), which must
-// never leave the menus stuck between two screens.
+// never leave the menus stuck between two screens. First of all it loads the page cold and
+// touches nothing: only the menu track (one format) may be downloaded before the first click.
 //
 //   needs:  npm run dev (server :3001, client :5173)      BASE overrides the client URL
 //   run:    cd tools && npx tsx screens/check.ts            (add "resize" for the resize steps only)
@@ -228,6 +229,32 @@ async function hasPanel(page: Page, label: string): Promise<boolean> {
     return [...ctx.getImageData(0, 0, 1, 1).data];
   }, shot.toString('base64'));
   return !(r! > 240 && g! > 240 && bl! > 240); // not white: there is a panel there
+}
+
+/**
+ * A cold load with no interaction: of the audio, only the menu track is requested, in one
+ * format. The other tracks start downloading with the first click or key, in the background.
+ */
+async function coldLoad(browser: Browser): Promise<void> {
+  const tag = 'cold load';
+  console.log(`\n${tag}`);
+  const context = await browser.newContext({ viewport: { width: 1280, height: 720 } }); // its own empty cache
+  const page = await context.newPage();
+  const audio: string[] = [];
+  page.on('request', (r) => {
+    const at = r.url().indexOf('/assets/audio/');
+    if (at >= 0) audio.push(r.url().slice(at + '/assets/audio/'.length).split('?')[0]!);
+  });
+  await page.goto(`${BASE}/`);
+  await page.waitForTimeout(6000); // long enough for a background queue to have moved on
+  const before = [...audio];
+  if (before.length !== 1 || !/^music-menu\.(ogg|mp3)$/.test(before[0]!)) fail(`${tag}: audio requested before the first click: [${before.join(', ')}] (want the menu track only, one format)`);
+  else console.log(`   ok: before the first click the only audio request is ${before[0]}`);
+  await page.keyboard.press('Enter');
+  const music = () => audio.filter((f) => /^music-(lobby|outside|inside)\./.test(f));
+  await expect(tag, 'the other three tracks are fetched after the first key press', async () => music().length === 3, 20_000);
+  if (new Set(music().map((f) => f.split('.')[1])).size !== 1) fail(`${tag}: the tracks were fetched in more than one format: [${music().join(', ')}]`);
+  await context.close();
 }
 
 /**
@@ -536,6 +563,7 @@ async function run(browser: Browser, size: { width: number; height: number }, re
 
 const browser = await chromium.launch();
 try {
+  await coldLoad(browser);
   for (const size of [{ width: 1920, height: 1080 }, { width: 1280, height: 720 }]) {
     for (const renderer of ['webgl', 'canvas'] as const) {
       await resizeMidTransition(browser, size, renderer).catch((e: Error) => fail(`${size.width}x${size.height} ${renderer} resize: stopped early: ${e.message}`));
