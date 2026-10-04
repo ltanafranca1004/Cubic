@@ -7,7 +7,13 @@ import type { FaceId, Side } from '../types';
 //
 // One banner section per face and side. Each puzzle owns the two sections of its face:
 // edit only yours. Outside terrain (T, ~, #) is the biome: move it only with the biome
-// test (client/test/biomes.test.ts) green. The C on every face is the stub puzzle's
+// test (client/test/biomes.test.ts) green.
+//
+// EDGE RULE: no solid terrain (#, T, ~) on the outer ring of any face (row 0, row 11,
+// column 0, column 11), so a player crossing in from a neighbouring face can always step
+// in. shared/test/maps.test.ts fails if a map breaks it. Objects may stand on the ring.
+//
+// The C on every face is the stub puzzle's
 // crystal; it goes away with the stub.
 
 export const STRING_MAPS: Record<Side, Record<FaceId, string[]>> = {
@@ -16,8 +22,8 @@ export const STRING_MAPS: Record<Side, Record<FaceId, string[]>> = {
     // FACE 1 OUTSIDE: Grass (hidden-code)
     // ============================================================
     1: [
-      'T..........T',
-      '...T.....T..',
+      '............',
+      '.T.T.....TT.',
       '............',
       '............',
       '....###.....',
@@ -26,8 +32,8 @@ export const STRING_MAPS: Record<Side, Record<FaceId, string[]>> = {
       '........~~..',
       '.......~~~T.',
       '............',
+      '.T........T.',
       '............',
-      'T..........T',
     ],
     // ============================================================
     // FACE 2 OUTSIDE: Desert (equation-safe)
@@ -50,35 +56,35 @@ export const STRING_MAPS: Record<Side, Record<FaceId, string[]>> = {
     // FACE 3 OUTSIDE: Snow (mirrored-glyph)
     // ============================================================
     3: [
-      '...........T',
-      '..###TT###..',
+      '............',
+      '..###TT###T.',
       '..#.#..#.#..',
       '............',
       '.#........#.',
-      '#....C....#.',
-      '.#.........#',
+      '.#...C....#.',
+      '.#........#.',
       '.#..~~.#..#.',
       '....~~......',
       '..#.#..#.#..',
-      '..###TT###..',
-      'T..........T',
+      '.T###TT###T.',
+      '............',
     ],
     // ============================================================
     // FACE 4 OUTSIDE: Forest (botanical-mirror)
     // ============================================================
     4: [
-      '...T...T..TT',
-      '.T........TT',
       '............',
-      'T..........T',
+      '.T.T...T.TT.',
+      '.........TT.',
+      '.T........T.',
       '............',
-      'T....C.....T',
+      '.T...C....T.',
       '............',
       '............',
-      'T..........T',
+      '.T........T.',
+      '.TT......TT.',
+      '.TT.T..T.TT.',
       '............',
-      'TT........TT',
-      'TT..T..T..TT',
     ],
     // ============================================================
     // FACE 5 OUTSIDE: Rooftop (sequence-laser)
