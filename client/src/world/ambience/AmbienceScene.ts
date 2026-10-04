@@ -1,10 +1,13 @@
 import Phaser from 'phaser';
-import { FACE_SIZE, TILE_PX, canonToScreen, defaultEnv, type FaceId, type GameEvent, type GameState, type Side, type TileKind } from '@cubic/shared';
+import { FACE_SIZE, TILE_PX, canonToScreen, defaultEnv, screenToCanon, type FaceId, type GameEvent, type GameState, type Side, type TileKind, type Vec } from '@cubic/shared';
 import { asset } from '../../style/assets';
 import { settings } from '../../style/settings';
 import { C, FACE_STYLE, hex } from '../../style/tokens';
+import { decorSpots, dressed, dripPoints, wadeAt } from '../biomes/decor';
+import { propOnScreen, shownTick } from '../biomes/dress';
+import { PROPS, PROP_COLS, PROP_SHEET, PROP_VEIL, PROP_W } from '../biomes/sheet';
 import { FX, FX_CELL, FX_CLOUD, FX_SHEET } from './frames';
-import { AmbienceLoops, stepSound } from './loops';
+import { AmbienceLoops, dripSound, stepSound } from './loops';
 import { Budget, LAND_TILES, besideSolid, effectCount, faceKey, facePlan, fleeVector, lightAt, pickTiles, shouldFlee, type EffectId, type FacePlan, type Motion, type Surface, type Tile } from './plan';
 
 // THE LIVING WORLD. A scene on top of the game view that makes the face you are on feel
@@ -21,6 +24,11 @@ const T = TILE_PX;
 const W = FACE_SIZE * TILE_PX;
 const SHEET = 'fx';
 const CLOUD = 'fx-cloud';
+/** The biome props, cut into tile-sized frames: a cell's upper half, then its lower half one row down. */
+const BIOME = 'biome-props';
+const VEIL = 'biome-veil';
+const upperHalf = (cell: number) => Math.floor(cell / PROP_COLS) * 2 * PROP_COLS + (cell % PROP_COLS);
+const lowerHalf = (cell: number) => upperHalf(cell) + PROP_COLS;
 /** Hidden for this long after walking over an edge (the cube turn), then faded back in. */
 const FLIP_HIDE_MS = 520;
 const FADE_IN_MS = 220;
@@ -62,6 +70,10 @@ interface Face {
   floor: Tile[];
   /** Where the birds on the ground are, in screen tiles (the dev hook reads it). */
   perched: (() => Tile | null)[];
+  /** Footprints in the snow, oldest first. */
+  prints: Phaser.GameObjects.Rectangle[][];
+  /** What the biome layer draws over the player right now (the dev hook reads it). */
+  overPlayer: { canopy: boolean; wade: boolean };
 }
 
 const rnd = (a: number, b: number) => a + Math.random() * (b - a);
@@ -87,7 +99,7 @@ export class AmbienceScene extends Phaser.Scene {
   private hideUntil = 0;
   private steps = 0;
   /** The player on screen, in tiles, and when they last moved. */
-  private player = { sx: 0, sy: 0, dir: 1, movedAt: 0, breathAt: 0, spot: '' };
+  private player = { sx: 0, sy: 0, dir: 1, movedAt: 0, breathAt: 0, spot: '', fromX: 0, fromY: 0 };
   private frameMs = 0;
 
   constructor() {
@@ -98,6 +110,8 @@ export class AmbienceScene extends Phaser.Scene {
   preload(): void {
     this.load.spritesheet(SHEET, asset(FX_SHEET), { frameWidth: FX_CELL, frameHeight: FX_CELL });
     this.load.image(CLOUD, asset(FX_CLOUD));
+    this.load.spritesheet(BIOME, asset(PROP_SHEET), { frameWidth: PROP_W, frameHeight: T });
+    this.load.spritesheet(VEIL, asset(PROP_VEIL), { frameWidth: PROP_W, frameHeight: T });
   }
 
   create(): void {
@@ -133,6 +147,10 @@ export class AmbienceScene extends Phaser.Scene {
             cap: this.current?.plan.cap ?? 0,
             decor: this.current?.decor.length ?? 0,
             birds: (this.current?.perched ?? []).map((at) => at()).filter((t) => t !== null),
+            canopy: this.current?.overPlayer.canopy ?? false,
+            wade: this.current?.overPlayer.wade ?? false,
+            prints: this.current?.prints.length ?? 0,
+            tick: shownTick(),
             loop: this.loops.current,
             frameMs: this.frameMs,
             fps: this.game.loop.actualFps,
@@ -164,7 +182,7 @@ export class AmbienceScene extends Phaser.Scene {
 
     const [sx, sy] = canonToScreen(this.me, pose.face, pose.up, pose.x, pose.y);
     const spot = `${pose.face}:${pose.x},${pose.y}`;
-    if (spot !== this.player.spot) this.player.movedAt = time;
+    if (spot !== this.player.spot) Object.assign(this.player, { movedAt: time, fromX: this.player.sx, fromY: this.player.sy });
     Object.assign(this.player, { sx, sy, dir: pose.dir < 0 ? -1 : 1, spot });
 
     this.loops.set(face.plan.loop, face.plan.loopRate);
@@ -237,6 +255,11 @@ export class AmbienceScene extends Phaser.Scene {
     root.add([under, decorLayer, over]);
 
     const taken = new Set(map.objects.map((o) => `${o.x},${o.y}`));
+    if (side === 'out') {
+      // the biome layer has these tiles: nothing random grows on a pond or in the tall grass
+      for (const s of decorSpots(id)) taken.add(`${s.x},${s.y}`);
+      for (let y = 0; y < FACE_SIZE; y++) for (let x = 0; x < FACE_SIZE; x++) if (dressed(map.tiles, id, x, y)) taken.add(`${x},${y}`);
+    }
     const isFree = (kind: TileKind, x: number, y: number) => kind === 'floor' && !taken.has(`${x},${y}`);
     const toScreen = (t: Tile): Tile => {
       const [x, y] = canonToScreen(side, id, up, t.x, t.y);
@@ -258,6 +281,8 @@ export class AmbienceScene extends Phaser.Scene {
       tickers: [],
       floor: pickTiles(map.tiles, isFree, FACE_SIZE * FACE_SIZE, 1).map(toScreen),
       perched: [],
+      prints: [],
+      overPlayer: { canopy: false, wade: false },
     };
 
     /** Tiles for an effect, as screen tiles. Each decorated tile is used once. */
@@ -313,6 +338,9 @@ export class AmbienceScene extends Phaser.Scene {
           tilesFor('wallLights', (k) => k === 'wall', 53),
         ),
       tint: () => void this.rect(under, W, W, FACE_STYLE[id].base, 0.07),
+      canopy: () => this.canopy(face, up),
+      wade: () => this.wade(face, up),
+      footprints: () => undefined, // left by footstep()
     };
     for (const effect of plan.effects) builders[effect]();
     return face;
@@ -493,27 +521,54 @@ export class AmbienceScene extends Phaser.Scene {
 
   // ----- 3 snow -----
 
+  /**
+   * Snow falls ONTO the ground: every flake has a spot it lands on, rests there for a
+   * moment and melts away. Near flakes are bigger and faster than far ones, and every so
+   * often a gust pushes them all sideways.
+   */
   private snow(face: Face): void {
     for (let i = 0; i < effectCount('snow', face.motion); i++) {
+      const near = i % 3 === 0;
       let x = rnd(0, W);
-      let y = rnd(0, W);
-      const fall = rnd(11, 26);
+      let land = rnd(6, W);
+      let y = rnd(-4, land);
+      let rest = 0;
+      const fall = near ? rnd(24, 34) : rnd(11, 19);
       const phase = rnd(0, 6);
-      const big = i % 5 === 0;
+      const size = near ? 2 : 1;
       this.spawn(face, () => {
-        // The ground is white: the flakes are drawn in the snow's own shadow tones.
-        const r = this.rect(face.over, big ? 2 : 1, big ? 2 : 1, pick([C.skyLight, C.silver, C.sky]), rnd(0.6, 0.95));
+        // The ground is white: a flake is drawn in the snow's own shadow tones, the near
+        // ones with a white glint on them.
+        const r = this.rect(face.over, size, size, near ? C.skyLight : pick([C.skyLight, C.silver, C.sky]), near ? 1 : rnd(0.6, 0.9));
+        const glint = near ? this.rect(face.over, 1, 1, C.white) : null;
         return {
-          objs: [r],
+          objs: glint ? [r, glint] : [r],
           step: (dt, now) => {
-            y += fall * dt;
-            x += Math.sin(now / 900 + phase) * 6 * dt + 3 * dt;
-            if (y > W) {
-              y = -2;
-              x = rnd(0, W);
+            if (rest > 0) {
+              // on the ground: one pixel that fades
+              rest -= dt;
+              r.setAlpha(Math.max(0, rest / 0.7));
+              if (rest <= 0) {
+                x = rnd(0, W);
+                y = -3;
+                land = rnd(6, W);
+                r.setSize(size, size).setAlpha(near ? 1 : rnd(0.6, 0.9));
+                glint?.setVisible(true);
+              }
+              return true;
             }
+            const gust = Math.max(0, Math.sin(now / 2300)) ** 2;
+            y += fall * dt;
+            x += (Math.sin(now / 900 + phase) * 6 + 3 + gust * (near ? 26 : 14)) * dt;
             if (x > W) x -= W;
+            if (y >= land) {
+              y = land;
+              rest = 0.7;
+              r.setSize(1, 1);
+              glint?.setVisible(false);
+            }
             r.setPosition(Math.round(x), Math.round(y));
+            glint?.setPosition(Math.round(x), Math.round(y));
             return true;
           },
         };
@@ -794,19 +849,34 @@ export class AmbienceScene extends Phaser.Scene {
   /** A drop falls from the ceiling and splashes on the floor. */
   private drips(face: Face): void {
     const want = effectCount('drips', face.motion);
+    // The roof leaks in the same places every time: onto the puddles and into the pool
+    // (world/biomes/decor.ts). A face with no such places drips anywhere.
+    const map = defaultEnv.world[face.side][face.face];
+    const { up } = this.state!.players[face.side].pose;
+    const points = dripPoints(map.tiles, face.face).map((p) => {
+      const [x, y] = canonToScreen(face.side, face.face, up, p.x, p.y);
+      return { x, y, water: p.water };
+    });
     let alive = 0;
     let next = this.time.now + 600;
+    let turn = 0;
     face.tickers.push((_dt, now) => {
-      if (now < next || alive >= want || !face.floor.length) return;
+      if (now < next || alive >= want || (!points.length && !face.floor.length)) return;
       next = now + rnd(450, 1500);
-      const t = pick(face.floor);
-      const x = centre(t.x) + Math.round(rnd(-4, 4));
-      const ground = centre(t.y) + Math.round(rnd(-2, 5));
+      const point = points.length ? points[turn++ % points.length]! : null;
+      const t = point ?? pick(face.floor);
+      const water = point?.water ?? false;
+      const x = centre(t.x) + (point ? 0 : Math.round(rnd(-4, 4)));
+      const ground = point ? t.y * T + 10 : centre(t.y) + Math.round(rnd(-2, 5));
+      // in water the drop spreads into a ring, on rock it splashes
+      const frames: readonly number[] = water ? PROPS.ripple.map(lowerHalf) : FX.splash;
       let age = 0;
+      let heard = false;
       this.spawn(face, () => {
         alive++;
         const drop = this.rect(face.over, 1, 2, C.skyLight, 0.9);
-        const splash = this.image(face.over, FX.splash[0], x, ground - 6).setVisible(false);
+        const splash = water ? this.add.image(t.x * T, t.y * T, BIOME, frames[0]).setOrigin(0, 0).setVisible(false) : this.image(face.over, frames[0]!, x, ground - 6).setVisible(false);
+        if (water) face.over.add(splash);
         return {
           objs: [drop, splash],
           step: (dt) => {
@@ -817,9 +887,13 @@ export class AmbienceScene extends Phaser.Scene {
               return true;
             }
             drop.setVisible(false);
-            const i = Math.floor((age - 0.38) / 0.09);
-            if (i < FX.splash.length) splash.setVisible(true).setFrame(FX.splash[i]!);
-            return i < FX.splash.length;
+            if (!heard) {
+              heard = true;
+              if (point) dripSound(water);
+            }
+            const i = Math.floor((age - 0.38) / (water ? 0.16 : 0.09));
+            if (i < frames.length) splash.setVisible(true).setFrame(frames[i]!);
+            return i < frames.length;
           },
           onDead: () => void alive--,
         };
@@ -897,12 +971,100 @@ export class AmbienceScene extends Phaser.Scene {
     });
   }
 
+  // ----- the biome layer -----
+
+  /**
+   * A tree's crown hangs over the tile behind it. The crown is part of the painted face,
+   * so the character (a sprite on top of the face) would walk over it: this draws every
+   * other pixel of it once more, over the character, while they stand behind a tall prop.
+   * They are behind the leaves and still easy to find.
+   */
+  private canopy(face: Face, up: Vec): void {
+    // half strength: a green turtle behind a green crown has to stay easy to see
+    const img = this.add.image(0, 0, VEIL, 0).setOrigin(0, 0).setAlpha(0.5).setVisible(false);
+    face.root.add(img);
+    face.tickers.push(() => {
+      const { sx, sy } = this.player;
+      const p = propOnScreen(face.face, up, sx, sy + 1, shownTick(), face.motion.reduceMotion);
+      img.setVisible(!!p?.tall);
+      face.overPlayer.canopy = !!p?.tall;
+      if (p?.tall) img.setFrame(upperHalf(p.cell)).setPosition(sx * T, sy * T);
+    });
+  }
+
+  /** Tall grass closes over the turtle's feet, and shakes for a moment when they walk in. */
+  private wade(face: Face, up: Vec): void {
+    const tiles = defaultEnv.world[face.side][face.face].tiles;
+    const img = this.add.image(0, 0, BIOME, lowerHalf(PROPS.grassFront[1]!)).setOrigin(0, 0).setVisible(false);
+    face.root.add(img);
+    let spot = '';
+    let shakeUntil = 0;
+    face.tickers.push((_dt, now) => {
+      const p = this.player;
+      const [x, y] = screenToCanon(face.side, face.face, up, p.sx, p.sy);
+      const inGrass = wadeAt(tiles, face.face, x, y);
+      img.setVisible(inGrass);
+      face.overPlayer.wade = inGrass;
+      if (!inGrass) {
+        spot = '';
+        return;
+      }
+      if (spot !== p.spot) {
+        spot = p.spot;
+        if (!face.motion.reduceMotion) {
+          shakeUntil = now + 360;
+          this.rustle(face, p.sx, p.sy);
+        }
+      }
+      // left, right, left, then upright again
+      const frame = now < shakeUntil ? (Math.floor((shakeUntil - now) / 90) % 2 ? 0 : 2) : 1;
+      img.setFrame(lowerHalf(PROPS.grassFront[frame]!)).setPosition(p.sx * T, p.sy * T);
+    });
+  }
+
+  /** A few blades thrown up out of the grass. */
+  private rustle(face: Face, sx: number, sy: number): void {
+    for (let i = 0; i < 3; i++) {
+      let x = centre(sx) + rnd(-5, 5);
+      let y = sy * T + rnd(6, 11);
+      const vx = rnd(-22, 22);
+      let vy = rnd(-44, -24);
+      let age = 0;
+      this.spawn(face, () => {
+        const r = this.rect(face.over, 1, 2, i % 2 ? C.lime : C.green);
+        return {
+          objs: [r],
+          step: (dt) => {
+            age += dt;
+            vy += 150 * dt;
+            x += vx * dt;
+            y += vy * dt;
+            r.setPosition(Math.round(x), Math.round(y)).setAlpha(1 - age / 0.45);
+            return age < 0.45;
+          },
+        };
+      });
+    }
+  }
+
+  /** The print a step leaves in the snow: two toes where the player just stood. The oldest goes when there are too many. */
+  private footprint(face: Face): void {
+    const max = effectCount('footprints', face.motion);
+    const x = this.player.fromX * T + 5;
+    const y = this.player.fromY * T + 11;
+    face.prints.push([this.rect(face.under, 2, 2, C.skyLight, 1, x, y), this.rect(face.under, 2, 2, C.skyLight, 1, x + 4, y + 1)]);
+    while (face.prints.length > max) for (const d of face.prints.shift()!) d.destroy();
+    // the trail fades towards its old end
+    face.prints.forEach((dots, i) => dots.forEach((d) => d.setAlpha((i + 1 + max - face.prints.length) / max)));
+  }
+
   // ----- the player -----
 
   /** Dust (or snow, or leaf bits) kicked up by a step, and its sound. */
   private footstep(face: Face): void {
     const surface = face.plan.surface;
     stepSound(surface);
+    if (face.plan.effects.includes('footprints')) this.footprint(face);
     const colours = DUST[surface];
     const x0 = centre(this.player.sx);
     const y0 = this.player.sy * T + T - 2;

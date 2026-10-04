@@ -149,6 +149,17 @@ Rules:
   recoloured onto the palette by brightness rank (`tools/art/tiles.ts`). Inside faces are
   our own flagstones and pillars. Props get a one pixel contact shadow in the biome's
   deep colour so they sit on the ground.
+- **Biome layer** (outside only, `client/src/world/biomes`, drawn by `tools/art/biomes.ts`):
+  the same map terrain is a different thing on each face. A `tree` tile is a bush on the
+  grass, a cactus in the desert (a palm beside water), a snowy pine in the snow, an oak in
+  the forest, a planter on the roof and a stalagmite in the cave; water gets a bank on
+  every side that touches land. Every face is composed around one landmark: the tall-grass
+  meadow and lily pond, the oasis, the snowman by the frozen pond, the ring of swaying
+  trees round the clearing, the roof pool, the black pool under the dripping roof. Props
+  are one tile wide and up to two high, always upright however the face is turned; a gust
+  crosses the screen every 3.5 s and everything that can sway leans as it passes (whole
+  pixels, 250 ms steps, nothing moves with reduce motion). Small floor things (grass,
+  mushrooms, pebbles, drifts, puddles) never block and never sit on a puzzle tile.
 - **Objects**: door, plates (red outside, amber inside), crystal, portal (cold stone when
   shut, a turning violet vortex when open), the pot, the rose, a key.
 

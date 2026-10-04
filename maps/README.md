@@ -10,7 +10,7 @@ surface of the same wall. 12 maps total, each 12x12 tiles of 16px (`FACE_SIZE` i
 | 2 | Desert | Crate room |
 | 3 | Snow | Frost room |
 | 4 | Forest | Echo room |
-| 5 | Rooftop | Pillars |
+| 5 | Rooftop | Moat room |
 | 6 | Cave (portal) | Core (portal) |
 
 ## Two ways to author a map
@@ -22,8 +22,8 @@ surface of the same wall. 12 maps total, each 12x12 tiles of 16px (`FACE_SIZE` i
 | --- | --- | --- |
 | `.` | floor | terrain |
 | `#` | wall / rock / pillar (solid) | terrain |
-| `T` | tree (solid) | terrain |
-| `~` | water (solid) | terrain |
+| `T` | tree (solid). Outside it is drawn per biome: bush, cactus (a palm beside water), snowy pine, oak, planter, stalagmite | terrain |
+| `~` | water (solid). Outside it gets a bank on every side that touches land | terrain |
 | `P` | plate | object |
 | `D` | door | object |
 | `C` | crystal | object |
@@ -38,6 +38,11 @@ surface of the same wall. 12 maps total, each 12x12 tiles of 16px (`FACE_SIZE` i
 | `E` | `entry`: the doorway of the mirror maze's trap room | object |
 
 New characters are added in `shared/src/maps/strings.ts` (`LEGEND`).
+
+The outside faces also have a **biome layer** that only looks and never blocks (tall
+grass, mushrooms, drifts, puddles, the snowman skin): `client/src/world/biomes/decor.ts`,
+one 12x12 string map per face. After moving anything on a map run `npm test`: the biome
+test says if a decoration, a tree crown or a landmark now covers a puzzle tile.
 
 **B. Tiled maps (replace string maps face by face).** Save a map as
 `/maps/<side>-<face>.tmj`, e.g. `out-1.tmj`, `in-6.tmj`, then run `npm run maps` and commit

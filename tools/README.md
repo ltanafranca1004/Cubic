@@ -21,6 +21,7 @@ not in the Resurrect 64 palette.
 | `art/font.ts` | m5x7.ttf to a bitmap font (PNG + XML) |
 | `art/tiles.ts` | the twelve face tilesets (outside: Ninja Adventure tiles recoloured; inside: ours) |
 | `art/sprites.ts` | the two characters, puzzle objects, items |
+| `art/biomes.ts` | the biome layer of the outside faces: trees, cacti, the snowman, tall grass, small floor things (`sprites/biomes.png`, plus `biomes-veil.png`), and every face's water with its banks (`tiles/water.png`). The cell order is `client/src/world/biomes/sheet.ts` |
 | `art/ui.ts` | panels, buttons, fields, sliders, icons, cursor, markers, badges |
 | `art/scenery.ts` | sky, clouds, logo, the two side select cubes |
 | `art/vendor/ninja-adventure/` | the CC0 source sheets the tiles are cut from |

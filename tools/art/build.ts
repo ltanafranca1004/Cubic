@@ -7,6 +7,7 @@
 // tiles (both CC0, see CREDITS.md). Colours come from client/src/style/tokens.ts.
 import { readdirSync, writeFileSync } from 'node:fs';
 import { R64 } from '../../client/src/style/tokens';
+import { buildBiomes } from './biomes';
 import { buildFont } from './font';
 import { Img } from './img';
 import { buildScenery } from './scenery';
@@ -27,6 +28,7 @@ const manifest = {
   tileSize: 16,
   tilesets: buildTiles(ASSETS),
   ...sprites,
+  biomes: buildBiomes(ASSETS),
   ui: { icons: ui.icons },
   audio: {},
 };

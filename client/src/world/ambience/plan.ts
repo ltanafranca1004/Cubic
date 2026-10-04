@@ -31,6 +31,10 @@ export type EffectId =
   | 'crystals'
   // any outside face with water tiles
   | 'waterGlints'
+  // the biome layer (world/biomes): what is drawn over the player
+  | 'canopy'
+  | 'wade'
+  | 'footprints'
   // inside, every room
   | 'motes'
   | 'wallLights'
@@ -65,12 +69,12 @@ export const PARTICLE_CAP_REDUCED = 16;
 export const DECOR_CAP = 28;
 
 const OUTSIDE: Record<FaceId, { effects: EffectId[]; loop: LoopId; surface: Surface }> = {
-  1: { effects: ['tufts', 'flowers', 'butterflies', 'wind', 'waterGlints'], loop: 'grass', surface: 'grass' },
-  2: { effects: ['sand', 'shimmer', 'tumbleweed', 'waterGlints'], loop: 'desert', surface: 'sand' },
-  3: { effects: ['snow', 'breath', 'iceSparkle'], loop: 'snow', surface: 'snow' },
-  4: { effects: ['fireflies', 'leaves', 'birds', 'waterGlints'], loop: 'forest', surface: 'leaves' },
-  5: { effects: ['cloudShadows', 'gulls', 'flags', 'waterGlints'], loop: 'rooftop', surface: 'roof' },
-  6: { effects: ['drips', 'crystals', 'waterGlints'], loop: 'cave', surface: 'stone' },
+  1: { effects: ['tufts', 'flowers', 'butterflies', 'wind', 'waterGlints', 'wade', 'canopy'], loop: 'grass', surface: 'grass' },
+  2: { effects: ['sand', 'shimmer', 'tumbleweed', 'waterGlints', 'canopy'], loop: 'desert', surface: 'sand' },
+  3: { effects: ['snow', 'breath', 'iceSparkle', 'footprints', 'canopy'], loop: 'snow', surface: 'snow' },
+  4: { effects: ['fireflies', 'leaves', 'birds', 'waterGlints', 'canopy'], loop: 'forest', surface: 'leaves' },
+  5: { effects: ['cloudShadows', 'gulls', 'flags', 'waterGlints', 'canopy'], loop: 'rooftop', surface: 'roof' },
+  6: { effects: ['drips', 'crystals', 'waterGlints', 'canopy'], loop: 'cave', surface: 'stone' },
 };
 const INSIDE: EffectId[] = ['tint', 'wallLights', 'motes'];
 /** Left out with reduce motion: things that sweep the whole view or wobble. */
@@ -115,9 +119,10 @@ const COUNT: Partial<Record<EffectId, number>> = {
   waterGlints: 2,
   motes: 12,
   wallLights: 4,
+  footprints: 8,
 };
 /** Decorations sit still, so reduce motion keeps all of them (they just stop swaying). */
-const STILL: EffectId[] = ['tufts', 'flowers', 'flags', 'crystals', 'wallLights'];
+const STILL: EffectId[] = ['tufts', 'flowers', 'flags', 'crystals', 'wallLights', 'footprints', 'canopy', 'wade'];
 
 export function effectCount(effect: EffectId, motion: Motion): number {
   const n = COUNT[effect] ?? 1;

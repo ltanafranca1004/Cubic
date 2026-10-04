@@ -709,6 +709,198 @@
       ]
     }
   },
+  "biomes": {
+    "props": {
+      "image": "sprites/biomes.png",
+      "veil": "sprites/biomes-veil.png",
+      "cellWidth": 16,
+      "cellHeight": 32,
+      "columns": 16,
+      "frames": {
+        "oakA": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "oakB": [
+          4,
+          5,
+          6,
+          7
+        ],
+        "oakC": [
+          8,
+          9,
+          10,
+          11
+        ],
+        "pineA": [
+          12,
+          13,
+          14,
+          15
+        ],
+        "pineB": [
+          16,
+          17,
+          18,
+          19
+        ],
+        "palm": [
+          20,
+          21,
+          22,
+          23
+        ],
+        "bushA": [
+          24,
+          25,
+          26,
+          27
+        ],
+        "bushB": [
+          28,
+          29,
+          30,
+          31
+        ],
+        "planterA": [
+          32,
+          33,
+          34,
+          35
+        ],
+        "planterB": [
+          36,
+          37,
+          38,
+          39
+        ],
+        "cactusA": [
+          40
+        ],
+        "cactusB": [
+          41
+        ],
+        "cactusC": [
+          42
+        ],
+        "snowman": [
+          43
+        ],
+        "stalagA": [
+          44
+        ],
+        "stalagB": [
+          45
+        ],
+        "stalagC": [
+          46
+        ],
+        "tallGrassA": [
+          47,
+          48,
+          49
+        ],
+        "tallGrassB": [
+          50,
+          51,
+          52
+        ],
+        "grassFront": [
+          53,
+          54,
+          55
+        ],
+        "fern": [
+          56,
+          57,
+          58
+        ],
+        "reeds": [
+          59,
+          60,
+          61
+        ],
+        "flowersA": [
+          62
+        ],
+        "flowersB": [
+          63
+        ],
+        "shroomRed": [
+          64
+        ],
+        "shroomRedB": [
+          65
+        ],
+        "shroomBrown": [
+          66
+        ],
+        "glowShroom": [
+          67,
+          68
+        ],
+        "pebblesA": [
+          69
+        ],
+        "pebblesB": [
+          70
+        ],
+        "rubbleA": [
+          71
+        ],
+        "rubbleB": [
+          72
+        ],
+        "bones": [
+          73
+        ],
+        "dryBush": [
+          74,
+          75
+        ],
+        "dune": [
+          76
+        ],
+        "driftA": [
+          77
+        ],
+        "driftB": [
+          78
+        ],
+        "puddleCave": [
+          79,
+          80
+        ],
+        "puddleRoof": [
+          81,
+          82
+        ],
+        "moss": [
+          83
+        ],
+        "lilyA": [
+          84
+        ],
+        "lilyB": [
+          85
+        ],
+        "ripple": [
+          86,
+          87,
+          88
+        ]
+      }
+    },
+    "water": {
+      "image": "tiles/water.png",
+      "cell": 16,
+      "frames": 4,
+      "masks": 16
+    }
+  },
   "ui": {
     "icons": [
       "mic",
