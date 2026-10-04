@@ -270,8 +270,19 @@ test('two clients play a whole game online', async () => {
   // ---------- end face 3 ----------
 
   // ---------- face 2: equation-safe ----------
-  await stub(b2, 2);
+  // The outside player counts, the inside player types the product. The battery stays lying.
+  {
+    const { visibleObjects } = await import('@cubic/shared');
+    const seen = (type: string) => visibleObjects(a.last.state, 'out', 2).filter((o) => o.type === type).length;
+    const answer = 3 * seen('f2-bush') * 2 * seen('f2-bird') * seen('f2-rock');
+    for (const name of [...String(answer), 'enter']) {
+      const key = visibleObjects(b2.last.state, 'in', 2).find((o) => o.type === 'key' && o.state === name)!;
+      await b2.walkTo({ face: 2, x: key.x, y: key.y });
+      await b2.interact();
+    }
+  }
   await solved(2);
+  assert.equal(a.last.state.items.battery?.face, 2);
   // ---------- end face 2 ----------
 
   // ---------- face 5: sequence-laser ----------

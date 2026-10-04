@@ -42,7 +42,18 @@ export const SOLUTIONS: Record<string, SolutionScript> = {
   // ---------- end face 1 ----------
 
   // ---------- face 2: equation-safe ----------
-  'equation-safe': stub(2, 'in'),
+  // The outside player counts what they see, the inside player types 3 x bushes x 2 x birds x
+  // rocks on the keys they see and ENTER. The battery is left LYING in front of the safe.
+  'equation-safe': (t) => {
+    const seen = (type: string) => visibleObjects(t.state, 'out', 2, t.env).filter((o) => o.type === type).length;
+    const answer = 3 * seen('f2-bush') * 2 * seen('f2-bird') * seen('f2-rock');
+    const key = (name: string) => visibleObjects(t.state, 'in', 2, t.env).find((o) => o.type === 'key' && o.state === name)!;
+    for (const name of [...String(answer), 'enter']) {
+      const k = key(name);
+      t.go('in', { face: 2, x: k.x, y: k.y });
+      t.interact('in');
+    }
+  },
   // ---------- end face 2 ----------
 
   // ---------- face 3: mirrored-glyph ----------

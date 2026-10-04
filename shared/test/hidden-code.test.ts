@@ -43,9 +43,9 @@ test('hidden-code: the inside player types what the outside player reads, and EN
   for (const key of seen(state, 'in').filter((o) => o.type === 'key')) assert.match(key.state!, /-green$/);
 
   // locked: more presses change nothing
-  const before = JSON.stringify(state.puzzles);
+  const before = JSON.stringify(state.puzzles['hidden-code']);
   type(t, ['1', 'enter']);
-  assert.equal(JSON.stringify(state.puzzles), before);
+  assert.equal(JSON.stringify(state.puzzles['hidden-code']), before);
   assert.equal(state.strikes, 0);
 });
 

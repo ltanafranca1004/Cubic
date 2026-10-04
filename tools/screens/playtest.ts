@@ -153,8 +153,30 @@ const PUZZLE_SCRIPTS: PuzzleScript[] = [
       { expect: 'every tile of the symbol is flipped and locked', check: (state) => visibleObjects(state, 'in', 3).filter((o) => o.type === 'f3-tile' && o.state === 'done').length === 47 },
     ],
   },
-  // Face 2. Equation Safe.
-  stub('equation-safe', 2),
+  // Face 2. Equation Safe: the outside player counts the bushes, birds and rocks, the inside
+  // player types 3 x bushes x 2 x birds x rocks and ENTER, then picks up the battery.
+  {
+    id: 'equation-safe',
+    steps: [
+      {
+        who: 'out',
+        plan: (state) => {
+          const seen = (type: string) => visibleObjects(state, 'out', 2).filter((o) => o.type === type).length;
+          const answer = 3 * seen('f2-bush') * 2 * seen('f2-bird') * seen('f2-rock');
+          const keys = visibleObjects(state, 'in', 2).filter((o) => o.type === 'key');
+          return [...String(answer), 'enter'].flatMap((name): PuzzleStep[] => {
+            const key = keys.find((o) => o.state === name);
+            if (!key) throw new Error(`no key "${name}" on the vault keypad`);
+            return [{ who: 'in', goto: { tile: { face: 2, x: key.x, y: key.y } } }, { who: 'in', keys: 'e' }];
+          });
+        },
+      },
+      { expect: 'the safe is open and the battery is out', check: (state) => state.solved.includes(2) && !!state.items.battery },
+      { who: 'in', goto: { item: 'battery' } },
+      { who: 'in', keys: 'e' },
+      { expect: 'the inside player carries the battery', check: (state) => state.players.in.carrying === 'battery' },
+    ],
+  },
   // Face 5. Sequence Laser.
   stub('sequence-laser', 5),
   // Face 6. Laser and Invisible Path.

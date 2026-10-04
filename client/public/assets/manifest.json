@@ -665,43 +665,83 @@
         "path": 65
       }
     },
-    "f3-glyph": {
+    "f2-bush": {
       "image": "sprites/objects.png",
       "frames": {
         "default": 66
       }
     },
+    "f2-rock": {
+      "image": "sprites/objects.png",
+      "frames": {
+        "default": 67
+      }
+    },
+    "f2-bird": {
+      "image": "sprites/objects.png",
+      "frames": {
+        "default": 68,
+        "up": 68,
+        "down": 69
+      }
+    },
+    "f2-safe": {
+      "image": "sprites/objects.png",
+      "frames": {
+        "default": 70,
+        "locked": 70,
+        "open": 71
+      }
+    },
+    "f2-clue": {
+      "image": "sprites/objects.png",
+      "frames": {
+        "default": 72,
+        "three": 72,
+        "two": 73,
+        "times": 74,
+        "bush": 75,
+        "bird": 76,
+        "rock": 77
+      }
+    },
+    "f3-glyph": {
+      "image": "sprites/objects.png",
+      "frames": {
+        "default": 78
+      }
+    },
     "f3-tile": {
       "image": "sprites/objects.png",
       "frames": {
-        "default": 67,
-        "off": 67,
-        "on": 68,
-        "done": 69
+        "default": 79,
+        "off": 79,
+        "on": 80,
+        "done": 81
       }
     },
     "f4-pot": {
       "image": "sprites/objects.png",
       "frames": {
-        "default": 70,
-        "empty": 70,
-        "locked": 71,
-        "bloom-red": 72,
-        "bloom-blue": 73,
-        "bloom-yellow": 74,
-        "bloom-pink": 75,
-        "bloom-white": 76
+        "default": 82,
+        "empty": 82,
+        "locked": 83,
+        "bloom-red": 84,
+        "bloom-blue": 85,
+        "bloom-yellow": 86,
+        "bloom-pink": 87,
+        "bloom-white": 88
       }
     },
     "f4-flowerpot": {
       "image": "sprites/objects.png",
       "frames": {
-        "default": 77,
-        "red": 77,
-        "blue": 78,
-        "yellow": 79,
-        "pink": 80,
-        "white": 81
+        "default": 89,
+        "red": 89,
+        "blue": 90,
+        "yellow": 91,
+        "pink": 92,
+        "white": 93
       }
     }
   },

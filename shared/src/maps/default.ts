@@ -40,17 +40,18 @@ export const STRING_MAPS: Record<Side, Record<FaceId, string[]>> = {
     // ============================================================
     // FACE 2 OUTSIDE: Desert (equation-safe)
     // ============================================================
+    // No walls here: a grey block would pass for one of the rocks the puzzle has counted.
     2: [
       '............',
       '.T..........',
-      '..#......T..',
+      '.........T..',
       '............',
       '.....T~~....',
       '....~~~~T...',
       '.....~~~....',
-      '...#...T....',
-      '......C.....',
-      '.T......#...',
+      '.......T....',
+      '............',
+      '.T..........',
       '..........T.',
       '............',
     ],
@@ -148,16 +149,18 @@ export const STRING_MAPS: Record<Side, Record<FaceId, string[]>> = {
     // ============================================================
     // FACE 2 INSIDE: Vault (equation-safe)
     // ============================================================
+    // The safe stands in the gap of the wall; everything else (clue row, keypad, display) is
+    // laid out in shared/src/puzzles/equationSafe.ts.
     2: [
       '............',
       '............',
       '............',
+      '....#.#.....',
       '............',
       '............',
       '............',
       '............',
       '............',
-      '......C.....',
       '............',
       '............',
       '............',
