@@ -99,6 +99,55 @@ export const FACE_STYLE: Record<1 | 2 | 3 | 4 | 5 | 6, { biome: Biome; name: str
   6: { biome: 'cave', name: 'Cave', base: C.mauve, ramp: { light: C.silver, base: C.mauve, dark: C.slate, deep: C.shadow } },
 };
 
+/**
+ * THE HUD'S COLOUR FOR EACH FACE: the cube's chips, the progress pips and the labels on the
+ * four edges of the game view. Not the biome's floor colour (FACE_STYLE.base, which the
+ * world is drawn with) but six colours picked to be told apart at a glance, also with a
+ * colour vision deficiency: the smallest CIELAB distance between any two is 25 outside and
+ * 18 inside under deuteranopia, protanopia and tritanopia. `out` is the biome; `in` is the
+ * tint of the dark room behind it, the same hue family, so "the orange one" is one wall to
+ * both players. Every chip also carries the face number: colour is never the only cue.
+ */
+export const FACE_HUD: Record<1 | 2 | 3 | 4 | 5 | 6, { out: string; in: string }> = {
+  1: { out: C.grass, in: C.sageDark },
+  2: { out: C.orange, in: C.copper },
+  3: { out: C.white, in: C.blue },
+  4: { out: C.pine, in: C.tealGrey },
+  5: { out: C.pink, in: C.pink },
+  6: { out: C.purple, in: C.purpleDark },
+};
+
+/** Ink on a light colour, paper on a dark one: the text that reads on top of `color`. */
+export function textOn(color: string): string {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(color.slice(i, i + 2), 16));
+  return 0.299 * r! + 0.587 * g! + 0.114 * b! > 140 ? ROLE.ink : ROLE.paper;
+}
+
+/**
+ * The in-game layout, in art pixels of the HUD scale (style/scale.ts) unless it says
+ * otherwise. The stylesheet (ui/css.ts) and the zoom of the game view are both worked out
+ * from these numbers, so they cannot disagree.
+ */
+export const VIEW = {
+  /** The game view at zoom 1, in real pixels: FACE_SIZE (12) tiles of TILE_PX (16). */
+  px: 192,
+  /** The frame around the view. */
+  frame: 2,
+  /** The band on each side of the view that holds the label of the face across that edge. */
+  edge: 13,
+  /** Between the view and the column, between panels, and to the window's sides. */
+  gap: 6,
+  /** The HUD column: never narrower, never wider. */
+  columnMin: 180,
+  columnMax: 200,
+  /** The logical height the column is designed for (the top bar and four panels). */
+  hudHeight: 310,
+  /** Everything beside the view, across: two gaps, two edge bands with their 2px gaps, the frame, the gap to the column. */
+  chromeX: 6 + 13 + 2 + 2 + 2 + 2 + 13 + 6 + 6,
+  /** Everything above and below the view: the two edge bands and the frame. */
+  chromeY: 13 + 2 + 2 + 13,
+} as const;
+
 /** Pixel sizes, in art pixels (multiply by the UI scale for screen pixels). */
 export const SIZE = {
   tile: 16,

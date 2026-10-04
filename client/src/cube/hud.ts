@@ -162,13 +162,17 @@ class Turning {
 
 const same = (a: Mat3, b: Mat3): boolean => a.every((v, i) => Math.abs(v - b[i]!) < 1e-6);
 
-/** Mount the HUD cube in `mount`. The cube map goes in the same HUD, over the game. */
-export function createCubeHud(mount: HTMLElement): CubeHud {
+/**
+ * Mount the HUD cube in `mount` and the row of six progress pips in `pips`. The cube map
+ * goes in the same HUD, over the game. A chip or a pip takes its colour from its
+ * `data-face` (ui/css.ts): the biome outside, the room's tint inside.
+ */
+export function createCubeHud(mount: HTMLElement, pips: HTMLElement): CubeHud {
   mount.innerHTML = `
     <div class="cu-cube-box">
-      ${DIRS.map((d) => `<i class="cu-cube-e ${d}" data-dir="${d}"><span></span></i>`).join('')}
-    </div>
-    <div class="cu-pips">${FACES.map((f) => `<i data-face="${f}" style="--c:var(--face-${f})"></i>`).join('')}</div>`;
+      ${DIRS.map((d) => `<i class="cu-chip cu-cube-e ${d}" data-dir="${d}"></i>`).join('')}
+    </div>`;
+  pips.innerHTML = FACES.map((f) => `<i data-face="${f}"></i>`).join('');
   const box = mount.querySelector<HTMLElement>('.cu-cube-box')!;
   const small = new CubeCanvas(SMALL.px, SMALL.half);
   small.canvas.className = 'cu-cube-c';
@@ -221,7 +225,7 @@ export function createCubeHud(mount: HTMLElement): CubeHud {
     draw();
   }
 
-  /** The chips on the four edges and the row of six pips: redrawn only when they change. */
+  /** The chips on the four edges and the six pips: redrawn only when they change. */
   function labels(s: CubeHudState): boolean {
     const next = [s.side, s.face, s.drift, s.partnerFace, s.solved.join(''), s.portalOpen].join('|');
     if (next === sig) return false;
@@ -232,13 +236,13 @@ export function createCubeHud(mount: HTMLElement): CubeHud {
     for (const dir of DIRS) {
       const chip = box.querySelector<HTMLElement>(`.cu-cube-e.${dir}`)!;
       const face = around[dir];
-      chip.style.setProperty('--c', `var(--face-${face})`);
+      chip.dataset.face = String(face);
       chip.classList.toggle('ok', s.solved.includes(face));
       chip.classList.toggle('partner', hint?.edge === dir);
       chip.title = `Face ${face} ${FACE_NAMES[s.side][face]}${hint?.edge === dir ? ': the way to your partner' : ''}`;
-      chip.firstElementChild!.textContent = String(face);
+      chip.textContent = String(face);
     }
-    for (const pip of mount.querySelectorAll<HTMLElement>('.cu-pips > i')) {
+    for (const pip of pips.querySelectorAll<HTMLElement>(':scope > i')) {
       const face = Number(pip.dataset.face) as FaceId;
       pip.className = [s.solved.includes(face) ? 'ok' : '', face === s.face ? 'here' : '', face === 6 && s.portalOpen ? 'portal' : ''].join(' ').trim();
       // every state has a shape as well as a colour: tick = solved, pip = you, ring = portal
@@ -302,6 +306,7 @@ export function createCubeHud(mount: HTMLElement): CubeHud {
       registerCubeMap({ show() {}, hide() {}, rotate() {} });
       map.remove();
       mount.replaceChildren();
+      pips.replaceChildren();
     },
   };
 }

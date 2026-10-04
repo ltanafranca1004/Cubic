@@ -3,7 +3,7 @@ import { rendererType } from '../style/renderer';
 import type { GameEvent, GameState, Side } from '@cubic/shared';
 import { EXTRA_SCENES } from '../scenes';
 import { SheetArt } from '../style/art';
-import { uiScale } from '../style/scale';
+import { viewZoom } from '../style/scale';
 import { CodeArt } from './art';
 import { GameScene, VIEW_PX, type GameInput } from './GameScene';
 
@@ -15,9 +15,9 @@ export interface GameHandle {
   destroy(): void;
 }
 
-/** The game view shares the UI's whole-number scale, so a pixel is one size everywhere. */
+/** The game view's own whole-number zoom: as large as the window allows beside the HUD column. */
 function fitZoom(): number {
-  return uiScale();
+  return viewZoom();
 }
 
 export function createGameView(parent: HTMLElement, input: GameInput): GameHandle {

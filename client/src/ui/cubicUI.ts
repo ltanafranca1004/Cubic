@@ -6,7 +6,7 @@ import { isMapHeld, setMapHeld } from '../input/gate';
 import { gameAction } from '../input/keymap';
 import { createStage, type Stage } from '../scenes/stage';
 import { ITEM_DEFAULT_FRAME, ITEM_FRAMES, asset } from '../style/assets';
-import { uiScale } from '../style/scale';
+import { hudScale, uiScale, viewZoom } from '../style/scale';
 import { bindSettings, onSettings, setSetting, settings } from '../style/settings';
 import { textScale } from './a11y';
 import { caption, onCaption, onPartnerSpeaking, partnerSpeaking, type Caption } from './captions';
@@ -18,10 +18,11 @@ import { createSettingsPanel } from './settingsPanel';
 
 // THE UI. A full-window Phaser stage draws the menus (scenes/); this file is the DOM on
 // top of it: the top bar (room code, settings gear) that is the same on every screen, and
-// the in-game HUD, chat, voice controls and win screen around the game canvas.
+// in game the view on the left (the game canvas, with the neighbouring face named on each
+// edge) and ONE column on the right: where you are, the objective, voice, time and chat.
 //
 // It also owns the keys that are not movement: Esc (pause, back out of a panel), Enter
-// (chat), Q, F, 1 to 4, M and Tab in game, and the focus inside every DOM panel. What a
+// (chat), Q, 1 to 4, M and Tab in game, and the focus inside every DOM panel. What a
 // key means is decided in input/keymap.ts; this file only acts on the answer.
 
 const clock = (ms: number) => {
@@ -39,33 +40,29 @@ const HTML = `
 </header>
 <div class="cu-banner" id="cu-banner" hidden><span></span></div>
 <main class="cu-hud" id="cu-hud">
-  <section class="cu-col">
-    <div class="cu-panel">
-      <div class="cu-you"><i class="cu-hero"></i><b id="cu-side"></b></div>
-      <div class="cu-rule"></div>
-      <div class="cu-where"><span class="cu-dim" id="cu-faceno"></span><b id="cu-face"></b></div>
-      <div class="cu-drift"><i class="cu-compass" id="cu-compass"></i><span class="cu-dim">Drift</span><span id="cu-drift"></span></div>
-      <div class="cu-cube" id="cu-cube"></div>
-    </div>
-    <div class="cu-panel">
-      <p class="cu-obj" id="cu-obj"></p>
-      <div class="cu-carry" id="cu-carry"></div>
-    </div>
-  </section>
   <section class="cu-mid">
     <div class="cu-edge t" id="cu-et"></div>
     <div class="cu-edge l" id="cu-el"></div>
-    <div class="cu-view" id="cu-view"><div class="cu-over" id="cu-over"></div></div>
+    <div class="cu-view" id="cu-view"><div class="cu-over" id="cu-over"></div><div class="cu-keys"></div></div>
     <div class="cu-edge r" id="cu-er"></div>
     <div class="cu-edge b" id="cu-eb"></div>
-    <div class="cu-keys">E pick up &nbsp; Q drop &nbsp; F ping &nbsp; Esc menu</div>
   </section>
   <section class="cu-col">
-    <div class="cu-panel cu-stats">
-      <div><i class="cu-ico clock"></i><span id="cu-clock">0:00</span></div>
-      <div class="x"><i class="cu-ico cross"></i><span id="cu-strikes">0</span></div>
+    <div class="cu-panel cu-where">
+      <div class="cu-cube" id="cu-cube"></div>
+      <div class="cu-id">
+        <b class="cu-side" id="cu-side"></b>
+        <div class="cu-face"><i class="cu-chip" id="cu-faceno"></i><span id="cu-face"></span></div>
+        <div class="cu-prog" id="cu-prog"><span id="cu-progn"></span><div class="cu-pips" id="cu-pips"></div><b id="cu-portal" hidden>Portal open</b></div>
+        <div class="cu-carry" id="cu-carry"></div>
+      </div>
+      <p class="cu-obj" id="cu-obj"></p>
     </div>
     <div class="cu-panel cu-voice" id="cu-voice"></div>
+    <div class="cu-stats">
+      <div class="cu-stat" title="Time"><i class="cu-ico clock"></i><span id="cu-clock">0:00</span></div>
+      <div class="cu-stat x" id="cu-strikebox" title="Strikes" hidden><i class="cu-ico cross"></i><span id="cu-strikes">0</span></div>
+    </div>
     <div class="cu-panel cu-chat">
       <div class="cu-log" id="cu-log" aria-live="polite"></div>
       <input class="cu-field" id="cu-chat" maxlength="200" placeholder="Enter to chat" autocomplete="off" aria-label="Chat message" />
@@ -77,7 +74,8 @@ const HTML = `
   <div class="cu-caption" id="cu-caption" role="status" aria-live="polite" hidden><b></b><span></span></div>
 </div>
 <div class="cu-modal" id="cu-win"><div class="cu-panel cu-win" role="dialog" aria-label="You escaped">
-  <h2>The cube opens</h2><p id="cu-wintxt"></p>
+  <h2>The cube opens</h2>
+  <p class="cu-dim">Escaped in</p><b class="cu-wintime" id="cu-wintime"></b><p id="cu-wintxt"></p>
   <div class="cu-actions"><button class="cu-btn light" id="cu-winleave"><span>Leave</span></button><button class="cu-btn in" id="cu-again" data-first><span>Play again</span></button></div>
 </div></div>`;
 
@@ -93,11 +91,13 @@ export const cubicUI: UIHost = {
     root.appendChild(el);
     const $ = <T extends HTMLElement = HTMLElement>(id: string) => el.querySelector<T>(`#${id}`)!;
 
-    // One pixel grid: the DOM follows the same whole-number scale as the canvases.
+    // Whole pixels everywhere. The menus share one scale with their canvas; in game the
+    // DOM has the HUD's scale and the game view its own zoom (style/scale.ts).
     const rescale = () => {
-      const u = uiScale();
+      const u = el.dataset.screen === 'game' ? hudScale() : uiScale();
       const s = settings();
       el.style.setProperty('--u', String(u));
+      el.style.setProperty('--z', String(viewZoom()));
       el.style.setProperty('--cursor', `url("${asset(`ui/cursor-${Math.min(4, u)}.png`)}") 0 0`);
       // accessibility settings that are looks: reading text size, contrast, less motion
       el.style.setProperty('--tu', String(textScale(u, s.textSize)));
@@ -240,9 +240,6 @@ export const cubicUI: UIHost = {
         case 'drop':
           actions.onDrop();
           break;
-        case 'ping':
-          actions.onPing();
-          break;
         case 'quick':
           actions.onQuickChat(action.index);
           break;
@@ -277,10 +274,10 @@ export const cubicUI: UIHost = {
     const speakingOff = onPartnerSpeaking(renderSpeaking);
     renderCaption(caption());
 
-    // Ping markers and quick-chat bubbles: DOM on the same pixel grid, over the game canvas.
+    // Quick-chat bubbles: DOM over the game canvas, placed in the view's own pixels (--z).
     const over = $('cu-over');
     const marks = new Map<string, HTMLElement>();
-    const px = (n: number) => `calc(${n}px * var(--u))`;
+    const px = (n: number) => `calc(${n}px * var(--z))`;
     function renderSignals(view: SignalView): void {
       const want = new Set<string>();
       const mark = (key: string, cls: string): HTMLElement => {
@@ -294,14 +291,6 @@ export const cubicUI: UIHost = {
         node.className = cls;
         return node;
       };
-      for (const p of view.pings) {
-        const node = mark(`p${p.id}`, `cu-ping ${p.mine ? 'mine' : 'theirs'}`);
-        node.style.left = px(p.sx * TILE_PX);
-        node.style.top = px(p.sy * TILE_PX);
-        node.style.opacity = String(Math.ceil(p.alpha * 4) / 4); // it fades in four steps
-        node.title = p.mine ? 'Your ping' : "Your partner's ping";
-        if (!node.firstChild) node.append(document.createElement('i'));
-      }
       for (const b of view.bubbles) {
         const node = mark(`b${b.id}`, `cu-bubble ${b.mine ? 'mine' : 'theirs'}${b.sy === 0 ? ' under' : ''}`);
         // over the head; under the feet on the top row, and kept off the side edges
@@ -329,7 +318,7 @@ export const cubicUI: UIHost = {
     let voiceSig = '';
     let chatSig = '';
     // The cube in the HUD (client/src/cube): your face, its neighbours, your partner, progress.
-    const cube = createCubeHud($('cu-cube'));
+    const cube = createCubeHud($('cu-cube'), $('cu-pips'));
 
     function renderVoice(s: UIState): void {
       const v = s.voice;
@@ -338,7 +327,7 @@ export const cubicUI: UIHost = {
       if (sig !== voiceSig) {
         voiceSig = sig;
         const controls = !set.voiceOn
-          ? `<div class="cu-note">Proximity chat is off. Turn it on in the settings.</div>`
+          ? `<div class="cu-note">Voice is off. Turn it on in the settings.</div>`
           : v.mic === 'on'
             ? `<div class="cu-vbtns">
                  <button class="cu-btn ${set.micMuted ? 'danger' : 'light'}" data-act="mute"><i class="cu-ico ${set.micMuted ? 'micOff' : 'mic'}"></i><span>${set.micMuted ? 'Muted' : 'Mute'}</span></button>
@@ -347,11 +336,10 @@ export const cubicUI: UIHost = {
             : v.mic === 'denied'
               ? `<div class="cu-warn">Microphone blocked. Allow it for this site (the lock icon in the address bar), then try again. Chat still works.</div>
                  <div class="cu-vbtns"><button class="cu-btn in" data-act="mic"><i class="cu-ico mic"></i><span>Try again</span></button></div>`
-              : `<div class="cu-note">Cubic is played by voice. You hear each other through the wall.</div>
-                 <div class="cu-vbtns"><button class="cu-btn in" data-act="mic"><i class="cu-ico mic"></i><span>${v.mic === 'asking' ? 'Waiting...' : 'Enable mic'}</span></button></div>`;
+              : `<div class="cu-vbtns"><button class="cu-btn in" data-act="mic" title="Cubic is played by voice: you hear each other through the wall"><i class="cu-ico mic"></i><span>${v.mic === 'asking' ? 'Waiting...' : 'Enable mic'}</span></button></div>`;
+        // one row: you and your link on the left, your partner and how well you hear them on the right
         voice.innerHTML = `
-          <div class="cu-vrow"><i class="cu-dot" id="cu-me"></i><span>You</span><span class="cu-dim" id="cu-link"></span></div>
-          <div class="cu-vrow"><i class="cu-dot" id="cu-them"></i><span>${s.mode === 'ai' ? 'AI partner' : 'Partner'}</span><i class="cu-signal" id="cu-signal"></i></div>
+          <div class="cu-vrow"><i class="cu-dot" id="cu-me"></i><span>You</span><span class="cu-dim" id="cu-link"></span><i class="cu-dot them" id="cu-them"></i><span>${s.mode === 'ai' ? 'AI partner' : 'Partner'}</span><i class="cu-signal" id="cu-signal"></i></div>
           ${s.mode === 'ai' ? `<div class="cu-note">The AI speaks. You type to it.</div>` : controls}`;
       }
       voice.querySelector('#cu-me')?.classList.toggle('on', v.talking);
@@ -369,18 +357,25 @@ export const cubicUI: UIHost = {
       if (node.dataset.t !== text + e.solved) {
         node.dataset.t = text + e.solved;
         node.className = `cu-edge ${id.slice(-1)}${e.solved ? ' done' : ''}`;
-        // a solved face has a tick as well as its colour
-        node.innerHTML = `<i style="--c: var(--face-${e.face})"></i><span></span>${e.solved ? '<b class="cu-tick" title="solved"></b>' : ''}`;
-        node.querySelector('span')!.textContent = text;
+        // the face's chip (its colour and its number), its name, and a tick once it is solved
+        node.innerHTML = `<i class="cu-chip" data-face="${e.face}">${e.face}</i><span></span>${e.solved ? '<b class="cu-tick" title="solved"></b>' : ''}`;
+        node.querySelector('span')!.textContent = e.name;
+        node.title = `Face ${e.face} ${e.name}${e.solved ? ': solved' : ''}`;
       }
     }
 
     function renderHud(s: UIState, hud: HudState): void {
       $('cu-side').textContent = s.side === 'in' ? 'Inside' : 'Outside';
-      $('cu-faceno').textContent = `Face ${hud.face}`;
+      const faceNo = $('cu-faceno');
+      faceNo.dataset.face = faceNo.textContent = String(hud.face);
+      faceNo.title = `Face ${hud.face}`;
       $('cu-face').textContent = hud.faceName;
-      $('cu-drift').textContent = `${hud.drift}`;
-      $('cu-compass').style.transform = `rotate(${hud.drift}deg)`;
+      // progress: puzzles solved of all there are; the pips say which faces; then the portal
+      const done = Math.min(hud.solved.length, hud.puzzleTotal);
+      $('cu-progn').textContent = `${done}/${hud.puzzleTotal}`;
+      $('cu-prog').title = `${done} of ${hud.puzzleTotal} puzzles solved${hud.portalOpen ? ': the portal is open' : ''}`;
+      $('cu-prog').classList.toggle('open', hud.portalOpen);
+      $('cu-portal').hidden = !hud.portalOpen;
       renderEdge('cu-et', hud.edges.up);
       renderEdge('cu-eb', hud.edges.down);
       renderEdge('cu-el', hud.edges.left);
@@ -391,13 +386,16 @@ export const cubicUI: UIHost = {
       if (carry.dataset.t !== carrySig) {
         carry.dataset.t = carrySig;
         const frame = ITEM_FRAMES[carrySig] ?? ITEM_DEFAULT_FRAME;
-        carry.innerHTML = hud.carrying ? `<i class="cu-item" style="background-position: calc(${-16 * frame}px * var(--u)) 0"></i><span></span><span class="cu-dim">Q to drop</span>` : `<i class="cu-ico hand"></i><span class="cu-dim">Empty hands</span>`;
+        carry.innerHTML = hud.carrying ? `<i class="cu-item" style="background-position: calc(${-16 * frame}px * var(--u)) 0"></i><span></span><span class="cu-dim">Q drop</span>` : `<i class="cu-ico hand"></i><span class="cu-dim">Empty hands</span>`;
         if (hud.carrying) carry.querySelector('span')!.textContent = hud.carrying.kind;
       }
       cube.update({ side: s.side ?? 'out', face: hud.face, drift: hud.drift, partnerFace: hud.partnerFace ?? null, solved: hud.solved, portalOpen: hud.portalOpen });
       $('cu-clock').textContent = clock(hud.elapsedMs);
+      // no puzzle hands out strikes yet: they show only once there is one
+      $('cu-strikebox').hidden = hud.strikes <= 0;
       $('cu-strikes').textContent = String(hud.strikes);
-      $('cu-wintxt').textContent = `Escaped in ${clock(hud.elapsedMs)} with ${hud.strikes} strike${hud.strikes === 1 ? '' : 's'}.`;
+      $('cu-wintime').textContent = clock(hud.elapsedMs);
+      $('cu-wintxt').textContent = `${done} of ${hud.puzzleTotal} puzzles solved${hud.strikes > 0 ? `, ${hud.strikes} strike${hud.strikes === 1 ? '' : 's'}` : ''}.`;
     }
 
     function renderChat(s: UIState): void {
@@ -432,7 +430,11 @@ export const cubicUI: UIHost = {
         stage.update(next);
 
         const inGame = next.screen === 'game';
-        el.dataset.screen = inGame ? 'game' : 'menu';
+        const screen = inGame ? 'game' : 'menu';
+        if (el.dataset.screen !== screen) {
+          el.dataset.screen = screen;
+          rescale(); // the menus and the game have their own scale
+        }
         if (!inGame) {
           // out of the game: nothing of it stays open or held
           fromPause = false;
