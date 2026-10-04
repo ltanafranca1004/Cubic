@@ -207,15 +207,19 @@ is blurred. Double clicks: the scene sets a `leaving` flag before anything else.
 +----------------------------------------------------------------+
 ```
 
-- Left: who and where you are. Side, face number and name, compass drift (the dial turns
-  with it), and progress as the cube unfolded: a solved face takes its biome colour, the
-  face you are on has the amber frame, face 6 pulses violet when the portal is awake.
-  Then the objective and what you carry.
-- Middle: the game view with the four edge labels, each with its biome's colour chip.
-- Right: clock and strikes, voice (speaking dots, signal bars, mic controls), chat.
+(The sketch above is the first layout. Since the HUD rework the game view is on the left
+at its own whole-number zoom and everything else is one column on the right; pictures in
+`docs/screens/hud/`.)
+
+- Left: the game view, as large as the window allows, with a label on each of its four
+  edges: the chip (colour and number) and the name of the face across that edge.
+- Right, one column, top to bottom: leave / room code / gear; who and where you are (side,
+  the cube turning with the compass drift, face chip and name, puzzles solved of the total
+  with a pip per face, what you carry, the objective); voice (speaking dots, signal bars,
+  mic controls); the clock (strikes only once there are any); chat.
 - Outside player: light panels on the sky. Inside player: dark panels in the dark.
 - Banner under the room code for "connection lost" and "partner left".
-- Win: a panel over the game: THE CUBE OPENS, time and strikes, Leave / Play again.
+- Win: a panel over the game: THE CUBE OPENS, the time, Leave / Play again.
 
 ### SETTINGS (every screen)
 

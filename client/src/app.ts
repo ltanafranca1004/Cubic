@@ -1,13 +1,12 @@
 import {
   FACE_NAMES,
   NO_SIGNALS,
-  PING_FADE_MS,
   BUBBLE_MS,
   bubbleAlive,
   compassDrift,
+  defaultEnv,
   neighbours,
   objectiveFor,
-  pingAlive,
   portalOpen,
   sameWall,
   signalBars,
@@ -15,7 +14,7 @@ import {
   voiceMix,
   type GameEvent,
   type GameState,
-  type Ping,
+  type FaceId,
   type QuickChat,
   type Side,
 } from '@cubic/shared';
@@ -44,6 +43,7 @@ export function hudOf(state: GameState, me: Side, now: number): HudState {
     edges: { up: label(n.up), down: label(n.down), left: label(n.left), right: label(n.right) },
     objective: objectiveFor(state, me),
     solved: [...state.solved],
+    puzzleTotal: defaultEnv.puzzles.length,
     portalOpen: portalOpen(state),
     strikes: state.strikes,
     elapsedMs: Math.max(0, (state.wonAt ?? now) - state.startedAt),
@@ -65,11 +65,10 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
   root.appendChild(gameEl);
 
   let partnerTyping = false;
-  /** Live ping markers and quick-chat bubbles, stamped with OUR clock when they arrived. */
-  let pings: Ping[] = [];
+  /** Live quick-chat bubbles, stamped with OUR clock when they arrived. */
   let quicks: QuickChat[] = [];
   /** Is something on that face on our wall (do we see and hear it)? */
-  const onMyWall = (face: Ping['face']) => !!net.state && !!net.side && sameWall(face, net.state.players[net.side].pose.face);
+  const onMyWall = (face: FaceId) => !!net.state && !!net.side && sameWall(face, net.state.players[net.side].pose.face);
   let handle: UIHandle | null = null;
   let game: GameHandle | null = null;
 
@@ -83,14 +82,6 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
         game?.handle(events);
       },
       onChat: () => {},
-      onPing: (ping) => {
-        const now = Date.now();
-        pings = [...pings.filter((p) => pingAlive(p.at, now)), { ...ping, at: now }];
-        // heard as well as seen, by whoever can see it: you, and a partner on the same wall
-        if (ping.from === net.side || onMyWall(ping.face)) sfx.ping?.();
-        render();
-        setTimeout(render, PING_FADE_MS + 20); // take it down when it has faded
-      },
       onQuick: (quick) => {
         const now = Date.now();
         quicks = [...quicks.filter((q) => bubbleAlive(q.at, now)), { ...quick, at: now }];
@@ -153,7 +144,6 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
     onSetPartnerVolume: (v) => voice.setVolume(v),
     onPlayAgain: () => net.restart(),
     onDrop: () => playing() && net.interact('drop'),
-    onPing: () => playing() && net.ping(),
     onQuickChat: (index) => playing() && net.quick(index),
   };
 
@@ -193,7 +183,7 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
       partnerTyping,
       hud: inGame ? hudOf(net.state!, viewSide()!, Date.now()) : null,
       voice: voice.snapshot(signalBars(proximity())),
-      signals: inGame ? signalsFor(net.state!, viewSide()!, pings, quicks, Date.now()) : NO_SIGNALS,
+      signals: inGame ? signalsFor(net.state!, viewSide()!, quicks, Date.now()) : NO_SIGNALS,
     };
   }
 

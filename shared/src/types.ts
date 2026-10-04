@@ -142,17 +142,6 @@ export interface ChatMessage {
 
 export const CHAT_MAX_LEN = 200;
 
-/** A ping marker (F key): dropped on the sender's own tile. Rules in signals.ts. */
-export interface Ping {
-  id: number;
-  from: Side;
-  face: FaceId;
-  x: number;
-  y: number;
-  /** Epoch ms (server clock). */
-  at: number;
-}
-
 /** A quick-chat bubble (keys 1 to 4). The line is also a normal chat message (`chatId`). */
 export interface QuickChat {
   id: number;
@@ -247,8 +236,6 @@ export interface ClientToServer {
   /** Pick up / drop (E key). `only: 'drop'` (Q key) drops and never picks up. */
   interact: (msg: { seq: number; only?: InteractOnly }) => void;
   chat: (msg: { text: string }) => void;
-  /** Drop a ping marker on your own tile (F key). Rate limited. */
-  ping: () => void;
   /** Say one of the fixed QUICK_CHATS lines (keys 1 to 4). Rate limited like chat. */
   quick: (msg: { index: number }) => void;
   /** WebRTC signaling (offer/answer/ICE), relayed untouched to the partner. */
@@ -264,7 +251,6 @@ export interface ServerToClient {
   state: (msg: StateUpdate) => void;
   room: (msg: RoomInfo) => void;
   chat: (msg: ChatMessage) => void;
-  ping: (msg: Ping) => void;
   quick: (msg: QuickChat) => void;
   /** The AI partner is thinking. */
   typing: (msg: { from: Side; on: boolean }) => void;

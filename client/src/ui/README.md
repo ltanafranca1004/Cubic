@@ -38,20 +38,20 @@ handle.update(state);                   // on every change
 | --- | --- | --- |
 | Title, mode select, join popup | `../scenes` (Phaser) | `screen`, `status`, `error`, `aiAvailable`, `online` |
 | Side select | `../scenes/SideSelectScene.ts` | `lobby`, `roomCode`, `error` |
-| HUD: face, compass drift, 4 edge labels, objective, progress 1-6 (the cube net), strikes, clock, carried item | `cubicUI.ts` | `hud` |
+| HUD: the game view on the left with a label on each edge; one column on the right: side, the cube (it turns with the compass drift), face, puzzle progress (`solved` of `puzzleTotal`, then PORTAL OPEN), carried item, objective, voice, clock (strikes only once there are any), chat | `cubicUI.ts` | `hud` |
 | Chat: Enter opens, Esc closes, AI lines labelled, typing indicator | `cubicUI.ts` | `chat`, `partnerTyping` |
 | Voice: mic permission, hold V / open mic, mute, signal bars, speaking dots | `cubicUI.ts` | `voice`, the settings |
-| Room code (top middle, from the side select on) and settings gear (top right, always) | `cubicUI.ts` | `roomCode`, `mode` |
-| Win screen | `cubicUI.ts` | `hud.won`, `hud.elapsedMs`, `hud.strikes` |
+| Room code (top middle, from the side select on) and settings gear (top right, always). In game the top bar is the head of the column | `cubicUI.ts` | `roomCode`, `mode` |
+| Win screen: title, time, Leave / Play again | `cubicUI.ts` | `hud.won`, `hud.elapsedMs`, `hud.solved`, `hud.puzzleTotal` |
 
 | Pause menu (Esc): Resume, Settings, Leave, the controls reference | `pauseMenu.ts` | |
-| Ping markers and quick-chat bubbles over the game view | `cubicUI.ts` | `signals` |
+| Quick-chat bubbles over the game view | `cubicUI.ts` | `signals` |
 | Captions and the "Partner speaking" tag | `captions.ts` (store), `cubicUI.ts` | |
 
 Movement keys (WASD / arrows), E (pick up) and V (push to talk) are handled by the
 game, not the UI. While a text input is focused, a panel is open or Tab holds the cube map
 (`../input/gate.ts`) the game ignores them. Every other key is the UI's: what a key means
-is in `../input/keymap.ts` (pure, tested), `cubicUI.ts` acts on it (Q drop, F ping, 1 to 4
+is in `../input/keymap.ts` (pure, tested), `cubicUI.ts` acts on it (Q drop, 1 to 4
 quick chat, M mute, Tab cube map, Esc pause), and `focus.ts` keeps the keyboard focus
 inside the open panel. The gamepad (`../input/gamepad.ts`) sends the same keys.
 

@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { io, type Socket } from 'socket.io-client';
-import { PING_COOLDOWN_MS, QUICK_CHATS, type ChatMessage, type ClientToServer, type Ping, type QuickChat, type Seat, type ServerToClient, type Side } from '@cubic/shared';
+import { QUICK_CHATS, type ChatMessage, type ClientToServer, type QuickChat, type Seat, type ServerToClient, type Side } from '@cubic/shared';
 import { AiPlayer } from '../src/ai/aiPlayer';
 import { scriptedBrain } from '../src/ai/scripted';
 import { createApp, type App } from '../src/app';
 import { Room, Rooms } from '../src/rooms';
 
-// Pings and quick chat on the server: the Room rules with a fake clock, the same through
+// Quick chat on the server: the Room rules with a fake clock, the same through
 // real sockets, and an AI room that must not mind either.
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -23,41 +23,16 @@ function playing() {
   );
   room.sit('out');
   room.sit('in');
-  const pings: Ping[] = [];
   const quicks: QuickChat[] = [];
   const chat: ChatMessage[] = [];
-  room.listen({ onPing: (p) => pings.push(p), onQuick: (q) => quicks.push(q), onChat: (m) => chat.push(m) });
-  return { room, pings, quicks, chat, tick: (ms: number) => (now += ms), now: () => now };
+  room.listen({ onQuick: (q) => quicks.push(q), onChat: (m) => chat.push(m) });
+  return { room, quicks, chat, tick: (ms: number) => (now += ms) };
 }
 
-test("ping: lands on the sender's tile and is broadcast", () => {
-  const { room, pings, now } = playing();
-  const pose = room.state.players.in.pose;
-  const ping = room.ping('in');
-  assert.deepEqual(ping, { id: ping!.id, from: 'in', face: pose.face, x: pose.x, y: pose.y, at: now() });
-  assert.deepEqual(pings, [ping]);
-  room.close();
-});
-
-test('ping: one per player per 2 s; the two players have their own cooldowns', () => {
-  const { room, pings, tick } = playing();
-  assert.ok(room.ping('out'));
-  assert.equal(room.ping('out'), null, 'again at once: refused');
-  assert.ok(room.ping('in'), 'the partner is not held back by it');
-  tick(PING_COOLDOWN_MS - 1);
-  assert.equal(room.ping('out'), null);
-  tick(1);
-  assert.ok(room.ping('out'));
-  assert.equal(pings.length, 3);
-  assert.deepEqual(new Set(pings.map((p) => p.id)).size, 3, 'ids are unique');
-  room.close();
-});
-
-test('ping and quick chat do nothing in the lobby', () => {
+test('quick chat does nothing in the lobby', () => {
   const room = new Room('LOBY', 'friend', () => {});
   room.join();
   room.join();
-  assert.equal(room.ping('out'), null);
   assert.equal(room.quick('out', 0), null);
   room.close();
 });
@@ -99,22 +74,17 @@ test('quick chat: shares the chat rate limit (5 lines per 5 s, typed or quick)',
 
 // ---------- an AI room ----------
 
-test('an AI partner is not broken by pings and quick chat; it hears the line as chat', async () => {
+test('an AI partner is not broken by quick chat; it hears the line as chat', async () => {
   const rooms = new Rooms();
   const room = rooms.create('ai');
   room.sit('out');
   const ai = new AiPlayer(room, 'in', scriptedBrain(), { minThinkMs: 20, idleMs: 1e9, stepMs: 5, timeoutMs: 200, log: () => {} });
-  const pings: Ping[] = [];
-  room.listen({ onPing: (p) => pings.push(p) });
-  assert.ok(room.ping('out'));
   assert.ok(room.quick('out', 0));
   assert.equal(room.chat.at(-1)!.text, 'Here!');
-  // the AI goes on playing through the same Room methods, and could ping or quick-chat itself
+  // the AI goes on playing through the same Room methods, and could quick-chat itself
   await sleep(150);
-  assert.ok(room.ping('in'));
   assert.ok(room.quick('in', 3));
   assert.equal(room.chat.at(-1)!.isAI, true);
-  assert.equal(pings.length, 2);
   ai.stop();
   rooms.closeAll();
 });
@@ -137,8 +107,7 @@ after(async () => {
 function client() {
   const sock: Sock = io(url, { transports: ['websocket'], forceNew: true });
   socks.push(sock);
-  const got = { pings: [] as Ping[], quicks: [] as QuickChat[], chat: [] as ChatMessage[] };
-  sock.on('ping', (p) => got.pings.push(p));
+  const got = { quicks: [] as QuickChat[], chat: [] as ChatMessage[] };
   sock.on('quick', (q) => got.quicks.push(q));
   sock.on('chat', (m) => got.chat.push(m));
   const ask = <T>(send: (ack: (r: ({ ok: true } & T) | { ok: false; error: string }) => void) => void) => new Promise<T>((ok, no) => send((r) => (r.ok ? ok(r) : no(new Error(r.error)))));
@@ -170,25 +139,17 @@ async function paired() {
   return { a, b, seat };
 }
 
-test('sockets: a ping and a quick chat reach both players; spam and junk are dropped', async () => {
+test('sockets: a quick chat reaches both players; junk is dropped', async () => {
   const { a, b } = await paired();
 
   // not before the game starts
-  a.sock.emit('ping');
   a.sock.emit('quick', { index: 0 });
   await a.pick('out');
   await b.pick('in');
   await b.ready();
   await a.start();
   await sleep(60);
-  assert.equal(a.got.pings.length + a.got.quicks.length + b.got.chat.length, 0, 'nothing in the lobby');
-
-  a.sock.emit('ping');
-  a.sock.emit('ping'); // inside the cooldown
-  await until(() => a.got.pings.length === 1 && b.got.pings.length === 1, 'the ping on both sides');
-  assert.deepEqual(a.got.pings[0], b.got.pings[0]);
-  assert.equal(b.got.pings[0]!.from, 'out');
-  assert.equal(b.got.pings[0]!.face, 1);
+  assert.equal(a.got.quicks.length + b.got.chat.length, 0, 'nothing in the lobby');
 
   b.sock.emit('quick', { index: 1 });
   // junk from a hostile client is ignored, not a crash
@@ -202,7 +163,6 @@ test('sockets: a ping and a quick chat reach both players; spam and junk are dro
   assert.equal(a.got.quicks[0]!.chatId, a.got.chat[0]!.id);
 
   await sleep(80);
-  assert.equal(a.got.pings.length, 1, 'the second ping was inside the cooldown');
   assert.equal(a.got.quicks.length, 1);
 });
 

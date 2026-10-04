@@ -32,8 +32,6 @@ export interface UIActions {
   onPlayAgain(): void;
   /** Q: put down the carried item (never picks one up). */
   onDrop(): void;
-  /** F: drop a ping marker on your tile. */
-  onPing(): void;
   /** 1 to 4: say a fixed line. `index` is 0..3 into QUICK_CHATS. */
   onQuickChat(index: number): void;
 }
@@ -82,6 +80,8 @@ export interface HudState {
   edges: Record<'up' | 'down' | 'left' | 'right', EdgeLabel>;
   objective: string;
   solved: FaceId[];
+  /** How many puzzles there are (the registered ones). `solved.length` of them are done. */
+  puzzleTotal: number;
   /** Every puzzle is solved: the portal on face 6 is awake. */
   portalOpen: boolean;
   strikes: number;
@@ -127,7 +127,7 @@ export interface UIState {
   /** null until the game starts. */
   hud: HudState | null;
   voice: VoiceState;
-  /** Ping markers and quick-chat bubbles to draw over the game view, in screen tiles. */
+  /** Quick-chat bubbles to draw over the game view, in screen tiles. */
   signals?: SignalView;
 }
 

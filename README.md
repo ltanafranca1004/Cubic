@@ -32,8 +32,8 @@ game.
    picks a side (A / D or click: outside is on top of the cube, inside is in it), the
    guest presses **Ready**, the host presses **Start**. Both windows switch to the game.
 4. Move with WASD or the arrow keys (hold to keep walking). Walk off any edge to cross to
-   the next face; the labels around the view say which face is where, and "compass drift"
-   shows how far your up has turned.
+   the next face; the labels around the view say which face is where, and the cube in the
+   HUD turns as your up turns (the compass drift).
 5. Example puzzle on face 1: the inside player stands on the plate (they see it top-left),
    the door on the outside opens, the outside player walks in and takes the crystal.
 6. Face 6 has the portal. Once every puzzle is solved, both players step on it to win.
@@ -46,7 +46,6 @@ game.
 | WASD / arrows | left stick / d-pad | move; in a menu, move the focus |
 | E | A | pick up / use (in a menu: Enter or Space select) |
 | Q | B | drop (in a menu: Esc is back) |
-| F | X | ping your tile: your partner sees it on the same face for 4 s (2 s cooldown) |
 | 1 2 3 4 | | quick chat: "Here!", "Wait", "Yes", "No" (a bubble over you, and in the chat log) |
 | Enter | | chat (Enter sends, Esc closes) |
 | V (hold) / M | | push to talk / mute the mic |

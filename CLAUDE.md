@@ -18,7 +18,8 @@ If there is no second player, a Gemini-powered AI plays the other side.
   core mechanic, never be flattened away or hidden:
   - 270-degree corners: three faces meet at a corner, so three left turns bring you home.
   - Walking a loop around a corner returns you rotated 90 degrees.
-  - Compass drift: the HUD shows how far your "up" has turned from the face's own up.
+  - Compass drift: how far your "up" has turned from the face's own up. The cube in the
+    HUD turns with it.
   - The inside is mirrored: the inside player sees every wall from behind.
 - Also entering: Best Game, Best Design, MLH Best Use of Gemini, MLH Best Use of ElevenLabs.
 

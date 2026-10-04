@@ -48,8 +48,6 @@ export const sfx: Record<string, () => void> = {
   pickup: () => chime([440, 660], 0.05),
   drop: () => chime([330, 220], 0.05),
   place: () => chime([392, 523, 659], 0.07),
-  /** A partner's ping: soft, two sine notes. */
-  ping: () => [880, 1320].forEach((f, i) => tone(f, 0.22, 'sine', 0.035, i * 0.09)),
   /** A quick-chat bubble popping up. */
   quick: () => tone(660, 0.08, 'sine', 0.025),
   'door-open': () => tone(400, 0.1),

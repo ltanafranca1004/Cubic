@@ -6,9 +6,11 @@ rooms. Every visual decision serves that sentence. The tokens live in
 
 ## 1. Principles
 
-1. **One pixel grid.** The whole screen (menus, HUD, game view) is drawn at one whole-number
-   scale `u` (`client/src/style/scale.ts`): the largest that still leaves a 480x270 logical
-   screen. A pixel of the logo, of a button and of a grass tile are the same size. No
+1. **Whole pixels.** Every menu is drawn at one whole-number scale `u`
+   (`client/src/style/scale.ts`): the largest that still leaves a 480x270 logical screen.
+   A pixel of the logo and of a button are the same size. In game there are two
+   whole-number scales: the game view takes the largest zoom that fits (`viewZoom`, x5 at
+   1920x1080, x3 at 1280x720) and the HUD column beside it its own (`hudScale`). No
    fractional scaling, no smoothing, positions rounded to whole pixels
    (`pixelArt: true`, `roundPixels: true`, `image-rendering: pixelated`).
 2. **One palette.** Every pixel we ship is a Resurrect 64 colour. The art generator fails
@@ -67,6 +69,22 @@ floor runes keep the biome's hue, so "the orange one" means the same wall to bot
 | 5 | rooftop | Rooftop | `#fdcbb0` | peach terracotta |
 | 6 | cave | Cave | `#7f708a` | grey mauve |
 
+The HUD does not use the floor colours: two of them are near twins (grass and sand under
+a red-green deficiency), and all six rooms inside are the same dark stone. `FACE_HUD` in
+`tokens.ts` has one colour per face and side for the cube's chips, the progress pips and the
+labels on the edges of the view, picked from the palette so that no two are closer than 25
+(outside) or 18 (inside) in CIELAB under normal vision, deuteranopia, protanopia and
+tritanopia. Each chip also carries the face number.
+
+| Face | Outside | Inside (the room's tint, also mixed into that face of the HUD cube) |
+| --- | --- | --- |
+| 1 | grass `#91db69` | sage `#547e64` |
+| 2 | orange `#fb6b1d` | copper `#cd683d` |
+| 3 | white `#ffffff` | blue `#4d65b4` |
+| 4 | pine `#165a4c` | teal grey `#374e4a` |
+| 5 | pink `#ed8099` | pink `#ed8099` (a darker pink reads as the room 1 green with a red-green deficiency) |
+| 6 | purple `#905ea9` | dark purple `#6b3e75` |
+
 The names come from `FACE_NAMES` in `shared/src/maps` (outside: Grass, Desert, Snow, Forest,
 Rooftop, Cave; the room behind the snow face is the "Frost room"). The HUD, the AI
 partner and the docs all use that one table.
@@ -101,7 +119,7 @@ the Phaser scenes (`scenes/kit.ts`) and by the DOM (`ui/css.ts`, as `border-imag
 | Icons | `icons.png` | 16x16 frames, order in `style/assets.ts` `ICONS`. White with an ink outline so they work on light and dark. |
 | Gear | `gear.png` | 2 frames: idle, lit (hover or open). Always top right. |
 | Signal | `signal.png` | 4 frames: 0 to 3 bars. |
-| Compass | `compass.png` | Turned by the drift, which is always a quarter turn, so it stays crisp. |
+| Compass | `compass.png` | Not used by the HUD any more (the cube shows the drift). |
 | Cursor | `cursor-1..4.png` | One file per UI scale (CSS cursors cannot be scaled). |
 | Player markers | `marker-p1.png`, `marker-p2.png` | The arrow over a picked character. |
 | Ready badge | `ready.png`, `not-ready.png` | Under P2's cube. |

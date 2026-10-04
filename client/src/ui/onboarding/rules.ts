@@ -28,14 +28,13 @@ export const HINT_TEXT = {
     edge: 'Walk off the edge to fold onto the next face.',
     voice: 'Your partner sounds farther away. Voice fades by face distance.',
   } satisfies Record<ContextHint, string>,
-  /** The keys of the brief. Q and F are bound by the keyboard task; the hint lists them anyway. */
+  /** The keys of the brief. */
   controls: [
     { keys: ['WASD', 'Arrows'], does: 'move' },
     { keys: ['E'], does: 'interact' },
     { keys: ['Q'], does: 'drop' },
     { keys: ['Enter'], does: 'chat' },
     { keys: ['V'], does: 'talk' },
-    { keys: ['F'], does: 'ping' },
   ],
 };
 

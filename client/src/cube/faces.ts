@@ -1,6 +1,6 @@
 import { FACES, FACE_SIZE, TILE_PX, type FaceId, type Side } from '@cubic/shared';
 import { asset } from '../style/assets';
-import { C, FACE_STYLE } from '../style/tokens';
+import { FACE_HUD } from '../style/tokens';
 import { faceOps, type CubeManifest } from './layout';
 import { pack, type CubeFaces, type FaceTex } from './raster';
 
@@ -49,8 +49,24 @@ export function loadCubeArt(): Promise<CubeArt | null> {
   return loading;
 }
 
-/** The colour a face has before (or without) its art: its biome outside, a dark room inside. */
-const flat = (side: Side, face: FaceId): string => (side === 'out' ? FACE_STYLE[face].base : C.shadow);
+/** The colour a face has before (or without) its art: its biome outside, its room's tint inside. */
+const flat = (side: Side, face: FaceId): string => FACE_HUD[face][side];
+
+/**
+ * How much of its room's tint an inside face takes on the cube. The six rooms are all the
+ * same dark stone, so without it the inside of the cube is six faces nobody can tell apart.
+ */
+const ROOM_TINT = 0.45;
+
+/** Mix `tint` into every pixel of a texture (packed ABGR), by `amount` 0..1. */
+function tinted(px: Uint32Array, tint: string, amount: number): void {
+  const t = pack(tint);
+  const mix = (a: number, b: number) => Math.round(a + (b - a) * amount);
+  for (let i = 0; i < px.length; i++) {
+    const p = px[i]!;
+    px[i] = (0xff000000 | (mix((p >>> 16) & 0xff, (t >>> 16) & 0xff) << 16) | (mix((p >>> 8) & 0xff, (t >>> 8) & 0xff) << 8) | mix(p & 0xff, t & 0xff)) >>> 0;
+  }
+}
 
 const cache = new Map<string, FaceTex>();
 
@@ -90,6 +106,7 @@ export function bakeFace(art: CubeArt | null, side: Side, face: FaceId, texel: n
   // art with a see-through pixel would leave a hole in the cube: back it with the face colour
   const back = pack(flat(side, face));
   for (let i = 0; i < tex.px.length; i++) if (tex.px[i]! >>> 24 < 255) tex.px[i] = back;
+  if (art && side === 'in') tinted(tex.px, flat(side, face), ROOM_TINT);
   cache.set(key, tex);
   return tex;
 }

@@ -58,10 +58,20 @@ browser without WebGL gets). It fails on any console error, any button that is m
 see-through, without a panel or dead, and any step that does not arrive. Pictures go to
 `docs/screens/check/`. Needs `npm run dev` running.
 
+## `npx tsx screens/hud.ts`: the in-game HUD, in both renderers
+
+Checks the in-game layout and takes its pictures: the game view at its own whole-number
+zoom (x5 at 1920x1080, x3 at 1280x720) left of ONE column, both sides, WebGL and Canvas,
+from the offline game and from a real two-client game, plus 844x390. It fails if anything
+overlaps, is cut off or leaves the window, if the canvas is not on whole pixels, if a face
+chip has the wrong colour, or if progress, PORTAL OPEN or the win screen are wrong.
+Pictures go to `docs/screens/hud/`. Needs a server with `DEV_COMMANDS=1` and a client (ports
+at the top of the file); `npx tsx screens/hud.ts mock` (or `real`) runs one part.
+
 ## `npx tsx screens/a11y.ts`: the keyboard-only check
 
 Plays the whole game without a mouse: title, settings by keyboard, mode menu and Back, the
-join popup, side select, then two clients in a real game (chat, ping, quick chat, Tab,
+join popup, side select, then two clients in a real game (chat, quick chat, Tab,
 pause, accessibility settings, captions, Leave), E / Q on an item, and a faked gamepad.
 Menus run in WebGL and in Canvas. Pictures go to `docs/screens/a11y/`. Needs a server and
 a client (ports at the top of the file); `npx tsx screens/a11y.ts game` runs one part
