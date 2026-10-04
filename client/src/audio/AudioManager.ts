@@ -1,6 +1,6 @@
 import { audioContext, routeSfx, sfx } from '../game/sfx';
 import { Mixer, onFirstGesture, type FadeOptions, type Volumes } from './core';
-import { SAMPLES, TRACKS, type SampleId, type SfxId, type TrackId } from './tracks';
+import { SAMPLES, TRACKS, type AudioFile, type SampleId, type SfxId, type TrackId } from './tracks';
 
 // All game sound except voice chat: music per screen (crossfaded, ducked under the
 // partner's voice) and sound effects, behind three volumes. The logic is in ./core; this
@@ -140,21 +140,25 @@ export class AudioManager {
     }
   }
 
-  private async decode(file: string): Promise<AudioBuffer | null> {
-    try {
-      const res = await fetch(AUDIO_DIR + file);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return await audioContext().decodeAudioData(await res.arrayBuffer());
-    } catch (e) {
-      console.warn(`[audio] could not load ${file}`, e);
-      return null;
+  /** The Ogg Opus file, or the mp3 where that cannot be played or decoded (older Safari). */
+  private async decode({ file, alt }: AudioFile): Promise<AudioBuffer | null> {
+    const ogg = new Audio().canPlayType('audio/ogg; codecs="opus"') !== '';
+    for (const name of ogg ? [file, alt] : [alt, file]) {
+      try {
+        const res = await fetch(AUDIO_DIR + name);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return await audioContext().decodeAudioData(await res.arrayBuffer());
+      } catch (e) {
+        console.warn(`[audio] could not load ${name}`, e);
+      }
     }
+    return null;
   }
 
   private loadTrack(id: TrackId): Promise<AudioBuffer | null> {
     let job = this.decoded.get(id);
     this.decoded.delete(id);
-    job ??= this.decode(TRACKS[id].file);
+    job ??= this.decode(TRACKS[id]);
     this.decoded.set(id, job); // most recently used last
     for (const old of this.decoded.keys()) {
       if (this.decoded.size <= KEEP_DECODED) break;
@@ -164,7 +168,7 @@ export class AudioManager {
   }
 
   private async loadSample(id: SampleId): Promise<void> {
-    const buffer = await this.decode(SAMPLES[id].file);
+    const buffer = await this.decode(SAMPLES[id]);
     if (buffer) this.samples.set(id, buffer);
   }
 }

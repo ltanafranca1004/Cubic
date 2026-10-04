@@ -2,25 +2,39 @@
 
 ## Audio
 
-All music and the puzzle-solved jingle come from the **Ninja Adventure Asset Pack** by
-**Pixel-Boy and AAA**, released under **CC0 1.0 Universal** (public domain; attribution
-not required, given with thanks).
+All music and the puzzle-solved harp chord are by **Kevin MacLeod** (incompetech.com),
+licensed under **Creative Commons: By Attribution 4.0**
+(https://creativecommons.org/licenses/by/4.0/). This licence requires the credit below
+wherever the game is shown, so keep it with any build, video or submission page.
 
-- Pack: https://pixel-boy.itch.io/ninja-adventure-asset-pack (downloaded 2026-10-03; the
-  page states the assets "are released under the Creative Commons Zero (CC0) license" and
-  the zip ships a CC0 1.0 `LICENSE.txt`)
-- License: https://creativecommons.org/publicdomain/zero/1.0/
+> "Morning", "Clear Air", "Windswept", "Immersed", "Enchanted Journey"
+> Kevin MacLeod (incompetech.com)
+> Licensed under Creative Commons: By Attribution 4.0
+> https://creativecommons.org/licenses/by/4.0/
 
-| File in `client/public/assets/audio` | Used for | Source file in the pack | Changes |
-| --- | --- | --- | --- |
-| `music-menu.ogg` | menu (start and mode screens) | `Audio/Musics/13 - Mystical.ogg` | none (renamed) |
-| `music-lobby.ogg` | lobby / side select | `Audio/Musics/5 - Peaceful.ogg` | none (renamed) |
-| `music-outside.ogg` | in game, outside player | `Audio/Musics/1 - Adventure Begin.ogg` | none (renamed) |
-| `music-inside.ogg` | in game, inside player | `Audio/Musics/21 - Dungeon.ogg` | none (renamed) |
-| `sting-solved.mp3` | puzzle solved | `Audio/Jingles/Success2.wav` | encoded to mp3 |
+- Licence statement: https://incompetech.com/music/royalty-free/faq.html ("Licensed under
+  Creative Commons: By Attribution 4.0") and https://incompetech.com/music/royalty-free/licenses/
+  ("Creative Commons - Free. No charge. Requires that you credit the music."), read 2026-10-03.
+- Each source mp3 was downloaded from incompetech.com on 2026-10-03 and carries the tags
+  `title` and `artist: Kevin MacLeod`.
 
-The loops are the pack's own Ogg Vorbis files, byte for byte, so they loop exactly as
-authored. Their levels are matched in code (`client/src/audio/tracks.ts`).
+| Files in `client/public/assets/audio` | Used for | Title | Track page | Source file |
+| --- | --- | --- | --- | --- |
+| `music-menu.ogg`, `.mp3` | menu (start and mode screens) | "Morning" (classical guitar, harp, flutes) | https://incompetech.com/music/royalty-free/index.html?isrc=USUAN2300003 | https://incompetech.com/music/royalty-free/mp3-royaltyfree/Morning.mp3 |
+| `music-lobby.ogg`, `.mp3` | lobby / side select | "Clear Air" (two guitars, soft piano) | https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1100626 | https://incompetech.com/music/royalty-free/mp3-royaltyfree/Clear%20Air.mp3 |
+| `music-outside.ogg`, `.mp3` | in game, outside player | "Windswept" (guitar, strings) | https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1100757 | https://incompetech.com/music/royalty-free/mp3-royaltyfree/Windswept.mp3 |
+| `music-inside.ogg`, `.mp3` | in game, inside player | "Immersed" (piano, strings) | https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1600010 | https://incompetech.com/music/royalty-free/mp3-royaltyfree/Immersed.mp3 |
+| `sting-solved.ogg`, `.mp3` | puzzle solved | "Enchanted Journey" (harp solo), one chord | https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1100799 | https://incompetech.com/music/royalty-free/mp3-royaltyfree/Enchanted%20Journey.mp3 |
+
+Changes we made (CC BY 4.0 asks that changes are stated):
+
+- Music: each piece is used whole. It is cut where its last note has faded to about
+  -40 dBFS and the rest of that fade is mixed onto the start, so it loops without a gap or
+  a click. Levelled by plain gain to about -20 LUFS (no compression), then encoded as Ogg
+  Opus and as mp3 (for browsers without Ogg Opus). The remaining level matching is in
+  `client/src/audio/tracks.ts`.
+- Sting: the single rolled C major chord at 2:59 of "Enchanted Journey" (2.7 s), with a
+  short fade out, peak at -3 dBFS.
 
 The other sound effects (steps, bumps, chimes) are synthesized in code by us
 (`client/src/game/sfx.ts`).
@@ -48,8 +62,8 @@ The per-surface footstep sounds are noise bursts synthesized at runtime
 
 ## Art and fonts
 
-Only CC0 (public domain) art and fonts are used, so nothing here is legally required, but
-credit is owed.
+Only CC0 (public domain) art and fonts are used, so nothing in this section is legally
+required, but credit is owed.
 
 | What | Author | License | Source | Where it is used |
 | --- | --- | --- | --- | --- |

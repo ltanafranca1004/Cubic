@@ -27,9 +27,9 @@ export interface Settings {
 
 /** The volumes match the AudioManager's own defaults, so nothing jumps when the UI mounts. */
 export const DEFAULT_SETTINGS: Settings = {
-  master: 1,
-  music: 0.6,
-  sfx: 1,
+  master: 0.8,
+  music: 0.35,
+  sfx: 0.7,
   voiceOn: true,
   voiceVolume: 1,
   micMuted: false,

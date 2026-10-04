@@ -143,7 +143,7 @@ export interface Volumes {
   sfx: number;
 }
 
-export const DEFAULT_VOLUMES: Volumes = { master: 1, music: 0.6, sfx: 1 };
+export const DEFAULT_VOLUMES: Volumes = { master: 0.8, music: 0.35, sfx: 0.7 };
 
 export interface MixerDeps<Id extends string, B> {
   /** Only called after the first user gesture. */
