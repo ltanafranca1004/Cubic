@@ -1,0 +1,133 @@
+{
+  "description": "Turtle sprite sheets for Cubic game - user-provided detailed artwork",
+  "version": "1.0",
+  "frame_size": [
+    16,
+    16
+  ],
+  "sheet_format": "rows_are_animations, columns_are_frames",
+  "outside_turtle_sheet": "turtle-outside.png",
+  "inside_turtle_sheet": "turtle-inside.png",
+  "palette_outside": {
+    "skin": "#7CFC00",
+    "shell_light": "#FFD700",
+    "shell_dark": "#B8860B",
+    "eye_white": "#FFFFFF",
+    "eye_black": "#000000",
+    "accent": "#FF4500"
+  },
+  "palette_inside": {
+    "skin": "#008080",
+    "shell_light": "#9370DB",
+    "shell_dark": "#4B0082",
+    "eye_white": "#FFFFFF",
+    "eye_black": "#00FFFF",
+    "accent": "#FFFF00",
+    "moon_glow": "#F0F8FF"
+  },
+  "animations": {
+    // Outside turtle animations (rows 0-4)
+    "outside_idle_breathe_blink": {
+      "row": 0,
+      "frames": 2,
+      "frame_time": [500, 500],
+      "loop": true
+    },
+    "outside_idle_look_around": {
+      "row": 1,
+      "frames": 4,
+      "frame_time": [200, 200, 200, 200],
+      "loop": true
+    },
+    "outside_idle_shell_tuck": {
+      "row": 2,
+      "frames": 5,
+      "frame_time": [150, 150, 200, 150, 150],
+      "loop": false
+    },
+    "outside_idle_knock_knock": {
+      "row": 3,
+      "frames": 4,
+      "frame_time": [100, 50, 100, 50],
+      "loop": false
+    },
+    "outside_idle_sleep": {
+      "row": 4,
+      "frames": 3,
+      "frame_time": [400, 400, 400],
+      "loop": true
+    },
+    // Outside turtle walk animations (rows 5-7)
+    "outside_walk_down": {
+      "row": 5,
+      "frames": 4,
+      "frame_time": [100, 100, 100, 100],
+      "loop": true
+    },
+    "outside_walk_up": {
+      "row": 6,
+      "frames": 4,
+      "frame_time": [100, 100, 100, 100],
+      "loop": true
+    },
+    "outside_walk_right": {
+      "row": 7,
+      "frames": 4,
+      "frame_time": [100, 100, 100, 100],
+      "loop": true
+    },
+    // Outside walk left is achieved by horizontally flipping the right frames
+
+    // Inside turtle animations (rows 0-4)
+    "inside_idle_breathe_blink": {
+      "row": 0,
+      "frames": 2,
+      "frame_time": [500, 500],
+      "loop": true
+    },
+    "inside_idle_look_around": {
+      "row": 1,
+      "frames": 4,
+      "frame_time": [200, 200, 200, 200],
+      "loop": true
+    },
+    "inside_idle_shell_tuck": {
+      "row": 2,
+      "frames": 5,
+      "frame_time": [150, 150, 200, 150, 150],
+      "loop": false
+    },
+    "inside_idle_knock_knock": {
+      "row": 3,
+      "frames": 4,
+      "frame_time": [100, 50, 100, 50],
+      "loop": false
+    },
+    "inside_idle_sleep": {
+      "row": 4,
+      "frames": 3,
+      "frame_time": [400, 400, 400],
+      "loop": true
+    },
+    // Inside turtle walk animations (rows 5-7)
+    "inside_walk_down": {
+      "row": 5,
+      "frames": 4,
+      "frame_time": [100, 100, 100, 100],
+      "loop": true
+    },
+    "inside_walk_up": {
+      "row": 6,
+      "frames": 4,
+      "frame_time": [100, 100, 100, 100],
+      "loop": true
+    },
+    "inside_walk_right": {
+      "row": 7,
+      "frames": 4,
+      "frame_time": [100, 100, 100, 100],
+      "loop": true
+    }
+    // Inside walk left is achieved by horizontally flipping the right frames
+  }
+}

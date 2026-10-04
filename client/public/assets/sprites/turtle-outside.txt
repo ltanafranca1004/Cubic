@@ -1,0 +1,4 @@
+Placeholder for /Users/ken/Cubic/client/public/assets/sprites/turtle-outside.png
+This should be a 16x16 sprite sheet with 35 frames
+Install PIL (Pillow) to generate actual PNG files:
+pip install Pillow
