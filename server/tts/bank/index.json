@@ -1156,6 +1156,20 @@
    "text": "the flower is",
    "voiceId": "r1KmysJdVYZjJCm4mL3b",
    "modelId": "eleven_v4"
+  },
+  {
+   "file": "b1da0288ed5cb965cc5d5a16.mp3",
+   "chars": 77,
+   "text": "What colour is the flower in that pot? Rows from face 5, columns from face 3.",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "8f966bd637112c6d07d1489b.mp3",
+   "chars": 62,
+   "text": "I know every pot now. I will fetch the flowers and plant them.",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
   }
  ]
 }
