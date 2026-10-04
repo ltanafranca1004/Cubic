@@ -81,7 +81,7 @@ assets/
   east 2, south 4, west 8). Which prop goes where is not in the manifest: it is
   `client/src/world/biomes/decor.ts`.
 - `audio`: keys are `step`, `bump`, `flip`, `push`, `solve`, `strike`, `win`, `pickup`,
-  `drop`, `place`, or a puzzle event name such as `door-open`.
+  `drop`, `place`, `use`, or a puzzle event name such as `chime`.
 
 Paths are relative to this folder. Missing keys fall back to the placeholder art/sound.
 The reader is `client/src/style/art.ts`.

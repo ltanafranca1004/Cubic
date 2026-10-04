@@ -51,8 +51,28 @@ export const sfx: Record<string, () => void> = {
   place: () => chime([392, 523, 659], 0.07),
   /** A quick-chat bubble popping up. */
   quick: () => tone(660, 0.08, 'sine', 0.025),
-  'door-open': () => tone(400, 0.1),
-  'door-close': () => tone(200, 0.1),
+  /** E on a puzzle tile (a button, a keypad key that has no sound of its own). */
+  use: () => tone(520, 0.05, 'square', 0.025),
+  // Generic puzzle sounds: a puzzle plays one with ctx.emit('<key>').
+  /** Something went right (a code accepted, a stage done). */
+  chime: () => chime([659, 880, 1175], 0.08),
+  /** A keypad key going down. */
+  key: () => tone(740, 0.04, 'square', 0.02),
+  /** A floor tile flipping over. */
+  toggle: () => chime([260, 390], 0.04),
+  burn: () => {
+    tone(220, 0.3, 'sawtooth', 0.03);
+    tone(330, 0.2, 'sawtooth', 0.02, 0.05);
+  },
+  laser: () => {
+    tone(1320, 0.18, 'sawtooth', 0.02);
+    tone(990, 0.25, 'sine', 0.025, 0.04);
+  },
+  /** Into the lava. */
+  splash: () => {
+    tone(160, 0.12, 'triangle', 0.05);
+    tone(90, 0.3, 'sine', 0.05, 0.06);
+  },
   /** A puzzle event with no sound of its own. */
   puzzle: () => tone(350, 0.08),
 };

@@ -7,7 +7,7 @@ import { heardSfx, hears, sfxFor } from '../src/audio/hearing';
 // the face-change ding is never the partner's.
 
 // The keys of the synthesized table in game/sfx.ts (it needs Web Audio types, so it is not imported here).
-const SFX = new Set(['step', 'bump', 'flip', 'push', 'solve', 'strike', 'win', 'pickup', 'drop', 'place', 'door-open', 'door-close', 'puzzle']);
+const SFX = new Set(['step', 'bump', 'flip', 'push', 'solve', 'strike', 'win', 'pickup', 'drop', 'place', 'use', 'chime', 'key', 'toggle', 'burn', 'laser', 'splash', 'puzzle']);
 const known = (id: string) => SFX.has(id);
 const other = (side: Side): Side => (side === 'out' ? 'in' : 'out');
 
@@ -75,12 +75,12 @@ test('a mixed batch keeps its order and drops only what the wall hides', () => {
     { type: 'step', side: 'out' },
     { type: 'step', side: 'in' },
     { type: 'flip', side: 'in', from: 1, to: 4, dx: 1, dy: 0 },
-    { type: 'puzzle', puzzle: 'plate-door', name: 'door-open' },
+    { type: 'puzzle', puzzle: 'hidden-code', name: 'chime' },
     { type: 'flip', side: 'out', from: 2, to: 1, dx: -1, dy: 0 },
-    { type: 'solve', face: 1, puzzle: 'plate-door' },
+    { type: 'solve', face: 1, puzzle: 'hidden-code' },
   ];
-  assert.deepEqual(heardSfx(events, 'out', state, known), ['step', 'door-open', 'flip']);
-  assert.deepEqual(heardSfx(events, 'in', state, known), ['step', 'flip', 'door-open']);
+  assert.deepEqual(heardSfx(events, 'out', state, known), ['step', 'chime', 'flip']);
+  assert.deepEqual(heardSfx(events, 'in', state, known), ['step', 'flip', 'chime']);
 });
 
 test('everything else is heard as before', () => {

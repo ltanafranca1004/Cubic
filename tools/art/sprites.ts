@@ -1,5 +1,5 @@
 // The two playable characters, the puzzle objects and the items. 16x16 frames.
-import { PUZZLE_SPRITES, drawPuzzleObject } from '../../client/src/game/puzzleArt';
+import { PUZZLE_ITEMS, PUZZLE_SPRITES, drawPuzzleItem, drawPuzzleObject } from '../../client/src/game/puzzleArt';
 import { C, ROLE } from '../../client/src/style/tokens';
 import { existsSync } from 'node:fs';
 import { Img, strip, type Color } from './img';
@@ -249,7 +249,7 @@ export function buildSprites(dir: string): SpriteManifest {
     unknown(), // 15
   ];
   // The co-op puzzle objects (frames 16 and up) are drawn by the game's own code, so the
-  // sheet and the in-code placeholder can never disagree: client/src/game/puzzleArt.ts.
+  // sheet and the in-code placeholder can never disagree: client/src/game/puzzleArt/.
   const first = objects.length;
   const puzzle: SpriteManifest['objects'] = {};
   PUZZLE_SPRITES.forEach(({ type, state }, i) => {
@@ -264,7 +264,17 @@ export function buildSprites(dir: string): SpriteManifest {
   objects.forEach((o, i) => sheet.blit(o, (i % COLS) * T, Math.floor(i / COLS) * T));
   sheet.save(`${dir}/sprites/objects.png`);
 
-  strip([cut('N', 3, 11).quantize(), key(), bundle()]).save(`${dir}/sprites/items.png`);
+  // The puzzle items (frames 3 and up) come from the game's own code too: puzzleArt/items.ts.
+  const items = [cut('N', 3, 11).quantize(), key(), bundle()];
+  const firstItem = items.length;
+  const puzzleItems: SpriteManifest['items'] = {};
+  PUZZLE_ITEMS.forEach((kind, i) => {
+    const g = new Img(T, T);
+    drawPuzzleItem((x, y, w, h, c) => g.rect(x, y, w, h, c), kind);
+    items.push(g);
+    puzzleItems[kind] = { image: 'sprites/items.png', frame: firstItem + i };
+  });
+  strip(items).save(`${dir}/sprites/items.png`);
 
   const image = 'sprites/objects.png';
   return {
@@ -281,6 +291,7 @@ export function buildSprites(dir: string): SpriteManifest {
       rose: { image: 'sprites/items.png', frame: 0 },
       key: { image: 'sprites/items.png', frame: 1 },
       default: { image: 'sprites/items.png', frame: 2 },
+      ...puzzleItems,
     },
     players: {
       out: { image: 'sprites/player-out.png', idle: [0, 1], walk: [30, 31, 32, 33] },
