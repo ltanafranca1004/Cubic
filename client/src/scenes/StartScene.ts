@@ -14,7 +14,6 @@ import { Button, seeded, textCentred, type Text } from './kit';
 export class StartScene extends MenuScene {
   private sky!: Sky;
   private logo!: Phaser.GameObjects.Image;
-  private tagline!: Text;
   private status!: Text;
   private play!: Button;
   /** The dive has started: nothing can start it twice. */
@@ -35,9 +34,8 @@ export class StartScene extends MenuScene {
     const logoY = Math.round(H * 0.34);
     this.logo = this.add.image(cx, logoY, 'logo');
     const under = logoY + Math.round(this.logo.height / 2);
-    // white text over sky and white clouds: the ink outline keeps it readable on both
-    this.tagline = textCentred(this, cx, under + 13, 'TWO PLAYERS. ONE CUBE.', ROLE.paper, 1, true);
     this.play = new Button(this, { label: 'PLAY', variant: 'in', width: 136, height: 34, labelSize: 2, pulse: true, onClick: () => this.dive() }).setCentre(cx, under + 28);
+    // white text over sky and white clouds: the ink outline keeps it readable on both
     this.status = textCentred(this, cx, H - 14, '', ROLE.paper, 1, true);
 
     // the logo floats: two pixels up and down, landing on whole pixels
@@ -76,7 +74,7 @@ export class StartScene extends MenuScene {
 
     // the title lifts away
     this.tweens.killTweensOf(this.logo);
-    this.tweens.add({ targets: [this.logo, this.tagline, this.play.root, this.status], y: `-=${Math.round(H * 0.2)}`, alpha: 0, duration: TIME.dive * 0.25, ease: EASE.in });
+    this.tweens.add({ targets: [this.logo, this.play.root, this.status], y: `-=${Math.round(H * 0.2)}`, alpha: 0, duration: TIME.dive * 0.25, ease: EASE.in });
 
     // every cloud comes at the camera and parts to its own side
     this.sky.speed = 0;
