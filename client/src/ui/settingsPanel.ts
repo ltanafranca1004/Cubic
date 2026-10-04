@@ -1,3 +1,4 @@
+import { AI_VOICES, type AiVoice } from '@cubic/shared';
 import { ACTION_LABEL, BIND_ACTIONS, DEFAULT_BINDINGS, canBind, keyId, keyName, rebind, sameBindings, type BindAction } from '../input/bindings';
 import type { KeyLike } from '../input/keymap';
 import { onSettings, setSetting, settings, type Settings } from '../style/settings';
@@ -20,14 +21,14 @@ import { STEP_EVENT, type StepDetail } from './focus';
 type KeysOf<T> = { [K in keyof Settings]: Settings[K] extends T ? K : never }[keyof Settings];
 type NumberKey = KeysOf<number>;
 type ToggleKey = KeysOf<boolean>;
-type ChoiceKey = 'micMode' | 'textSize';
+type ChoiceKey = 'micMode' | 'textSize' | 'aiVoice';
 
 type Tab = 'sound' | 'access' | 'controls';
 type Section = 'sound' | 'voice' | 'look' | 'motion';
 type Row = { section: Section; label: string; icon?: string; aria?: string; needsVoice?: boolean } & (
   | { kind: 'slider'; key: NumberKey }
   | { kind: 'toggle'; key: ToggleKey }
-  | { kind: 'choice'; key: ChoiceKey; options: { value: string; label: string }[] }
+  | { kind: 'choice'; key: ChoiceKey; options: { value: string; label: string }[]; preview?: boolean }
 );
 
 const TABS: { id: Tab; title: string }[] = [
@@ -46,6 +47,8 @@ const ROWS: Row[] = [
   { section: 'sound', kind: 'slider', key: 'master', label: 'Master', icon: 'speaker', aria: 'Master volume' },
   { section: 'sound', kind: 'slider', key: 'music', label: 'Music', icon: 'music' },
   { section: 'sound', kind: 'slider', key: 'sfx', label: 'Effects', icon: 'sfx', aria: 'Sound effects' },
+  // the AI partner of a solo game; `preview` adds the button that plays a greeting in the chosen voice
+  { section: 'sound', kind: 'choice', key: 'aiVoice', label: 'Partner voice', aria: 'AI partner voice', preview: true, options: AI_VOICES.map((v) => ({ value: v.key, label: v.label })) },
   { section: 'voice', kind: 'toggle', key: 'voiceOn', label: 'Voice chat', icon: 'chat', aria: 'Proximity chat' },
   { section: 'voice', kind: 'slider', key: 'voiceVolume', label: 'Volume', icon: 'speaker', aria: 'Proximity chat volume', needsVoice: true },
   { section: 'voice', kind: 'toggle', key: 'micMuted', label: 'Mute my mic', icon: 'micOff', aria: 'Mute my microphone', needsVoice: true },
@@ -62,7 +65,7 @@ function control(row: Row): string {
   if (row.kind === 'slider')
     return `<div class="cu-slider" data-key="${row.key}" data-step role="slider" tabindex="0" aria-label="${aria}" aria-valuemin="0" aria-valuemax="100"><div class="track"></div><div class="fill"></div><div class="knob"></div></div><span class="val" data-val="${row.key}"></span>`;
   if (row.kind === 'toggle') return `<button class="cu-toggle" data-key="${row.key}" role="switch" aria-label="${aria}"></button><span class="cu-state" data-state="${row.key}"></span>`;
-  return `<div class="cu-seg" data-key="${row.key}" data-step="cycle" role="radiogroup" tabindex="0" aria-label="${aria}">${row.options.map((o) => `<span role="radio" data-value="${o.value}">${o.label}</span>`).join('')}</div>`;
+  return `<div class="cu-seg" data-key="${row.key}" data-step="cycle" role="radiogroup" tabindex="0" aria-label="${aria}">${row.options.map((o) => `<span role="radio" data-value="${o.value}">${o.label}</span>`).join('')}</div>${row.preview ? `<button class="cu-key cu-preview" data-preview="${row.key}" aria-label="Play a sample of the ${aria}"><span>Play</span></button>` : ''}`;
 }
 
 const rowHtml = (row: Row) => `<div class="cu-set"${row.needsVoice ? ' data-needs-voice' : ''}>${row.icon ? `<i class="cu-ico ${row.icon}"></i>` : ''}<label>${row.label}</label>${control(row)}</div>`;
@@ -114,6 +117,8 @@ export interface SettingsPanel {
 export interface SettingsPanelOptions {
   /** Does a text size differ from the next one up at the current scale? (S and M are the same at scale 1.) */
   sizeDiffers?(a: Settings['textSize'], b: Settings['textSize']): boolean;
+  /** Play one greeting in this AI partner voice (the Play button of the "Partner voice" row). */
+  previewVoice?(voice: AiVoice): void;
 }
 
 export function createSettingsPanel(parent: HTMLElement, opts: SettingsPanelOptions = {}): SettingsPanel {
@@ -262,6 +267,8 @@ export function createSettingsPanel(parent: HTMLElement, opts: SettingsPanelOpti
       pick(values[wrap ? (at + values.length) % values.length : Math.min(values.length - 1, Math.max(0, at))]!);
     });
   }
+  // Play: one greeting in the voice that is chosen right now (a click, a tap, or Enter on it)
+  for (const btn of $$<HTMLButtonElement>('[data-preview]')) btn.addEventListener('click', () => opts.previewVoice?.(settings().aiVoice));
   const tabs = modal.querySelector<HTMLElement>('.cu-tabs')!;
   tabs.addEventListener('click', (e) => {
     const next = (e.target as HTMLElement).closest<HTMLElement>('[role="tab"]')?.dataset.tab;

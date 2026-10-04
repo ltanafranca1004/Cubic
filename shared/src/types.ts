@@ -1,5 +1,7 @@
 // Core types shared by client and server. Pure data, no DOM, no networking.
 
+import type { AiVoice } from './aiVoices';
+
 /** Integer 3D vector. Face normals and "up" vectors are always axis-aligned unit vectors. */
 export type Vec = readonly [number, number, number];
 
@@ -269,6 +271,17 @@ export interface TtsChain {
   gapMs: number;
 }
 
+/**
+ * The answer to `ai:preview`: one banked greeting in that voice. `data` is null when the
+ * voice has no such clip (the browser voice reads `text` instead).
+ */
+export interface VoicePreview {
+  voice: AiVoice;
+  text: string;
+  mime: string;
+  data: ArrayBuffer | null;
+}
+
 /** Narrow what an interact does: only pick up, or only drop. Unset = whichever applies. */
 export type InteractOnly = 'pick' | 'drop';
 
@@ -323,6 +336,14 @@ export interface ClientToServer {
   'voice:signal': (msg: { data: unknown }) => void;
   /** Fallback audio relay when the direct connection fails. */
   'voice:chunk': (msg: VoiceChunk) => void;
+  /**
+   * The voice this player wants the AI partner to speak with (Settings), by its key in
+   * AI_VOICES; anything else is ignored. Kept per connection and used by the solo room this
+   * socket is in, from the AI's next line. Does nothing in a two-player room.
+   */
+  'ai:voice': (msg: { voice: AiVoice }) => void;
+  /** Settings: one banked greeting in that voice, to hear it before choosing. */
+  'ai:preview': (msg: { voice: AiVoice }, ack: Ack<VoicePreview>) => void;
   /** Dev tools only, see DevCommand. */
   dev: (cmd: DevCommand, ack: Ack<object>) => void;
 }

@@ -1,3 +1,4 @@
+import { AI_VOICE_KEYS, DEFAULT_AI_VOICE, type AiVoice } from '@cubic/shared';
 import { DEFAULT_BINDINGS, cleanBindings, useBindings, type Bindings } from '../input/bindings';
 import { audio } from './audioApi';
 
@@ -27,6 +28,8 @@ export interface Settings {
   hints: boolean;
   /** Which key does which game action (input/bindings.ts). */
   keys: Bindings;
+  /** The voice the AI partner speaks with (solo games): a key of AI_VOICES. The server is told by app.ts. */
+  aiVoice: AiVoice;
 }
 
 /** The volumes match the AudioManager's own defaults, so nothing jumps when the UI mounts. */
@@ -44,6 +47,7 @@ export const DEFAULT_SETTINGS: Readonly<Settings> = {
   screenShake: true,
   hints: true,
   keys: { ...DEFAULT_BINDINGS },
+  aiVoice: DEFAULT_AI_VOICE,
 };
 
 /** Where the voice settings go: the existing Voice class, through the UI actions. */
@@ -58,7 +62,7 @@ export interface VoiceSink {
 
 /** The version is part of the key: a change of shape starts from the defaults again. */
 export const STORAGE_KEY = 'cubic.settings.v1';
-const CHOICES: Partial<Record<keyof Settings, readonly string[]>> = { micMode: ['open', 'ptt'], textSize: ['s', 'm', 'l'] };
+const CHOICES: Partial<Record<keyof Settings, readonly string[]>> = { micMode: ['open', 'ptt'], textSize: ['s', 'm', 'l'], aiVoice: AI_VOICE_KEYS };
 
 /** Saved settings, checked field by field: anything missing or of the wrong kind is the default. */
 export function cleanSettings(raw: unknown): Settings {

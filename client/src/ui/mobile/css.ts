@@ -55,6 +55,7 @@ html[data-touch][data-dark] body { background: ${ROLE.ink}; }
 .cu[data-touch] .cu-slider::after { content: ""; position: absolute; inset: -12px 0; }
 .cu[data-touch] .cu-set { min-height: 36px; }
 .cu[data-touch] .cu-seg span { min-width: 40px; height: 32px; display: flex; align-items: center; justify-content: center; }
+.cu[data-touch] .cu-key.cu-preview { min-width: 40px; height: 32px; }
 /* the keyboard hints mean nothing here: the buttons carry their own names */
 .cu[data-touch] .cu-onb-keys { opacity: 0 !important; }
 /* chat goes through the chat button (the field would sit under the on-screen keyboard) */

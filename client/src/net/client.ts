@@ -22,6 +22,8 @@ import {
   type Side,
   type TtsChain,
   type TtsClip,
+  type AiVoice,
+  type VoicePreview,
   type VoiceChunk,
 } from '@cubic/shared';
 import { soloLeftUntil, type Saved } from './left';
@@ -137,6 +139,8 @@ export class Net {
   /** The server's clock minus ours, from the last room info that carried the server's time. */
   private skew = 0;
   private activityAt = 0;
+  /** The AI partner's voice (Settings), as the server was last told. Null = never set: the server's default. */
+  private aiVoice: AiVoice | null = null;
 
   constructor(
     private h: NetHandlers,
@@ -181,6 +185,8 @@ export class Net {
       this.online = true;
       this.blocked = false;
       this.h.onChange();
+      // before the rejoin, so a solo room that takes us back speaks in our voice at once
+      if (this.aiVoice) socket.emit('ai:voice', { voice: this.aiVoice });
       this.tryRejoin();
     });
     socket.on('disconnect', (reason) => {
@@ -362,6 +368,25 @@ export class Net {
 
   playWithAI(side: Side): void {
     if (this.begin()) this.socket!.emit('room:createAI', { side }, (res) => this.adopt(res));
+  }
+
+  /**
+   * The voice the AI partner should speak with (Settings). The server keeps it for this
+   * connection and uses it in a solo game from the AI's next line; it is sent again on
+   * every (re)connect. In a two-player room it does nothing.
+   */
+  setAiVoice(voice: AiVoice): void {
+    if (this.aiVoice === voice) return;
+    this.aiVoice = voice;
+    if (this.online) this.socket?.emit('ai:voice', { voice });
+  }
+
+  /** One banked greeting in a voice (the settings panel's preview), or null: offline, or the server has none. */
+  previewVoice(voice: AiVoice): Promise<VoicePreview | null> {
+    return new Promise((resolve) => {
+      if (!this.socket || !this.online) resolve(null);
+      else this.socket.emit('ai:preview', { voice }, (res) => resolve(res.ok ? res : null));
+    });
   }
 
   /** The solo game this tab left and can still go back to: until when, or null. */

@@ -567,6 +567,23 @@ Removed: `TTS_SESSION_LINES`.
 - Gemini's turn also carries `partnerSays`: what the script expects the human to say on
   this puzzle (`humanSays(puzzleId, side)` in `scripted.ts`, at most 100 characters).
 
+### Voice picker (later than "One voice" above; where they disagree this is right)
+
+- Settings > SOUND > "Partner voice": Jessica (default) or Wizard, with a Play button (one
+  banked greeting). The list is `AI_VOICES` in `shared/src/aiVoices.ts` (key, label, id).
+- The client sends the KEY: `ai:voice { voice }` on every connect and on every change;
+  `ai:preview { voice }` for the Play button. `app.ts` checks it with `parseAiVoice` (an id
+  or anything else is ignored), keeps it per socket and hands it to a solo room
+  (`onAiVoice` -> `AiPartner.setVoice`). `wire.ts` reads the room's voice when a line is
+  said, so a change counts from the next line. A two-player room never hears of it.
+- One bank folder per voice: `server/tts/bank` (Jessica, unchanged) and
+  `server/tts/bank-<key>` (`bankDirFor`). A voice's clips are read from disk when first
+  asked for (`Tts.loaded(voice)`); a missing clip or folder falls through: cache, live
+  (Gemini's lines, the same caps), browser voice.
+- `ELEVENLABS_VOICE_ID` is the id behind the default voice only.
+- Build: `npm run tts:bank -w server -- --voice wizard` (dry run: clips, characters,
+  estimated credits), then the same with `--buy`. Details: `server/tts/README.md`.
+
 <!-- BUDGET SECTION: END -->
 <!-- ---- faces 4-6 (scripts-b) ---- -->
 ## Scripts for faces 4 to 6
