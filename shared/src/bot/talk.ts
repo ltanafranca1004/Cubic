@@ -82,6 +82,11 @@ const FILLER = new Set(
 // a line made of them is plain, so it goes straight to the script and never earns a "huh".
 for (const w of 'zero nine ten eleven twelve code digit digits number numbers first second third last says reads bush bushes berry berries bird birds rock rocks stone stones row skip flip blank empty clear reset enter press'.split(' ')) FILLER.add(w);
 // ---- end faces 1-3 ----
+// ---- faces 4-6 (scripts-b) ----
+// Words the scripts of faces 4 to 6 read from Heard.text themselves (symbols, colours,
+// "row 4 column 9", "face 4", "press").
+for (const w of 'leaf eye red blue yellow pink white column col pot flower colour color order path lava side start from by'.split(' ')) FILLER.add(w);
+// ---- end faces 4-6 ----
 
 export interface Heard {
   /** The line as typed (trimmed). A puzzle script reads its own words (digits, colours) from this. */

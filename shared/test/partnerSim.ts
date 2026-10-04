@@ -32,6 +32,11 @@ import { equationSafeHuman } from './humans/equationSafe';
 import { hiddenCodeHuman } from './humans/hiddenCode';
 import { mirroredGlyphHuman } from './humans/mirroredGlyph';
 // ---- end faces 1-3 ----
+// ---- faces 4-6 (scripts-b) ----
+import { botanicalMirrorHuman } from './humans/botanicalMirror';
+import { laserPathHuman } from './humans/laserPath';
+import { sequenceLaserHuman } from './humans/sequenceLaser';
+// ---- end faces 4-6 ----
 
 // A SIMULATED HUMAN for the AI partner tests (not a test file itself). It plays one side
 // the way a person would: it looks at its own screen (observe / visibleObjects for ITS
@@ -108,6 +113,11 @@ export const HUMAN_SCRIPTS: HumanScript<any>[] = [
   equationSafeHuman(),
   mirroredGlyphHuman(),
   // ---- end faces 1-3 ----
+  // ---- faces 4-6 (scripts-b) ----
+  botanicalMirrorHuman(),
+  sequenceLaserHuman(),
+  laserPathHuman(),
+  // ---- end faces 4-6 ----
 ];
 
 export interface HumanOptions {

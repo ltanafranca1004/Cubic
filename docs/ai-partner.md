@@ -416,3 +416,49 @@ harness, so they cannot sit beside the script in `src`). Each plays either side.
 - `talk.ts`: bare numbers of up to four digits and the words these scripts read are plain,
   so they never earn a `huh`.
 <!-- ---- end faces 1-3 ---- -->
+
+<!-- ---- faces 4-6 (scripts-b) ---- -->
+## Scripts for faces 4 to 6
+
+`shared/src/bot/scripts/botanicalMirror.ts`, `sequenceLaser.ts`, `laserPath.ts` (helpers
+in `kit456.ts`); their simulated humans are in `shared/test/humans/`. Each plays either
+side. Relay lines use the key `<id>.relay` with the words `'{words}'`, vocabulary pieces
+only. The observation has no partner position, so nothing here needs one: the two screens
+are tied together by things both players can name (the faces next door, the lava).
+
+- **sequence-laser (5).** Inside: `errand` is `carryBattery` (face 2 inside to the
+  emitter). Then it presses only what the human names (`sun moon star`, one or several per
+  line; a lit button is skipped, so the whole order may be repeated). 15 s of silence:
+  `in.first` / `in.next`. A strike: it drops what it was told and says `in.strike`.
+  Outside: presses REPLAY, watches which symbol is lit on each look, then says
+  `the order is A then B then C` and `next D then E then F then G`. "again" or a strike
+  says both parts again.
+- **laser-path (6).** Outside: solves the mirrors from its own view (`mirrorPush`: "/" into
+  the source's column, "\" up to the row of "/"; RESET if stuck, or if a mirror covers the
+  path), picks up the flower, then guides. Directions are always ON THE WALKER'S OWN
+  SCREEN:
+  1. `out.side.N`: the side of the ring the path starts from, named by the face beyond it.
+  2. `out.lava`: the walker says which way the lava is from there (`right`). The guide sees
+     that same step on its own screen: that fixes the turn between the two screens.
+  3. `out.tile` + `row six` (or `column six`): the start tile, counted on the walker's
+     screen from their top / their left. The walker says `yes`.
+  4. `step right two then up one`: at most two runs per line, `yes` after each, `again`
+     repeats; the last line ends `then press`.
+  5. A strike (a fall): `out.fell`, the lava question again, and the path from its start.
+  Inside: the same convention the other way round. It stays on the ring, asks `in.side`
+  every 15 s, walks round the ring to the side of `face N`, says `in.lava.<dir>`, takes its
+  tile from `row 6` / `column 6`, then walks the steps it hears (`right 2 then up 1`), one
+  tile at a time, each lava tile through `Play.allow`. `in.done` after each line, `in.ask`
+  after 15 s of silence, `in.fell` after a fall. It presses E when it stands on the button.
+- **botanical-mirror (4).** A pot is `the pot is row R column C`, one to twelve: rows
+  counted from the edge beside face 5, columns from the edge beside face 3 (the same two
+  edges for both players, whatever their turn; it is the canonical tile, row = y + 1,
+  column = x + 1). Outside: `errand` carries the flower from face 6 and waits by the pots;
+  it says `the flower is pink`, asks `out.ask` (again every 15 s) and plants where the
+  human says; a strike: `out.strike`. Inside: the flower's colour is not in its
+  observation, so it asks (`in.ask`) and the human says it; then it names the pot.
+
+The simulated human plays the chain in the order 1, 2, 3, 5, 6, 4 (`order` in
+`HumanOptions`; `CHAIN_ORDER` in `server/test/ai.test.ts`): the default list order would
+send it to face 4 before the flower exists.
+<!-- ---- end faces 4-6 ---- -->
