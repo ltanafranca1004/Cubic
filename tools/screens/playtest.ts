@@ -123,7 +123,22 @@ const PUZZLE_SCRIPTS: PuzzleScript[] = [
   // Face 1. Hidden Code.
   stub('hidden-code', 1),
   // Face 3. Mirrored Glyph.
-  stub('mirrored-glyph', 3),
+  {
+    id: 'mirrored-glyph',
+    steps: [
+      {
+        // the outside player reads the symbol off the snow and tells it; the inside player flips those tiles
+        who: 'out',
+        plan: (state) => {
+          const symbol = visibleObjects(state, 'out', 3).filter((o) => o.type === 'f3-glyph');
+          // row by row in a snake, so the walk stays short
+          symbol.sort((a, b) => a.y - b.y || (a.y % 2 ? b.x - a.x : a.x - b.x));
+          return symbol.flatMap((o): PuzzleStep[] => [{ who: 'in', goto: { tile: { face: 3, x: o.x, y: o.y } } }, { who: 'in', keys: 'e' }]);
+        },
+      },
+      { expect: 'every tile of the symbol is flipped and locked', check: (state) => visibleObjects(state, 'in', 3).filter((o) => o.type === 'f3-tile' && o.state === 'done').length === 47 },
+    ],
+  },
   // Face 2. Equation Safe.
   stub('equation-safe', 2),
   // Face 5. Sequence Laser.

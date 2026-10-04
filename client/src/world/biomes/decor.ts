@@ -123,19 +123,20 @@ export const DECOR: Record<FaceId, readonly string[]> = {
     '............',
   ],
   // Snow: the snowman by the frozen pond, drifts blown up against nothing in particular.
+  // The carved symbol (GLYPH in shared/src/puzzles/mirroredGlyph.ts) owns its tiles and the ring.
   3: [
-    '...s........',
     '............',
-    '.....s......',
+    '...s....s...',
+    '............',
     '.s........s.',
     '........s...',
     '............',
     '............',
-    '...s...*....',
-    '............',
+    '...s........',
+    '..........*.',
     '.....s......',
+    '..s...s.....',
     '............',
-    's......s....',
   ],
   // Forest: the clearing belongs to the stepping stones, so everything grows in the ring of trees around it.
   4: [
