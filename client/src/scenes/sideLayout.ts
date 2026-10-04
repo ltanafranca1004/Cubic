@@ -6,7 +6,7 @@ import type { Side } from '@cubic/shared';
 // Each side has a small cube and one turtle. The turtle stands in the middle of the FACE
 // of its side: outside, the grass on top of the cube; inside, the room cut into the front
 // wall. It stands there in every state (idle, hover, selected): the states only change how
-// it looks (sideLook), so nothing has to move, at any size.
+// it looks (turtleIn), so nothing has to move, at any size.
 
 export interface Box {
   x: number;
@@ -57,11 +57,22 @@ export interface SideSpot {
   anchor: { x: number; y: number };
 }
 
+/** The panel in the middle, where the arrows wait. */
+export const PANEL = { w: 132, h: 140 } as const;
+/** The bottom bar (LEAVE, the status line, the main button): its top, up from the bottom of the screen. */
+export const BAR = 30;
+/** Clear pixels between the panel and the bottom bar. */
+const PANEL_GAP = 6;
+
 export interface SideLayout {
   /** Screen pixels per art pixel of the cubes and turtles. */
   zoom: number;
   slotX: Record<Side | 'mid', number>;
   cubeTop: number;
+  /** The middle panel. It starts just above the cubes, or higher on a short screen: it never reaches the bottom bar. */
+  panel: Box;
+  /** The top of the bottom bar. */
+  barY: number;
   spots: Record<Side, SideSpot>;
 }
 
@@ -80,7 +91,9 @@ export function sideLayout(W: number, H: number): SideLayout {
     const turtle = centred(face, TURTLE_ART * zoom);
     return { cube, face, turtle, anchor: { x: turtle.x + turtle.w / 2, y: turtle.y + turtle.h / 2 } };
   };
-  return { zoom, slotX, cubeTop, spots: { out: spot('out'), in: spot('in') } };
+  const barY = H - BAR;
+  const panel = { x: slotX.mid - PANEL.w / 2, y: Math.min(cubeTop - 14, barY - PANEL_GAP - PANEL.h), w: PANEL.w, h: PANEL.h };
+  return { zoom, slotX, cubeTop, panel, barY, spots: { out: spot('out'), in: spot('in') } };
 }
 
 /** Which state a side shows. A touch screen has no hover: only picked or not. */
@@ -91,11 +104,23 @@ export function sideState(picked: boolean, hovered: boolean, touch: boolean): Si
 
 /**
  * The turtle of a side in a state: where it stands and how it looks. It stands on the same
- * spot in all three (the middle of its face); idle it waits, dimmed and still.
+ * spot in all three (the middle of its face), always fully opaque. Idle it waits: still,
+ * and in stone grey (idleTone) instead of its own colours.
  */
-export function turtleIn(layout: SideLayout, side: Side, state: SideState): { box: Box; anchor: { x: number; y: number }; alpha: number; moving: boolean } {
+export function turtleIn(layout: SideLayout, side: Side, state: SideState): { box: Box; anchor: { x: number; y: number }; alpha: number; grey: boolean; moving: boolean } {
   const { turtle, anchor } = layout.spots[side];
-  return { box: turtle, anchor, alpha: state === 'idle' ? 0.5 : 1, moving: state !== 'idle' };
+  return { box: turtle, anchor, alpha: 1, grey: state === 'idle', moving: state !== 'idle' };
+}
+
+/**
+ * A turtle's colour while nobody has its side: most of the colour taken out (a statue of
+ * the turtle), the light and dark kept, so it reads on the grass and in the dark room
+ * alike and its ink outline stays. Half transparent, the green turtle vanished on the grass.
+ */
+export function idleTone(r: number, g: number, b: number): [number, number, number] {
+  const grey = 0.3 * r + 0.59 * g + 0.11 * b;
+  const mix = (c: number) => Math.round(c * 0.2 + grey * 0.8);
+  return [mix(r), mix(g), mix(b)];
 }
 
 /** The side whose cube is under this point of the screen, if any. */

@@ -4,6 +4,8 @@
 // turtle's bounding box must be whole inside the face it stands on (the grass outside, the
 // room inside) and its centre within 2 px of the face's centre. Then one re-fit while
 // hovering (1280x720 -> 1000x640), the same once in WebGL, and a touch screen (no hover).
+// Idle the turtle is fully opaque, in its grey texture. And the status line of the bottom
+// bar: every line it can show stays clear of the middle panel, LEAVE and the main button.
 //
 //   server:  PORT=3422 AI_FAKE=1 TTS_MODE=browser npm run dev -w server
 //   client:  VITE_SERVER_URL=http://localhost:3422 npm run dev -w client -- --port 5522
@@ -30,6 +32,7 @@ interface Box {
 interface Seen {
   state: 'idle' | 'hover' | 'selected';
   alpha: number;
+  texture: string;
   cube: Box;
   face: Box;
   turtle: Box;
@@ -106,17 +109,60 @@ async function point(page: Page, side: Side | null): Promise<void> {
 /** Measure one side in the running scene: PASS when the turtle is whole on its face, in the middle, in the state we expect. */
 async function check(page: Page, tag: string, side: Side, want: Seen['state']): Promise<void> {
   const p = await probe(page);
-  const { face, turtle, state, alpha } = p[side];
+  const { face, turtle, state, alpha, texture } = p[side];
   const within = turtle.x >= face.x && turtle.y >= face.y && turtle.x + turtle.w <= face.x + face.w && turtle.y + turtle.h <= face.y + face.h;
   const dx = turtle.x + turtle.w / 2 - (face.x + face.w / 2);
   const dy = turtle.y + turtle.h / 2 - (face.y + face.h / 2);
   const whole = [turtle.x, turtle.y, face.x, face.y].every(Number.isInteger);
-  const ok = within && Math.abs(dx) <= 2 && Math.abs(dy) <= 2 && state === want && whole;
+  // always fully opaque; idle in the grey texture, hover and selected in the turtle's own colours
+  const look = alpha === 1 && (want === 'idle') === texture.endsWith(':idle');
+  const ok = within && Math.abs(dx) <= 2 && Math.abs(dy) <= 2 && state === want && whole && look;
   if (!ok) failed++;
   log(
-    `${ok ? 'PASS' : 'FAIL'}  ${tag.padEnd(34)} ${side.padEnd(3)} state=${state}${state === want ? '' : ` (want ${want})`} alpha=${alpha} x${p.zoom} ` +
+    `${ok ? 'PASS' : 'FAIL'}  ${tag.padEnd(34)} ${side.padEnd(3)} state=${state}${state === want ? '' : ` (want ${want})`} alpha=${alpha} texture=${texture} x${p.zoom} ` +
       `face=[${face.x},${face.y} ${face.w}x${face.h}] turtle=[${turtle.x},${turtle.y} ${turtle.w}x${turtle.h}] inside=${within} centre offset=(${dx}, ${dy}) whole=${whole}`,
   );
+}
+
+/** Every line the status bar can show: the host's, the guest's, the refusals and the server's errors (server/src/rooms.ts), as the scene shows them. */
+const STATUS = [
+  'WAITING FOR A SECOND PLAYER.',
+  'BOTH PLAYERS NEED TO PICK A SIDE.',
+  'WAITING FOR P2 TO READY UP.',
+  'READY TO START',
+  'PICK A SIDE, THEN READY UP',
+  'PRESS READY WHEN YOU ARE SET',
+  'WAITING FOR P1 TO START',
+  'P1 ALREADY PICKED THAT SIDE',
+  'P2 ALREADY PICKED THAT SIDE',
+  'CONNECTION LOST. RECONNECTING...',
+  'YOU ARE NOT IN THIS ROOM.',
+  'THE GAME HAS ALREADY STARTED.',
+  'NO SUCH SIDE.',
+  'YOUR PARTNER ALREADY PICKED THAT SIDE.',
+  'THE HOST STARTS THE GAME. ONLY THE GUEST READIES UP.',
+  'PICK A SIDE FIRST.',
+  'ONLY THE HOST CAN START THE GAME.',
+  'YOUR PARTNER IS NOT READY YET.',
+];
+
+/** Put every status line in the bar and measure it: clear of the middle panel, of LEAVE and of the main button. */
+async function statusLines(page: Page, label: string): Promise<void> {
+  const hit = (a: Box, b: Box) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+  let bad = 0;
+  let left = Infinity;
+  for (const line of STATUS) {
+    const m = await js<{ status: Box; panel: Box; leave: Box; mainX: number }>(page, `window.__cubicSideStatus(${JSON.stringify(line)})`);
+    const ok = !hit(m.status, m.panel) && !hit(m.status, m.leave) && m.status.x + m.status.w <= m.mainX;
+    const under = m.status.y - (m.panel.y + m.panel.h);
+    if (!ok) {
+      bad++;
+      failed++;
+      log(`FAIL  ${label.padEnd(34)} status "${line}" at [${m.status.x},${m.status.y} ${m.status.w}x${m.status.h}] panel=[${m.panel.x},${m.panel.y} ${m.panel.w}x${m.panel.h}] leave ends ${m.leave.x + m.leave.w}`);
+    }
+    left = Math.min(left, m.status.x - (m.leave.x + m.leave.w));
+    if (line === STATUS.at(-1)) log(`${bad ? 'FAIL' : 'PASS'}  ${label.padEnd(34)} ${STATUS.length} status lines, none touches the panel, LEAVE or the main button; panel bottom ${m.panel.y + m.panel.h}, status top ${m.status.y} (${under} px clear); the longest starts ${left} px right of LEAVE`);
+  }
 }
 
 /** The five states at one window size, on player A's screen. */
@@ -132,6 +178,10 @@ async function states(browser: Browser, size: Size, query: string, shots: boolea
   await check(a, `${label} idle`, 'out', 'idle');
   await check(a, `${label} idle`, 'in', 'idle');
   await shot('idle');
+  // the bottom bar: measure every line, then show the longest one a lobby really has
+  await statusLines(a, `${label} status line`);
+  await js(a, `window.__cubicSideStatus('BOTH PLAYERS NEED TO PICK A SIDE.')`);
+  await shot('status-line');
 
   await point(a, 'out');
   await check(a, `${label} hover outside`, 'out', 'hover');
@@ -173,6 +223,8 @@ try {
       await sleep(500);
       await check(a, 'resize -> 1000x640 hover outside', 'out', 'hover');
       await check(a, 'resize -> 1000x640 (inside, idle)', 'in', 'idle');
+      await statusLines(a, '1000x640 status line');
+      await js(a, `window.__cubicSideStatus('BOTH PLAYERS NEED TO PICK A SIDE.')`);
       await a.screenshot({ path: `${OUT}resize-1000x640-hover-outside.png` });
       await point(a, 'in');
       await check(a, 'resize -> 1000x640 hover inside', 'in', 'hover');
@@ -204,6 +256,8 @@ try {
     await check(a, 'touch 844x390 pointer over outside', 'out', 'idle');
     await point(a, 'in');
     await check(a, 'touch 844x390 pointer over inside', 'in', 'idle');
+    await statusLines(a, 'touch 844x390 status line');
+    await js(a, `window.__cubicSideStatus('WAITING FOR A SECOND PLAYER.')`);
     await a.screenshot({ path: `${OUT}touch-844x390-idle.png` });
     await press(a, 'a');
     await until('picked outside', async () => (await probe(a)).out.state === 'selected');

@@ -7,7 +7,7 @@ import { C, EASE, ROLE, TIME, hex, type Ramp } from '../style/tokens';
 import type { LobbyPlayer, LobbyState } from '../ui/hooks';
 import { MenuScene, type SceneData } from './flow';
 import { Button, centre, hop, paint, seeded, shake, slice, text, textCentred, type Text, HAND } from './kit';
-import { CUBE_ART, OUT_STRIPS, sideAt, sideLayout, sideState, turtleIn, type Box, type SideLayout, type SideState } from './sideLayout';
+import { CUBE_ART, OUT_STRIPS, TURTLE_ART, idleTone, sideAt, sideLayout, sideState, turtleIn, type Box, type SideLayout, type SideState } from './sideLayout';
 
 type Slot = Side | 'mid';
 
@@ -62,8 +62,7 @@ export class SideSelectScene extends MenuScene {
     const z = this.zoom;
 
     // left: the open sky of the outside. right: the dark inside of the cube. Both are drawn
-    // by CubeBackdropScene underneath, with the big cube still turning, dimmed, between them
-    // and this screen.
+    // by CubeBackdropScene underneath (its big cube is hidden behind this screen).
     const rnd = seeded(5);
     for (let i = 0; i < 26; i++) {
       // dust in the lantern light
@@ -87,7 +86,8 @@ export class SideSelectScene extends MenuScene {
     this.cubes = { out: make('out', this.deepCube()), in: make('in', 'cube-in') };
     // Hover is read from where the mouse is, not from over / out events: after a re-fit the
     // scene is rebuilt under a mouse that has not moved, and no event would say so.
-    this.hover = data.rebuilt ? this.pointed() : null;
+    // (also on the first entry: the mouse may already be over a cube)
+    this.hover = this.pointed();
     const onMove = (p: Phaser.Input.Pointer) => this.setHover(p.wasTouch ? null : sideAt(this.layout, p.x, p.y));
     const onOut = () => this.setHover(null);
     this.input.on(Phaser.Input.Events.POINTER_MOVE, onMove);
@@ -99,11 +99,17 @@ export class SideSelectScene extends MenuScene {
       const box = (r: Phaser.Geom.Rectangle): Box => ({ x: r.x, y: r.y, w: r.width, h: r.height });
       const seen = (side: Side) => {
         const { hero, image, state } = this.cubes[side];
-        return { state, alpha: hero.alpha, cube: box(image.getBounds()), face: this.layout.spots[side].face, turtle: box(hero.getBounds()) };
+        return { state, alpha: hero.alpha, texture: hero.texture.key, cube: box(image.getBounds()), face: this.layout.spots[side].face, turtle: box(hero.getBounds()) };
       };
       Object.assign(window, {
         __cubicHeroes: () => ({ out: at('out'), in: at('in') }),
         __cubicSide: () => ({ width: W, height: H, zoom: z, hover: this.hover, touch: device().touch, out: seen('out'), in: seen('in') }),
+        /** Put a line in the status bar and say where it and its neighbours are (the panel above, LEAVE on its left). */
+        __cubicSideStatus: (msg: string) => {
+          this.setStatus(msg, ROLE.paper);
+          const leave = this.leave.probe();
+          return { status: { x: this.status.x, y: this.status.y, w: this.status.width, h: this.status.height }, panel: this.layout.panel, leave: { x: leave.x, y: leave.y, w: leave.width, h: leave.height }, mainX: this.main.probe().x };
+        },
       });
     }
 
@@ -115,9 +121,7 @@ export class SideSelectScene extends MenuScene {
     textCentred(this, this.slotX.in, 54, 'INSIDE THE CUBE', ROLE.dimOnDark);
 
     // the middle: where the arrows wait
-    const pw = 132;
-    const ph = 140;
-    const py = cubeTop - 14;
+    const { w: pw, h: ph, y: py } = this.layout.panel;
     slice(this, half - pw / 2, py, 'panel', pw, ph);
     this.centreTitle = textCentred(this, half, py + 20, 'PICK A SIDE');
     this.centreHint = textCentred(this, half, py + ph - 20, '', ROLE.dimOnLight);
@@ -141,7 +145,7 @@ export class SideSelectScene extends MenuScene {
     this.badge = this.add.image(0, 0, 'not-ready').setOrigin(0.5, 0).setDepth(5);
 
     // bottom bar: leave on the left, the one action that matters on the right
-    const barY = H - 30;
+    const barY = this.layout.barY;
     this.leave = new Button(this, { label: 'LEAVE', variant: 'light', width: 64, onClick: () => this.ctx.actions.onLeaveRoom() }).setPosition(8, barY);
     this.onLeave = false;
     this.main = new Button(this, { label: 'START', variant: 'in', width: 112, onClick: () => this.mainAction() }).setPosition(W - 120, barY);
@@ -175,6 +179,27 @@ export class SideSelectScene extends MenuScene {
     return key;
   }
 
+  /**
+   * A side's turtle as it waits: its first frame in stone grey (idleTone), fully opaque.
+   * Painted once into a plain texture (the Canvas renderer cannot tint a sprite).
+   */
+  private greyTurtle(side: Side): string {
+    const key = `player-${side}:idle`;
+    if (this.textures.exists(key)) return key;
+    const src = this.textures.get(`player-${side}`).getSourceImage() as HTMLImageElement;
+    const canvas = document.createElement('canvas');
+    canvas.width = TURTLE_ART;
+    canvas.height = TURTLE_ART;
+    const g = canvas.getContext('2d')!;
+    g.drawImage(src, 0, 0, TURTLE_ART, TURTLE_ART, 0, 0, TURTLE_ART, TURTLE_ART);
+    const image = g.getImageData(0, 0, TURTLE_ART, TURTLE_ART);
+    const px = image.data;
+    for (let i = 0; i < px.length; i += 4) [px[i], px[i + 1], px[i + 2]] = idleTone(px[i]!, px[i + 1]!, px[i + 2]!);
+    g.putImageData(image, 0, 0);
+    this.textures.addCanvas(key, canvas);
+    return key;
+  }
+
   /** The cube under the mouse right now, from the last place the browser saw it. */
   private pointed(): Side | null {
     const p = this.input.activePointer;
@@ -192,7 +217,7 @@ export class SideSelectScene extends MenuScene {
   }
 
   /**
-   * Every cube in its state: idle (the turtle waits, dimmed and still), hover (the mouse
+   * Every cube in its state: idle (the turtle waits, grey and still), hover (the mouse
    * is over a free side: the turtle wakes, a paper frame) or selected (the owner's frame).
    * The turtle is on the same spot in all three: the middle of its face.
    */
@@ -204,8 +229,9 @@ export class SideSelectScene extends MenuScene {
       cube.state = sideState(owner !== null, this.hover === side, touch);
       const look = turtleIn(this.layout, side, cube.state);
       cube.hero.setAlpha(look.alpha);
-      if (!look.moving) cube.hero.stop().setFrame(0);
+      if (!look.moving) cube.hero.stop();
       else if (!cube.hero.anims.isPlaying) cube.hero.play(`idle-${side}`);
+      if (look.grey) cube.hero.setTexture(this.greyTurtle(side));
       this.ring(side, owner ? (owner === 'host' ? ROLE.p1 : ROLE.p2) : null, cube.state === 'hover');
     }
   }
@@ -277,6 +303,13 @@ export class SideSelectScene extends MenuScene {
 
   private setStatus(msg: string, color: string): void {
     paint(this.status.setText(msg), color);
+    // A line too long for the bar (a long server error on the narrowest screen) loses whole
+    // words from its end, so it never runs under LEAVE.
+    const room = this.W - 128 - (this.leave.root.x + this.leave.width + 6);
+    for (let line = msg; this.status.width > room && line.includes(' '); ) {
+      line = line.slice(0, line.lastIndexOf(' '));
+      this.status.setText(`${line}...`);
+    }
     // right-aligned against the main button
     this.status.x = Math.round(this.W - 128 - this.status.width);
   }
