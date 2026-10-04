@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { after, before, beforeEach, test } from 'node:test';
 import { io, type Socket } from 'socket.io-client';
 import type { ClientToServer, Seat, ServerToClient, Side, StateUpdate } from '@cubic/shared';
-import { createApp, type App } from '../src/app';
+import { VOICE_LIMITS, createApp, type App } from '../src/app';
 import { LIMITS } from '../src/rooms';
 
 // What a hostile or unlucky client can do to a room over real sockets: a refresh in the
@@ -30,11 +30,15 @@ class Client {
   sock: Sock;
   seat!: Seat;
   states: StateUpdate[] = [];
+  signals: unknown[] = [];
+  chunks: { seq: unknown; mime: unknown; data: unknown }[] = [];
 
   constructor() {
     this.sock = io(url, { transports: ['websocket'], forceNew: true });
     socks.push(this.sock);
     this.sock.on('state', (u) => this.states.push(u));
+    this.sock.on('voice:signal', (m) => this.signals.push(m.data));
+    this.sock.on('voice:chunk', (c) => this.chunks.push(c));
   }
 
   private seated = (send: (ack: (r: Reply) => void) => void) =>
@@ -117,4 +121,76 @@ test('rate-limited moves are not broadcast, but the sender still gets every ack'
   const got = b.states.length - before;
   // only the moves the budget allowed (the burst plus the refill meanwhile) reach the partner
   assert.ok(got >= 1 && got <= LIMITS.moveBurst + 15, `the partner got ${got} state updates for ${N} moves`);
+});
+
+test('voice: nothing is relayed in the lobby', async () => {
+  const { a, b } = await pair(false);
+  a.sock.emit('voice:signal', { data: { relay: true } });
+  a.sock.emit('voice:chunk', { seq: 0, mime: 'audio/webm;codecs=opus', data: new ArrayBuffer(8) });
+  await sleep(150);
+  assert.deepEqual([b.signals.length, b.chunks.length], [0, 0]);
+});
+
+test('voice: well-formed signals and chunks are relayed in a game, junk is dropped', async () => {
+  const { a, b } = await pair(true);
+  const offer = { sdp: { type: 'offer', sdp: 'v=0' } };
+  const candidate = { candidate: { candidate: 'candidate:1 1 udp 1 127.0.0.1 9 typ host', sdpMid: '0', sdpMLineIndex: 0 } };
+  const junk: unknown[] = [
+    undefined,
+    null,
+    'text',
+    7,
+    [],
+    { data: 'text' },
+    { data: null },
+    { data: [] },
+    { data: {} },
+    { data: { evil: 1 } },
+    { data: { relay: 'yes' } },
+    { data: { sdp: 'v=0' } },
+    { data: { sdp: { type: 'rollback', sdp: 'v=0' } } },
+    { data: { sdp: { type: 'offer', sdp: 5 } } },
+    { data: { candidate: 'x' } },
+    { data: { sdp: { type: 'offer', sdp: 'x'.repeat(VOICE_LIMITS.signalMaxBytes) } } }, // too big
+  ];
+  for (const msg of junk) a.sock.emit('voice:signal', msg as { data: unknown });
+  for (const data of [offer, candidate, { relay: true }]) a.sock.emit('voice:signal', { data });
+  await until(() => b.signals.length >= 3, 'the three good signals');
+  await sleep(100);
+  assert.deepEqual(b.signals, [offer, candidate, { relay: true }]);
+
+  const mime = 'audio/webm;codecs=opus';
+  const bytes = new Uint8Array([1, 2, 3, 4]).buffer;
+  const bad: unknown[] = [
+    undefined,
+    { seq: 'zero', mime, data: bytes },
+    { seq: -1, mime, data: bytes },
+    { seq: 1.5, mime, data: bytes },
+    { seq: 0, mime: { evil: 1 }, data: bytes },
+    { seq: 0, mime: 'text/html', data: bytes },
+    { seq: 0, mime, data: { byteLength: 5 } }, // a plain object that only claims a size
+    { seq: 0, mime, data: 'text' },
+    { seq: 0, mime, data: new ArrayBuffer(0) },
+    { seq: 0, mime, data: new ArrayBuffer(VOICE_LIMITS.chunkMaxBytes + 1) },
+  ];
+  for (const msg of bad) a.sock.emit('voice:chunk', msg as never);
+  a.sock.emit('voice:chunk', { seq: 3, mime, data: bytes });
+  await until(() => b.chunks.length >= 1, 'the good chunk');
+  await sleep(100);
+  assert.equal(b.chunks.length, 1);
+  assert.deepEqual([b.chunks[0]!.seq, b.chunks[0]!.mime, [...new Uint8Array(b.chunks[0]!.data as ArrayBuffer)]], [3, mime, [1, 2, 3, 4]]);
+});
+
+test('voice: a flood of signals or chunks is cut off at the rate limit', async () => {
+  const { a, b } = await pair(true);
+  const N = 1000;
+  for (let i = 0; i < N; i++) a.sock.emit('voice:signal', { data: { relay: true } });
+  for (let i = 0; i < N; i++) a.sock.emit('voice:chunk', { seq: i, mime: 'audio/webm;codecs=opus', data: new ArrayBuffer(16) });
+  // a marker on another channel tells us the server has been through all of them
+  a.sock.emit('move', { dx: 1, dy: 0, seq: 1 });
+  await until(() => a.ack('out') === 1, 'the flood to be processed', 10_000);
+  await sleep(150);
+  // the burst, plus whatever was refilled while the flood was being read
+  assert.ok(b.signals.length >= 1 && b.signals.length <= VOICE_LIMITS.signalBurst * 2, `${b.signals.length} of ${N} signals relayed`);
+  assert.ok(b.chunks.length >= 1 && b.chunks.length <= VOICE_LIMITS.chunkBurst * 2, `${b.chunks.length} of ${N} chunks relayed`);
 });

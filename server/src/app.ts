@@ -8,7 +8,44 @@ import { Rooms, type Room } from './rooms';
 type Io = Server<ClientToServer, ServerToClient>;
 type Sock = Socket<ClientToServer, ServerToClient>;
 
-const VOICE_CHUNK_MAX = 64 * 1024;
+/**
+ * Voice relay limits, per socket (tests read these). A signal is an SDP offer or answer (a
+ * few KB), an ICE candidate or the relay switch; candidates come in a burst when a call
+ * starts. Relay chunks are 200 ms of Opus each, so five a second.
+ */
+export const VOICE_LIMITS = { signalMaxBytes: 16 * 1024, signalBurst: 60, signalPerSec: 20, chunkMaxBytes: 64 * 1024, chunkBurst: 20, chunkPerSec: 10 };
+/** The one format the client records for the relay (RELAY_MIME in client/src/voice/voice.ts). */
+const VOICE_MIMES = ['audio/webm;codecs=opus'];
+
+/** Allows `burst` at once, then `perSec` a second. Returns false when the message is over. */
+function bucket(burst: () => number, perSec: () => number): () => boolean {
+  let tokens = burst();
+  let at = Date.now();
+  return () => {
+    const now = Date.now();
+    tokens = Math.min(burst(), tokens + ((now - at) / 1000) * perSec());
+    at = now;
+    if (tokens < 1) return false;
+    tokens -= 1;
+    return true;
+  };
+}
+
+const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+
+/**
+ * Is this what the voice client sends (Signal in client/src/voice/voice.ts)? An SDP offer
+ * or answer, an ICE candidate, or the switch to the relay: nothing else, and not too big.
+ */
+export function validSignal(data: unknown): boolean {
+  if (!isObject(data)) return false;
+  const keys = Object.keys(data);
+  if (keys.length === 0 || keys.some((k) => k !== 'sdp' && k !== 'candidate' && k !== 'relay')) return false;
+  if ('sdp' in data && !(isObject(data.sdp) && (data.sdp.type === 'offer' || data.sdp.type === 'answer') && typeof data.sdp.sdp === 'string')) return false;
+  if ('candidate' in data && !(isObject(data.candidate) && typeof data.candidate.candidate === 'string')) return false;
+  if ('relay' in data && data.relay !== true) return false;
+  return JSON.stringify(data).length <= VOICE_LIMITS.signalMaxBytes;
+}
 /** Public STUN, always offered. The client keeps the same list as its fallback. */
 export const STUN_URLS = ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'];
 
@@ -270,10 +307,22 @@ export function createApp(opts: AppOptions = {}): App {
       if (room && s) room.quick(s, msg?.index);
     });
 
-    socket.on('voice:signal', (msg) => partner()?.emit('voice:signal', { data: msg?.data }));
+    // Voice is relayed only where the client uses it: between the two humans of a running
+    // game (that is when `voice:ready` goes out). Never in the lobby, never unchecked, and
+    // never faster than a real call needs.
+    const voiceOn = () => !!room && room.mode === 'friend' && room.phase === 'playing' && side() !== null;
+    const signalOk = bucket(() => VOICE_LIMITS.signalBurst, () => VOICE_LIMITS.signalPerSec);
+    const chunkOk = bucket(() => VOICE_LIMITS.chunkBurst, () => VOICE_LIMITS.chunkPerSec);
+    socket.on('voice:signal', (msg) => {
+      if (!voiceOn() || !validSignal(msg?.data) || !signalOk()) return;
+      partner()?.emit('voice:signal', { data: msg.data });
+    });
     socket.on('voice:chunk', (msg) => {
-      const size = (msg?.data as ArrayBuffer | undefined)?.byteLength ?? 0;
-      if (size > 0 && size <= VOICE_CHUNK_MAX) partner()?.emit('voice:chunk', msg);
+      // socket.io hands binary over as a Buffer: a plain object that only claims a size is not one
+      const data: unknown = msg?.data;
+      if (!voiceOn() || !Buffer.isBuffer(data) || data.length === 0 || data.length > VOICE_LIMITS.chunkMaxBytes) return;
+      if (!Number.isSafeInteger(msg.seq) || msg.seq < 0 || !VOICE_MIMES.includes(msg.mime) || !chunkOk()) return;
+      partner()?.emit('voice:chunk', { seq: msg.seq, mime: msg.mime, data: data as unknown as ArrayBuffer });
     });
 
     socket.on('dev', (cmd, ack) => {
