@@ -1,4 +1,4 @@
-import type { ChatMessage, FaceId, RoomMode, Side } from '@cubic/shared';
+import type { ChatMessage, FaceId, Role, RoomMode, Side } from '@cubic/shared';
 
 // THE UI HOOK INTERFACE.
 // Everything outside the Phaser canvas (lobby, HUD, chat, voice controls, win screen) is a
@@ -14,6 +14,12 @@ export interface UIActions {
   onJoinRoom(code: string): void;
   /** Phase 2. `side` is the side the human wants to play. */
   onPlayWithAI(side: Side): void;
+  /** Lobby: take a side, or null to step back to the middle. Refused if the partner has it. */
+  onPickSide(side: Side | null): void;
+  /** Lobby, guest only: ready up (needs a side) or take it back. */
+  onSetReady(ready: boolean): void;
+  /** Lobby, host only: start the game. Refused until `lobby.startBlocker` is null. */
+  onStartGame(): void;
   onLeaveRoom(): void;
   onSendChat(text: string): void;
   /** Ask for the microphone (must be called from a click). */
@@ -33,6 +39,27 @@ export type LobbyStatus =
   | 'waiting'
   | 'partner-joined'
   | 'partner-left';
+
+/** One player in the lobby. */
+export interface LobbyPlayer {
+  connected: boolean;
+  isAI: boolean;
+  /** The side they picked, or null while they stand in the middle. */
+  side: Side | null;
+  /** Only the guest readies up. */
+  ready: boolean;
+}
+
+/** The side select screen. It is the server's view: both players always see the same. */
+export interface LobbyState {
+  /** You. The host is P1 and starts the game; the guest is P2 and readies up. */
+  role: Role;
+  host: LobbyPlayer;
+  /** Null until someone joins with the code. */
+  guest: LobbyPlayer | null;
+  /** Why the host cannot start yet, or null when Start is live. */
+  startBlocker: string | null;
+}
 
 export interface EdgeLabel {
   face: FaceId;
@@ -84,6 +111,8 @@ export interface UIState {
   mode: RoomMode | null;
   side: Side | null;
   aiAvailable: boolean;
+  /** Set while you are in a room whose game has not started (pick sides, ready, start). */
+  lobby: LobbyState | null;
   chat: ChatMessage[];
   /** The AI partner is thinking. */
   partnerTyping: boolean;

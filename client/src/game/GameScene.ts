@@ -52,13 +52,14 @@ export class GameScene extends Phaser.Scene {
   private nextMoveAt = 0;
   private input_: GameInput | null = null;
 
-  constructor() {
+  /** `makeArt` lets the caller plug in real art; the default is the code-drawn placeholder. */
+  constructor(private makeArt: (textures: Phaser.Textures.TextureManager) => ArtProvider = (textures) => new CodeArt(textures)) {
     super('game');
   }
 
   create(): void {
-    this.art = new CodeArt(this.textures);
-    this.cameras.main.setBackgroundColor('#05070D');
+    this.art = this.makeArt(this.textures);
+    this.cameras.main.setBackgroundColor('#2e222f');
     const down = (e: KeyboardEvent) => this.keyDown(e);
     const up = (e: KeyboardEvent) => this.keyUp(e);
     const blur = () => this.releaseAll();
@@ -201,10 +202,10 @@ export class GameScene extends Phaser.Scene {
         for (let sx = 0; sx < GRID; sx++) {
           const d = Math.hypot(sx - px, sy - py);
           const dark = Phaser.Math.Clamp((d - LIGHT_NEAR) / (LIGHT_FAR - LIGHT_NEAR), 0, 1) * DARK_MAX;
-          if (dark > 0) view.add(this.add.rectangle(sx * TILE_PX, sy * TILE_PX, TILE_PX, TILE_PX, 0x05070d, dark).setOrigin(0, 0));
+          if (dark > 0) view.add(this.add.rectangle(sx * TILE_PX, sy * TILE_PX, TILE_PX, TILE_PX, 0x2e222f, dark).setOrigin(0, 0));
         }
       }
-      view.add(this.add.rectangle(px * TILE_PX - 4, py * TILE_PX - 4, TILE_PX + 8, TILE_PX + 8, 0xf2c14e, 0.12).setOrigin(0, 0));
+      view.add(this.add.rectangle(px * TILE_PX - 4, py * TILE_PX - 4, TILE_PX + 8, TILE_PX + 8, 0xf9c22b, 0.12).setOrigin(0, 0));
     } else {
       view.add(this.add.rectangle(px * TILE_PX + 3, py * TILE_PX + 14, 10, 2, 0x000000, 0.25).setOrigin(0, 0));
     }

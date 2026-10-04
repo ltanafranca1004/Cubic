@@ -47,9 +47,29 @@ export class HotSeat {
       net.createRoom();
       if (!(await until(() => !!net.code || !!net.error, 5000)) || !net.code) return net.error ?? 'Could not create a room.';
     }
-    const seats = net.room?.seats;
-    if (seats?.out.taken && seats.in.taken) return 'This room is full: hot-seat needs its free seat.';
-    return this.connect(net.code, null);
+    if (net.room?.members.host && net.room.members.guest) return 'This room is full: hot-seat needs its free seat.';
+    const error = await this.connect(net.code, null);
+    if (error || net.room?.phase !== 'lobby') return error;
+    // Still in the lobby: walk both seats through it (the app keeps its side, or takes the
+    // outside; the second socket takes the other one and readies), then start the game.
+    const mine: Side = net.side ?? 'out';
+    if (!net.side) net.pickSide(mine);
+    await this.lobby('lobby:pick', { side: mine === 'out' ? 'in' : 'out' });
+    await this.lobby('lobby:ready', { ready: true });
+    if (!(await until(() => net.side === mine && !!net.room?.members.guest?.ready, 3000))) return net.error ?? 'Could not set the lobby up.';
+    this.side = mine === 'out' ? 'in' : 'out';
+    net.startGame();
+    this.onChange();
+    return null;
+  }
+
+  private lobby(event: 'lobby:pick', msg: { side: Side }): Promise<void>;
+  private lobby(event: 'lobby:ready', msg: { ready: boolean }): Promise<void>;
+  private lobby(event: 'lobby:pick' | 'lobby:ready', msg: { side: Side } | { ready: boolean }): Promise<void> {
+    return new Promise((done) => {
+      if (event === 'lobby:pick') this.sock?.emit(event, msg as { side: Side }, () => done());
+      else this.sock?.emit(event, msg as { ready: boolean }, () => done());
+    });
   }
 
   /** Open the second socket and join `code`, or rejoin it with a saved `token`. */

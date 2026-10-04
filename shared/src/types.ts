@@ -103,11 +103,32 @@ export type GameEvent =
 
 export type RoomMode = 'friend' | 'ai';
 
+/** Who made the room (host) and who joined it (guest). Only the host can start the game. */
+export type Role = 'host' | 'guest';
+export const ROLES: readonly Role[] = ['host', 'guest'];
+
+/** lobby: picking sides and readying up. playing: the game runs and the sides are locked. */
+export type RoomPhase = 'lobby' | 'playing';
+
+/** One person (or the AI) in a room, as everyone in the room sees them. */
+export interface MemberInfo {
+  /** Stable within the room. Compare with `Seat.id` to find yourself. */
+  id: number;
+  connected: boolean;
+  isAI: boolean;
+  /** The side they picked, or null while they have not picked one. */
+  side: Side | null;
+  /** The guest pressed Ready. Always false for the host. */
+  ready: boolean;
+}
+
 export interface RoomInfo {
   code: string;
   mode: RoomMode;
-  /** Seat status per side. */
+  phase: RoomPhase;
+  /** Seat status per side: who holds (or, in the lobby, has picked) it. */
   seats: Record<Side, { taken: boolean; connected: boolean; isAI: boolean }>;
+  members: Record<Role, MemberInfo | null>;
 }
 
 export interface ChatMessage {
@@ -128,7 +149,11 @@ export type Ack<T> = (res: ({ ok: true } & T) | { ok: false; error: string }) =>
 /** Returned on create/join. Keep `token` (sessionStorage) to rejoin after a disconnect. */
 export interface Seat {
   code: string;
-  side: Side;
+  /** Your member id: find yourself in `room.members` with it (roles can change). */
+  id: number;
+  role: Role;
+  /** Null in the lobby until you pick a side. */
+  side: Side | null;
   token: string;
   room: RoomInfo;
   state: GameState;
@@ -184,6 +209,12 @@ export interface ClientToServer {
   'room:createAI': (msg: { side: Side }, ack: Ack<Seat>) => void;
   'room:rejoin': (msg: { code: string; token: string }, ack: Ack<Seat>) => void;
   'room:leave': () => void;
+  /** Lobby: take a side, or null to step back to the middle. Fails if the partner has it. */
+  'lobby:pick': (msg: { side: Side | null }, ack?: Ack<object>) => void;
+  /** Lobby, guest only: ready up (needs a side) or take it back. */
+  'lobby:ready': (msg: { ready: boolean }, ack?: Ack<object>) => void;
+  /** Lobby, host only: start once both sides are picked and the guest is ready. */
+  'lobby:start': (ack?: Ack<object>) => void;
   /** After a win: start a fresh game in the same room. */
   'room:restart': () => void;
   /** dx,dy in SCREEN space of the sender: exactly one of them is -1 or 1. */

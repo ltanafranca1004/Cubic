@@ -32,6 +32,8 @@ class Client {
   };
   create = () => new Promise<Seat>((ok) => this.sock.emit('room:create', (r) => ok(this.seat(r))));
   join = (code: string) => new Promise<Seat>((ok) => this.sock.emit('room:join', { code }, (r) => ok(this.seat(r))));
+  lobby = (send: (ack: (r: { ok: true } | { ok: false; error: string }) => void) => void) =>
+    new Promise<void>((ok, no) => send((r) => (r.ok ? ok() : no(new Error(r.error)))));
   dev = (cmd: DevCommand) => new Promise<Result>((ok) => this.sock.emit('dev', cmd, ok));
 
   async until(cond: () => boolean, what: string): Promise<void> {
@@ -56,6 +58,11 @@ async function room(devCommands: boolean | undefined) {
   socks.push(a.sock, b.sock);
   const seat = await a.create();
   await b.join(seat.code);
+  // through the lobby: a takes the outside, b the inside, b readies, a starts
+  await a.lobby((ack) => a.sock.emit('lobby:pick', { side: 'out' }, ack));
+  await b.lobby((ack) => b.sock.emit('lobby:pick', { side: 'in' }, ack));
+  await b.lobby((ack) => b.sock.emit('lobby:ready', { ready: true }, ack));
+  await a.lobby((ack) => a.sock.emit('lobby:start', ack));
   return { app, url, a, b };
 }
 

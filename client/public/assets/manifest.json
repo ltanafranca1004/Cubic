@@ -1,8 +1,643 @@
 {
   "tileSize": 16,
-  "tilesets": {},
-  "objects": {},
-  "items": {},
-  "players": {},
+  "tilesets": {
+    "out-1": {
+      "image": "tiles/out-1.png",
+      "tiles": {
+        "floor": [
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          0,
+          0,
+          3,
+          0,
+          0,
+          0,
+          0,
+          4
+        ],
+        "wall": [
+          5,
+          6,
+          7
+        ],
+        "tree": [
+          8,
+          9,
+          10
+        ],
+        "water": [
+          11,
+          12,
+          13,
+          14
+        ]
+      }
+    },
+    "in-1": {
+      "image": "tiles/in-1.png",
+      "tiles": {
+        "floor": [
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          0,
+          0,
+          3,
+          0,
+          0,
+          0,
+          0,
+          4
+        ],
+        "wall": [
+          5,
+          6,
+          7
+        ],
+        "tree": [
+          8,
+          9,
+          10
+        ],
+        "water": [
+          11,
+          12,
+          13,
+          14
+        ]
+      }
+    },
+    "out-2": {
+      "image": "tiles/out-2.png",
+      "tiles": {
+        "floor": [
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          0,
+          0,
+          3,
+          0,
+          0,
+          0,
+          0,
+          4
+        ],
+        "wall": [
+          5,
+          6,
+          7
+        ],
+        "tree": [
+          8,
+          9,
+          10
+        ],
+        "water": [
+          11,
+          12,
+          13,
+          14
+        ]
+      }
+    },
+    "in-2": {
+      "image": "tiles/in-2.png",
+      "tiles": {
+        "floor": [
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          0,
+          0,
+          3,
+          0,
+          0,
+          0,
+          0,
+          4
+        ],
+        "wall": [
+          5,
+          6,
+          7
+        ],
+        "tree": [
+          8,
+          9,
+          10
+        ],
+        "water": [
+          11,
+          12,
+          13,
+          14
+        ]
+      }
+    },
+    "out-3": {
+      "image": "tiles/out-3.png",
+      "tiles": {
+        "floor": [
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          0,
+          0,
+          3,
+          0,
+          0,
+          0,
+          0,
+          4
+        ],
+        "wall": [
+          5,
+          6,
+          7
+        ],
+        "tree": [
+          8,
+          9,
+          10
+        ],
+        "water": [
+          11,
+          12,
+          13,
+          14
+        ]
+      }
+    },
+    "in-3": {
+      "image": "tiles/in-3.png",
+      "tiles": {
+        "floor": [
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          0,
+          0,
+          3,
+          0,
+          0,
+          0,
+          0,
+          4
+        ],
+        "wall": [
+          5,
+          6,
+          7
+        ],
+        "tree": [
+          8,
+          9,
+          10
+        ],
+        "water": [
+          11,
+          12,
+          13,
+          14
+        ]
+      }
+    },
+    "out-4": {
+      "image": "tiles/out-4.png",
+      "tiles": {
+        "floor": [
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          0,
+          0,
+          3,
+          0,
+          0,
+          0,
+          0,
+          4
+        ],
+        "wall": [
+          5,
+          6,
+          7
+        ],
+        "tree": [
+          8,
+          9,
+          10
+        ],
+        "water": [
+          11,
+          12,
+          13,
+          14
+        ]
+      }
+    },
+    "in-4": {
+      "image": "tiles/in-4.png",
+      "tiles": {
+        "floor": [
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          0,
+          0,
+          3,
+          0,
+          0,
+          0,
+          0,
+          4
+        ],
+        "wall": [
+          5,
+          6,
+          7
+        ],
+        "tree": [
+          8,
+          9,
+          10
+        ],
+        "water": [
+          11,
+          12,
+          13,
+          14
+        ]
+      }
+    },
+    "out-5": {
+      "image": "tiles/out-5.png",
+      "tiles": {
+        "floor": [
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          0,
+          0,
+          3,
+          0,
+          0,
+          0,
+          0,
+          4
+        ],
+        "wall": [
+          5,
+          6,
+          7
+        ],
+        "tree": [
+          8,
+          9,
+          10
+        ],
+        "water": [
+          11,
+          12,
+          13,
+          14
+        ]
+      }
+    },
+    "in-5": {
+      "image": "tiles/in-5.png",
+      "tiles": {
+        "floor": [
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          0,
+          0,
+          3,
+          0,
+          0,
+          0,
+          0,
+          4
+        ],
+        "wall": [
+          5,
+          6,
+          7
+        ],
+        "tree": [
+          8,
+          9,
+          10
+        ],
+        "water": [
+          11,
+          12,
+          13,
+          14
+        ]
+      }
+    },
+    "out-6": {
+      "image": "tiles/out-6.png",
+      "tiles": {
+        "floor": [
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          0,
+          0,
+          3,
+          0,
+          0,
+          0,
+          0,
+          4
+        ],
+        "wall": [
+          5,
+          6,
+          7
+        ],
+        "tree": [
+          8,
+          9,
+          10
+        ],
+        "water": [
+          11,
+          12,
+          13,
+          14
+        ]
+      }
+    },
+    "in-6": {
+      "image": "tiles/in-6.png",
+      "tiles": {
+        "floor": [
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          0,
+          0,
+          3,
+          0,
+          0,
+          0,
+          0,
+          4
+        ],
+        "wall": [
+          5,
+          6,
+          7
+        ],
+        "tree": [
+          8,
+          9,
+          10
+        ],
+        "water": [
+          11,
+          12,
+          13,
+          14
+        ]
+      }
+    }
+  },
+  "objects": {
+    "door": {
+      "image": "sprites/objects.png",
+      "frames": {
+        "closed": 0,
+        "open": 1,
+        "default": 0
+      }
+    },
+    "plate": {
+      "image": "sprites/objects.png",
+      "frames": {
+        "off": 2,
+        "on": 3,
+        "default": 2
+      },
+      "sides": {
+        "in": {
+          "off": 4,
+          "on": 5,
+          "default": 4
+        }
+      }
+    },
+    "crystal": {
+      "image": "sprites/objects.png",
+      "frames": {
+        "idle": [
+          6,
+          7
+        ],
+        "taken": 8,
+        "default": [
+          6,
+          7
+        ]
+      }
+    },
+    "portal": {
+      "image": "sprites/objects.png",
+      "frames": {
+        "closed": 9,
+        "open": [
+          10,
+          11,
+          12,
+          13
+        ],
+        "default": 9
+      }
+    },
+    "target": {
+      "image": "sprites/objects.png",
+      "frames": {
+        "default": 14
+      }
+    },
+    "unknown": {
+      "image": "sprites/objects.png",
+      "frames": {
+        "default": 15
+      }
+    }
+  },
+  "items": {
+    "rose": {
+      "image": "sprites/items.png",
+      "frame": 0
+    },
+    "key": {
+      "image": "sprites/items.png",
+      "frame": 1
+    },
+    "default": {
+      "image": "sprites/items.png",
+      "frame": 2
+    }
+  },
+  "players": {
+    "out": {
+      "image": "sprites/player-out.png",
+      "idle": [
+        0,
+        1
+      ],
+      "walk": [
+        2,
+        3
+      ]
+    },
+    "in": {
+      "image": "sprites/player-in.png",
+      "idle": [
+        0,
+        1
+      ],
+      "walk": [
+        2,
+        3
+      ]
+    }
+  },
+  "ui": {
+    "icons": [
+      "mic",
+      "micOff",
+      "speaker",
+      "music",
+      "sfx",
+      "check",
+      "cross",
+      "clock",
+      "crown",
+      "lock",
+      "chat",
+      "ai",
+      "left",
+      "hand",
+      "right"
+    ]
+  },
   "audio": {}
 }

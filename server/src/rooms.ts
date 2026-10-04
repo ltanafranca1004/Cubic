@@ -11,8 +11,11 @@ import {
   type ChatMessage,
   type GameEvent,
   type GameState,
+  type MemberInfo,
+  type Role,
   type RoomInfo,
   type RoomMode,
+  type RoomPhase,
   type Seat,
   type Side,
   type StateUpdate,
@@ -21,22 +24,33 @@ import {
 // Rooms: the server owns each room's GameState and is the only thing that changes it.
 // Transport-agnostic: index/app wires sockets to these methods, the AI partner calls the
 // same ones, so a bot can do nothing a human cannot.
+//
+// A friend room starts in the LOBBY: the host (who made it) and the guest (who joined)
+// each pick a side, the guest readies up and the host starts. From then on the room is
+// PLAYING and the sides are locked. AI rooms skip the lobby.
 
 const CODE_LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // no I or O: they read as 1 and 0
 const CODE_LEN = 4;
-/** How long a disconnected player's seat is held for them. */
+/** How long a disconnected player's seat is held for them once the game is running. */
 export const SEAT_HOLD_MS = 60_000;
 const CHAT_HISTORY = 60;
 const CHAT_WINDOW_MS = 5_000;
 const CHAT_PER_WINDOW = 5;
-/** Move budget: a burst of moveBurst, refilled one per moveRefillMs (~11 moves/s). */
-/** Tunable (tests lift it). */
-export const LIMITS = { moveBurst: 5, moveRefillMs: 90 };
+/**
+ * Tunable (tests change these). Move budget: a burst of moveBurst, refilled one per
+ * moveRefillMs (~11 moves/s). lobbyHoldMs: how long a place in the lobby is held after a
+ * disconnect (short: the room is blocked for a new guest meanwhile).
+ */
+export const LIMITS = { moveBurst: 5, moveRefillMs: 90, lobbyHoldMs: 15_000 };
 
-interface SeatData {
+interface Member {
+  id: number;
   token: string;
+  role: Role;
   isAI: boolean;
   connected: boolean;
+  side: Side | null;
+  ready: boolean;
   /** Highest move seq processed (echoed back for prediction). */
   ack: number;
   budget: number;
@@ -44,6 +58,9 @@ interface SeatData {
   chatTimes: number[];
   dropTimer: NodeJS.Timeout | null;
 }
+
+/** A member by id, or whoever holds a side. */
+type Who = number | Side;
 
 export interface RoomListener {
   onState?(update: StateUpdate): void;
@@ -56,11 +73,12 @@ export interface RoomListener {
 export class Room {
   state: GameState;
   readonly chat: ChatMessage[] = [];
-  private seats: Partial<Record<Side, SeatData>> = {};
+  phase: RoomPhase;
+  private members: Member[] = [];
   private listeners = new Set<RoomListener>();
   private chatId = 0;
+  private memberId = 0;
   private ticker: NodeJS.Timeout | null = null;
-  private everFull = false;
 
   constructor(
     readonly code: string,
@@ -69,8 +87,12 @@ export class Room {
     private readonly now: () => number = Date.now,
   ) {
     this.state = createGame(this.now());
+    // An AI game has nothing to wait for: the human chose a side with the button.
+    this.phase = mode === 'ai' ? 'playing' : 'lobby';
     if (needsTick()) {
-      this.ticker = setInterval(() => this.emitState(tick(this.state, TICK_MS, this.now())), TICK_MS);
+      this.ticker = setInterval(() => {
+        if (this.phase === 'playing') this.emitState(tick(this.state, TICK_MS, this.now()));
+      }, TICK_MS);
       this.ticker.unref();
     }
   }
@@ -80,99 +102,233 @@ export class Room {
     return () => this.listeners.delete(l);
   }
 
+  private find(who: Who): Member | undefined {
+    return typeof who === 'number' ? this.members.find((m) => m.id === who) : this.members.find((m) => m.side === who);
+  }
+
+  private byRole(role: Role): Member | undefined {
+    return this.members.find((m) => m.role === role);
+  }
+
   info(): RoomInfo {
     const seat = (side: Side) => {
-      const s = this.seats[side];
-      return { taken: !!s, connected: !!s?.connected, isAI: !!s?.isAI };
+      const m = this.find(side);
+      return { taken: !!m, connected: !!m?.connected, isAI: !!m?.isAI };
     };
-    return { code: this.code, mode: this.mode, seats: { out: seat('out'), in: seat('in') } };
+    const member = (role: Role): MemberInfo | null => {
+      const m = this.byRole(role);
+      return m ? { id: m.id, connected: m.connected, isAI: m.isAI, side: m.side, ready: m.ready } : null;
+    };
+    return {
+      code: this.code,
+      mode: this.mode,
+      phase: this.phase,
+      seats: { out: seat('out'), in: seat('in') },
+      members: { host: member('host'), guest: member('guest') },
+    };
   }
 
   acks(): Record<Side, number> {
-    return { out: this.seats.out?.ack ?? 0, in: this.seats.in?.ack ?? 0 };
+    return { out: this.find('out')?.ack ?? 0, in: this.find('in')?.ack ?? 0 };
+  }
+
+  /** Both places are taken (a held place counts). */
+  isFull(): boolean {
+    return this.members.length >= 2;
   }
 
   freeSide(): Side | null {
-    return SIDES.find((s) => !this.seats[s]) ?? null;
+    return SIDES.find((s) => !this.find(s)) ?? null;
   }
 
-  sideOfToken(token: string): Side | null {
-    return SIDES.find((s) => this.seats[s]?.token === token) ?? null;
+  idOfToken(token: string): number | null {
+    return this.members.find((m) => m.token === token)?.id ?? null;
+  }
+
+  sideOf(id: number): Side | null {
+    return this.find(id)?.side ?? null;
   }
 
   isConnected(side: Side): boolean {
-    return !!this.seats[side]?.connected;
+    return !!this.find(side)?.connected;
   }
 
-  /** Take a free seat. */
+  private add(isAI: boolean, side: Side | null): Member {
+    if (this.isFull()) throw new Error('That room is full.');
+    const m: Member = {
+      id: ++this.memberId,
+      token: randomBytes(16).toString('hex'),
+      role: this.byRole('host') ? 'guest' : 'host',
+      isAI,
+      connected: true,
+      side,
+      ready: false,
+      ack: 0,
+      budget: LIMITS.moveBurst,
+      budgetAt: this.now(),
+      chatTimes: [],
+      dropTimer: null,
+    };
+    this.members.push(m);
+    this.seatPlayer(m);
+    return m;
+  }
+
+  /** Copy a member's presence onto the player they control. */
+  private seatPlayer(m: Member): void {
+    if (!m.side) return;
+    const player = this.state.players[m.side];
+    player.connected = m.connected;
+    player.isAI = m.isAI;
+  }
+
+  /**
+   * Come into the room. In the lobby you arrive with no side (host first, then guest).
+   * If the game is already running you take the seat that is free.
+   */
+  join(isAI = false): Seat {
+    const m = this.add(isAI, this.phase === 'playing' ? this.freeSide() : null);
+    this.emitRoom();
+    this.emitState([]);
+    return this.seatView(m);
+  }
+
+  /** Take a seat directly, skipping the lobby (AI games, tests). The game starts when both seats are taken. */
   sit(side: Side, isAI = false): Seat {
-    if (this.seats[side]) throw new Error('seat taken');
-    const token = randomBytes(16).toString('hex');
-    this.seats[side] = { token, isAI, connected: true, ack: 0, budget: LIMITS.moveBurst, budgetAt: this.now(), chatTimes: [], dropTimer: null };
-    const player = this.state.players[side];
-    player.connected = true;
-    player.isAI = isAI;
-    if (!this.everFull && this.seats.out && this.seats.in) {
-      this.everFull = true;
+    if (this.find(side)) throw new Error('seat taken');
+    const m = this.add(isAI, side);
+    if (this.find('out') && this.find('in')) {
+      this.phase = 'playing';
       this.state.startedAt = this.now(); // the clock starts when both are here
     }
     this.emitRoom();
     this.emitState([]);
-    return this.seatView(side);
+    return this.seatView(m);
   }
+
+  // ---------- lobby ----------
+
+  private inLobby(id: number): Member {
+    const m = this.find(id);
+    if (!m) throw new Error('You are not in this room.');
+    if (this.phase !== 'lobby') throw new Error('The game has already started.');
+    return m;
+  }
+
+  /** Lobby: take a side, or null to step back to the middle. Both players cannot hold the same side. */
+  pick(id: number, side: Side | null): void {
+    const m = this.inLobby(id);
+    if (side !== null && side !== 'out' && side !== 'in') throw new Error('No such side.');
+    if (m.side === side) return;
+    if (side && this.find(side)) throw new Error('Your partner already picked that side.');
+    m.side = side;
+    if (m.role === 'guest') m.ready = false; // a new pick has to be confirmed again
+    this.emitRoom();
+  }
+
+  /** Lobby: the guest readies up (needs a side) or takes it back. */
+  setReady(id: number, ready: boolean): void {
+    const m = this.inLobby(id);
+    if (m.role !== 'guest') throw new Error('The host starts the game. Only the guest readies up.');
+    if (ready && !m.side) throw new Error('Pick a side first.');
+    if (m.ready === !!ready) return;
+    m.ready = !!ready;
+    this.emitRoom();
+  }
+
+  /** Why the host cannot start yet, or null when everything is in place. */
+  startBlocker(): string | null {
+    const host = this.byRole('host');
+    const guest = this.byRole('guest');
+    if (this.phase !== 'lobby') return 'The game has already started.';
+    if (!guest || !guest.connected) return 'Waiting for a second player.';
+    if (!host?.side || !guest.side) return 'Both players need to pick a side.';
+    if (!guest.ready) return 'Your partner is not ready yet.';
+    return null;
+  }
+
+  /** Lobby: the host starts the game. The sides are locked from here on. */
+  start(id: number): void {
+    const m = this.inLobby(id);
+    if (m.role !== 'host') throw new Error('Only the host can start the game.');
+    const blocker = this.startBlocker();
+    if (blocker) throw new Error(blocker);
+    this.phase = 'playing';
+    this.state = createGame(this.now());
+    for (const x of this.members) this.seatPlayer(x);
+    this.emitRoom();
+    this.emitState([]);
+  }
+
+  // ---------- coming and going ----------
 
   /** A player came back with their token. */
-  resume(side: Side): Seat {
-    const seat = this.seats[side]!;
-    if (seat.dropTimer) clearTimeout(seat.dropTimer);
-    seat.dropTimer = null;
-    seat.connected = true;
-    this.state.players[side].connected = true;
+  resume(id: number): Seat {
+    const m = this.find(id);
+    if (!m) throw new Error('That room is gone.');
+    if (m.dropTimer) clearTimeout(m.dropTimer);
+    m.dropTimer = null;
+    m.connected = true;
+    this.seatPlayer(m);
     this.emitRoom();
     this.emitState([]);
-    return this.seatView(side);
+    return this.seatView(m);
   }
 
-  /** Socket dropped: hold the seat for a while so a refresh can rejoin. */
-  drop(side: Side): void {
-    const seat = this.seats[side];
-    if (!seat) return;
-    seat.connected = false;
-    this.state.players[side].connected = false;
-    if (seat.dropTimer) clearTimeout(seat.dropTimer);
-    seat.dropTimer = setTimeout(() => this.leave(side), SEAT_HOLD_MS);
-    seat.dropTimer.unref();
+  /** Socket dropped: hold the place for a while so a refresh can rejoin. */
+  drop(who: Who): void {
+    const m = this.find(who);
+    if (!m) return;
+    m.connected = false;
+    if (this.phase === 'lobby') {
+      // Nobody can start a game with someone who is not there: their pick and ready go.
+      m.ready = false;
+      m.side = null;
+    } else this.seatPlayer(m);
+    if (m.dropTimer) clearTimeout(m.dropTimer);
+    m.dropTimer = setTimeout(() => this.leave(m.id), this.phase === 'lobby' ? LIMITS.lobbyHoldMs : SEAT_HOLD_MS);
+    m.dropTimer.unref();
     this.emitRoom();
     this.emitState([]);
   }
 
-  /** Give the seat up for good. */
-  leave(side: Side): void {
-    const seat = this.seats[side];
-    if (!seat) return;
-    if (seat.dropTimer) clearTimeout(seat.dropTimer);
-    delete this.seats[side];
-    this.state.players[side].connected = false;
+  /** Give the place up for good. If the host goes, whoever is left becomes the host. */
+  leave(who: Who): void {
+    const m = this.find(who);
+    if (!m) return;
+    if (m.dropTimer) clearTimeout(m.dropTimer);
+    this.members = this.members.filter((x) => x !== m);
+    if (m.side) this.state.players[m.side].connected = false;
+    if (!this.members.some((x) => !x.isAI)) {
+      this.close();
+      return;
+    }
+    const rest = this.members[0]!;
+    rest.role = 'host';
+    rest.ready = false;
     this.emitRoom();
     this.emitState([]);
-    const humans = SIDES.filter((s) => this.seats[s] && !this.seats[s]!.isAI);
-    if (humans.length === 0) this.close();
   }
 
   close(): void {
     if (this.ticker) clearInterval(this.ticker);
-    for (const s of SIDES) if (this.seats[s]?.dropTimer) clearTimeout(this.seats[s]!.dropTimer!);
-    this.seats = {};
+    for (const m of this.members) if (m.dropTimer) clearTimeout(m.dropTimer);
+    this.members = [];
     for (const l of this.listeners) l.onClosed?.();
     this.listeners.clear();
     this.onEmpty(this);
   }
 
-  private seatView(side: Side): Seat {
-    return { code: this.code, side, token: this.seats[side]!.token, room: this.info(), state: this.state, chat: this.chat };
+  private seatView(m: Member): Seat {
+    return { code: this.code, id: m.id, role: m.role, side: m.side, token: m.token, room: this.info(), state: this.state, chat: this.chat };
   }
 
-  private spend(seat: SeatData): boolean {
+  /** Whoever holds `side`, once the game is running (nothing moves in the lobby). */
+  private playing(side: Side): Member | undefined {
+    return this.phase === 'playing' ? this.find(side) : undefined;
+  }
+
+  private spend(seat: Member): boolean {
     const now = this.now();
     seat.budget = Math.min(LIMITS.moveBurst, seat.budget + (now - seat.budgetAt) / LIMITS.moveRefillMs);
     seat.budgetAt = now;
@@ -183,7 +339,7 @@ export class Room {
 
   /** Validated move. `seq` is echoed back so the mover can reconcile its prediction. */
   move(side: Side, dx: number, dy: number, seq = 0): GameEvent[] {
-    const seat = this.seats[side];
+    const seat = this.playing(side);
     if (!seat) return [];
     if (seq > seat.ack) seat.ack = seq;
     const events = this.spend(seat) ? applyMove(this.state, side, dx, dy, this.now()) : [];
@@ -192,7 +348,7 @@ export class Room {
   }
 
   interact(side: Side, seq = 0): GameEvent[] {
-    const seat = this.seats[side];
+    const seat = this.playing(side);
     if (!seat) return [];
     if (seq > seat.ack) seat.ack = seq;
     const events = this.spend(seat) ? applyInteract(this.state, side, this.now()) : [];
@@ -202,7 +358,7 @@ export class Room {
 
   /** Chat line. Returns the stored message, or null if it was empty or rate limited. */
   say(side: Side, text: string): ChatMessage | null {
-    const seat = this.seats[side];
+    const seat = this.playing(side);
     if (!seat || typeof text !== 'string') return null;
     const clean = text.replace(/\s+/g, ' ').trim().slice(0, CHAT_MAX_LEN);
     if (!clean) return null;
@@ -222,15 +378,11 @@ export class Room {
     for (const l of this.listeners) l.onTyping?.(side, on);
   }
 
-  /** New game in the same room (after a win). */
+  /** New game in the same room (after a win). Everyone keeps their side. */
   restart(): void {
-    if (this.state.wonAt === null) return;
-    const old = this.state;
+    if (this.phase !== 'playing' || this.state.wonAt === null) return;
     this.state = createGame(this.now());
-    for (const s of SIDES) {
-      this.state.players[s].connected = old.players[s].connected;
-      this.state.players[s].isAI = old.players[s].isAI;
-    }
+    for (const m of this.members) this.seatPlayer(m);
     this.emitState([]);
   }
 

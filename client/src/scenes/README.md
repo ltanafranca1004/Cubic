@@ -1,28 +1,55 @@
 # /client/src/scenes (owner: friend 2)
 
-Extra Phaser 4 scenes for polish: title/intro, face-change flourish, win cinematic,
-particles, screen shake. The playable scene itself is `/client/src/game/GameScene.ts`
-(core team); do not edit it, layer on top of it.
+Phaser 4 scenes that are not the game itself. The playable scene is
+`/client/src/game/GameScene.ts` (core team); do not edit it, layer on top of it.
+
+## The stage: menus and backdrop
+
+`stage.ts` runs one full-window Phaser canvas behind the DOM UI. `ui/cubicUI.ts` creates
+it and feeds it the `UIState`. Design: [docs/menu-design.md](../../../docs/menu-design.md).
+
+| File | What |
+| --- | --- |
+| `stage.ts` | Creates the stage game, resizes it to the UI's whole-number scale. |
+| `flow.ts` | Which screen is showing and how it hands over to the next. The UI state decides; the flow animates. Also `MenuScene`, the base class (state, keys, fade, rebuild on resize). |
+| `BootScene.ts` | Loads the menu art. |
+| `StartScene.ts` | Title: sky, drifting clouds, logo, Play, and the dive through the clouds. |
+| `ModeScene.ts` | Create / Join / Play with AI over the cube net, and the join popup. |
+| `SideSelectScene.ts` | Pick a side, ready, start. Draws `UIState.lobby`, nothing else. |
+| `BackdropScene.ts` | Behind the in-game HUD: the sky outside, the dark inside. |
+| `clouds.ts` | The sky and its four cloud layers. |
+| `kit.ts` | Text, 9-slice panels, buttons, shake and hop, for all the scenes above. |
 
 Rules:
-- Phaser 4 (`phaser@^4.2`). Do not use Phaser 3 only APIs; check the Phaser 4 docs.
-- A scene here is a normal `Phaser.Scene` subclass. Register it in `scenes/index.ts`:
+- Phaser 4 (`phaser@^4.2`). Do not use Phaser 3 only APIs; check `node_modules/phaser/types`.
+- Colours, sizes and timings come from `../style/tokens.ts`. Text is the `m5x7` bitmap
+  font through `kit.text`, at whole multiples of 16px.
+- Everything sits on whole pixels. Layouts are written for a 480x270 logical screen and
+  anchored to the centre and the corners; a scene is rebuilt when the window is resized.
+- A scene never talks to the network. It reads `ctxOf(this).state` and calls
+  `ctxOf(this).actions`.
+- Keys: use `MenuScene.keys()`, not Phaser's keyboard plugin (several keys in one frame
+  arrived wrong through it, which broke fast typing in the join popup).
+
+## Extra scenes on the game view
+
+A scene can also run on top of the game view itself (face-change flourish, particles).
+Register it in `index.ts`:
 
 ```ts
 // scenes/index.ts
-import { TitleScene } from './TitleScene';
-export const EXTRA_SCENES = [TitleScene];
+import { SparkScene } from './SparkScene';
+export const EXTRA_SCENES = [SparkScene];
 ```
 
-  The game adds everything in `EXTRA_SCENES` after its own scenes and launches them in
-  parallel with the game scene, so they draw on top.
-- React to the game through the scene event bus, never by importing game internals:
+The game adds everything in `EXTRA_SCENES` after its own scenes and launches them in
+parallel with the game scene, so they draw on top. React to the game through the event
+bus, never by importing game internals:
 
 ```ts
 this.game.events.on('cubic:event', (e: GameEvent) => { /* step, bump, flip, solve, win, ... */ });
 this.game.events.on('cubic:state', (s: GameState, me: Side) => { /* every state change */ });
 ```
 
-- The canvas is 160x160 logical pixels (10 tiles of 16px), `pixelArt: true`, scaled by
-  whole numbers. Keep everything on the pixel grid.
-- No game rules here. If a scene needs data that the events do not carry, ask Luis.
+That canvas is 160x160 logical pixels (10 tiles of 16px), `pixelArt: true`, at the same
+whole-number scale as the rest of the UI. No game rules here.
