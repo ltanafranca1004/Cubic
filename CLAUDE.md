@@ -445,6 +445,23 @@ markers). Its body can press E (`use` action). The interfaces, exactly: `docs/ai
 - Tests: `server/test/inactivity.test.ts`; in real browsers `tools/screens/inactivity.ts`
   (logs and screenshots in `docs/status/inactivity/`).
 
+## Connection and timeouts
+
+- **Waking the server** (`client/src/net/wake.ts`, pure, `client/test/wake.test.ts`): the
+  socket retries for ever by itself (20 s per attempt, pauses of 1 to 5 s). Not in a room,
+  the menus show "WAKING THE SERVER... n%" with a bar (90% at 60 s, creeping to 99%), and
+  after `WAKE.giveUpMs` (120 s) with no answer the socket stops and the mode screen shows
+  "CANNOT REACH THE SERVER." with a RETRY button (`UIState.wake`, `onRetryConnect`). In a
+  room there is no give-up. A page that becomes visible again, or whose network comes
+  back, tries at once.
+- **Heartbeat** (`SOCKET_TIMING` in `server/src/app.ts`): ping every 15 s, 30 s to answer.
+  A stalled page keeps its socket for 30 s; a dead one is noticed within 45 s, both ways.
+  Only then do the room's clocks start (seat hold 60 s, lobby hold 15 s).
+- The server logs one `[socket] room=... closed: <reason>` line when a seated player's
+  socket closes ("ping timeout", "transport close", ...).
+- Every deploy ends every room (see Inactivity). Put `[skip render]` in the merge commit
+  when nothing under `server/` or `shared/` changed, and do not merge during a demo.
+
 ## Git workflow
 
 - `main` is always runnable. Nobody commits to it directly after the initial setup.

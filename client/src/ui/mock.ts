@@ -82,6 +82,7 @@ export const mockActions: UIActions = {
   onJoinRoom: (code) => console.log('[ui] onJoinRoom', code),
   onPlayWithAI: (side) => console.log('[ui] onPlayWithAI', side),
   onResumeSolo: () => console.log('[ui] onResumeSolo'),
+  onRetryConnect: () => console.log('[ui] onRetryConnect'),
   onPickSide: (side) => console.log('[ui] onPickSide', side),
   onSetReady: (ready) => console.log('[ui] onSetReady', ready),
   onStartGame: () => console.log('[ui] onStartGame'),

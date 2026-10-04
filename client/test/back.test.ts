@@ -18,13 +18,17 @@ test('back: nothing is drawn over it, it fades in with the menu and waits while 
   // the only scenery in the mode scene itself is the menu panel, and Back is made after it
   const panel = mode.indexOf("const panel = slice(this,");
   assert.ok(panel > 0 && mode.indexOf('this.back = new Button') > panel, 'Back is created after the panel');
-  assert.doesNotMatch(mode, /this\.add\.(rectangle|image|tileSprite)\(/, 'the mode scene draws scenery of its own again: make sure Back is above it');
+  // (the one thing it draws besides: the wake bar under the status line, which starts right of Back)
+  const bar = mode.slice(mode.indexOf('this.bar = ['), mode.indexOf('this.retry = new Button'));
+  assert.equal((bar.match(/this\.add\.rectangle\(barX/g) ?? []).length, 3);
+  assert.match(mode, /const barX = Math\.max\(cx - bw \/ 2, 16 \+ 80 \+ 8\);/, 'the wake bar must stay clear of Back (x 16, 80 wide)');
+  assert.doesNotMatch(mode.replace(bar, ''), /this\.add\.(rectangle|image|tileSprite)\(/, 'the mode scene draws scenery of its own again: make sure Back is above it');
   // the cube that replaced the net is a scene of its own, underneath the mode scene and kept there
   const order = src('scenes/stage.ts').match(/scene: \[([^\]]*)\]/)![1]!.split(',').map((s) => s.trim());
   assert.ok(order.indexOf('CubeBackdropScene') >= 0 && order.indexOf('CubeBackdropScene') < order.indexOf('ModeScene'), 'the cube scene is drawn before (under) the mode scene');
   assert.match(src('scenes/CubeBackdropScene.ts'), /this\.scene\.sendToBack\(\)/);
   assert.doesNotMatch(src('scenes/flow.ts'), /bringToTop\('cube'\)/);
-  assert.match(mode, /this\.status, this\.back\.root\]\.forEach/);
+  assert.match(mode, /this\.status, \.\.\.this\.bar, this\.retry\.root, this\.back\.root\]\.forEach/);
   assert.match(mode, /this\.back\.setEnabled\(s\.status !== 'connecting' && !this\.popup\)/);
 });
 

@@ -3,6 +3,7 @@ import { ENABLE_AI } from '../config';
 import { menuAction, pasteCode, stepFocus, typeCode } from '../input/keymap';
 import { overlayOwnsInput } from '../input/overlay';
 import { CODEPAD_EVENT } from '../input/touch';
+import { wakeText, wakeView } from '../net/wake';
 import { EASE, ROLE, TIME, hex } from '../style/tokens';
 import { AiPopup } from './AiPopup';
 import { BLOCKED_TEXT, MenuScene, type SceneData } from './flow';
@@ -20,6 +21,11 @@ export class ModeScene extends MenuScene {
   private buttons: Button[] = [];
   private aiButtons: Button[] = [];
   private back!: Button;
+  /** Shown only when the server never answered and we stopped trying. */
+  private retry!: Button;
+  /** The wake bar under the status line: frame, track, fill. Whole pixels, no tween. */
+  private bar: Phaser.GameObjects.Rectangle[] = [];
+  private barWidth = 0;
   private status!: Text;
   /** The status line is centred on this x. */
   private statusX = 0;
@@ -80,6 +86,21 @@ export class ModeScene extends MenuScene {
     });
     this.status = text(this, 0, top + menuH + pad + 10, '', ROLE.ink);
     this.statusX = cx;
+    // Waiting for a sleeping server: a bar under the status line. It only moves when its
+    // number does (no tween), so it is the same with reduce motion. After the give-up the
+    // RETRY button stands where the bar was.
+    const barY = this.status.y + 18;
+    // As wide as the menu, but on a narrow screen it starts right of Back (16 + 80 wide,
+    // and its shadow): nothing is ever drawn over Back.
+    const barX = Math.max(cx - bw / 2, 16 + 80 + 8);
+    const barW = cx + bw / 2 - barX;
+    this.barWidth = barW - 2;
+    this.bar = [
+      this.add.rectangle(barX, barY, barW, 6, hex(ROLE.ink)).setOrigin(0, 0),
+      this.add.rectangle(barX + 1, barY + 1, barW - 2, 4, hex(ROLE.paper)).setOrigin(0, 0),
+      this.add.rectangle(barX + 1, barY + 1, 1, 4, hex(ROLE.focus)).setOrigin(0, 0),
+    ];
+    this.retry = new Button(this, { label: 'RETRY', variant: 'in', width: 80, height: bh, onClick: () => actions.onRetryConnect() }).setCentre(cx, barY + 3);
 
     this.keys((e) => this.key(e));
     // Ctrl/Cmd+V in the join popup: the pasted room code (the keys themselves are not ours,
@@ -103,7 +124,7 @@ export class ModeScene extends MenuScene {
 
     if (data.intro) {
       // arriving through the clouds: the cube settles, then the choices land
-      [panel, title, ...this.buttons.map((b) => b.root), this.status, this.back.root].forEach((o, i) => {
+      [panel, title, ...this.buttons.map((b) => b.root), this.status, ...this.bar, this.retry.root, this.back.root].forEach((o, i) => {
         const y = o.y;
         o.setAlpha(0).setY(y + 10);
         this.tweens.add({ targets: o, y, alpha: 1, delay: TIME.dive * 0.8 + i * 50, duration: TIME.panel, ease: EASE.out });
@@ -123,10 +144,25 @@ export class ModeScene extends MenuScene {
     this.aiButtons.forEach((b) => b.setEnabled(!busy && !this.popup && s.aiAvailable));
     // while we wait for a room, Back would only bounce straight into it
     this.back.setEnabled(s.status !== 'connecting' && !this.popup);
-    const msg = !s.online ? (s.blocked ? BLOCKED_TEXT : 'WAKING THE SERVER... THIS CAN TAKE A MINUTE.') : s.status === 'connecting' ? 'CONNECTING...' : error ? error.toUpperCase() : ENABLE_AI && !s.aiAvailable ? 'THE AI PARTNER IS NOT AVAILABLE ON THIS SERVER.' : '';
-    paint(this.status.setText(msg), (error && s.online) || (s.blocked && !s.online) ? ROLE.danger : ROLE.ink);
+    // Not online: the server is waking (a bar and a percentage that update() keeps going),
+    // or it never answered and we stopped (RETRY), or it refuses this site.
+    const waking = !s.online && !s.blocked ? (s.wake ?? null) : null;
+    const failed = !!waking?.failed;
+    const msg = !s.online ? (s.blocked ? BLOCKED_TEXT : waking ? wakeText(waking, Date.now(), true) : 'WAKING THE SERVER...') : s.status === 'connecting' ? 'CONNECTING...' : error ? error.toUpperCase() : ENABLE_AI && !s.aiAvailable ? 'THE AI PARTNER IS NOT AVAILABLE ON THIS SERVER.' : '';
+    if (this.status.text !== msg) this.status.setText(msg);
+    paint(this.status, (error && s.online) || (s.blocked && !s.online) || failed ? ROLE.danger : ROLE.ink);
     // centred under the panel, but never off the left of the screen
     this.status.x = Math.max(6, Math.round(this.statusX - this.status.width / 2));
+    const showBar = !!waking && !failed;
+    this.bar.forEach((r) => r.setVisible(showBar));
+    if (showBar) this.bar[2]!.width = Math.max(1, Math.round(this.barWidth * wakeView(waking.since, Date.now()).progress));
+    const showRetry = failed && !this.popup;
+    if (this.retry.root.visible !== showRetry) {
+      this.retry.root.setVisible(showRetry);
+      this.retry.setEnabled(showRetry);
+      // the keyboard lands on it at once: it is the one thing to do here
+      this.setFocus(showRetry ? this.targets.indexOf(this.retry) : -1);
+    }
 
     if (this.popup) {
       this.popup.setBusy(s.status === 'connecting');
@@ -193,7 +229,12 @@ export class ModeScene extends MenuScene {
 
   /** Everything the focus can land on: the menu, top to bottom, then Back. */
   private get targets(): Button[] {
-    return [...this.buttons, this.back];
+    return [...this.buttons, ...(this.retry.root.visible ? [this.retry] : []), this.back];
+  }
+
+  /** While the server wakes, the bar and the percentage go on between state changes. */
+  update(): void {
+    if (!this.ui.online && this.ui.wake && !this.ui.wake.failed) this.sync();
   }
 
   private setFocus(i: number): void {

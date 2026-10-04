@@ -17,6 +17,8 @@ export interface UIActions {
   onPlayWithAI(side: Side): void;
   /** Solo: back into the solo game this tab pressed Leave in (see `UIState.soloLeft`). */
   onResumeSolo(): void;
+  /** Menus: the server never answered and we stopped trying (`UIState.wake.failed`): try again. */
+  onRetryConnect(): void;
   /** Lobby: take a side, or null to step back to the middle. Refused if the partner has it. */
   onPickSide(side: Side | null): void;
   /** Lobby, guest only: ready up (needs a side) or take it back. */
@@ -124,6 +126,12 @@ export interface UIState {
   online: boolean;
   /** Not online because the server refuses this site (its CLIENT_ORIGIN): not a cold start. */
   blocked?: boolean;
+  /**
+   * Not online: since when we have been trying, in epoch ms on THIS clock, and whether we
+   * stopped (about two minutes with no answer: show RETRY, `onRetryConnect`). Null when
+   * online. `wakeView(since, Date.now())` in `net/wake.ts` gives the progress for a bar.
+   */
+  wake?: { since: number; failed: boolean } | null;
   status: LobbyStatus;
   error: string | null;
   roomCode: string | null;

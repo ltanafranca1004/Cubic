@@ -46,6 +46,25 @@ export function validSignal(data: unknown): boolean {
   if ('relay' in data && data.relay !== true) return false;
   return JSON.stringify(data).length <= VOICE_LIMITS.signalMaxBytes;
 }
+/**
+ * The socket's heartbeat (engine.io): the server pings every `pingInterval` and closes a
+ * connection that has not answered within `pingTimeout`.
+ *
+ * pingTimeout is how long a page may be stalled and keep its socket: a phone switching
+ * between Wi-Fi and mobile data, a tab the browser froze for a moment, a slow network.
+ * The library default is 20 s; 30 s covers those without changing how long a truly dead
+ * connection goes unnoticed, because the pings come more often instead (15 s, default 25):
+ *   - the server notices a dead client after 30 to 45 s (before: 20 to 45 s);
+ *   - the client notices a dead server after pingInterval + pingTimeout = 45 s (as before).
+ * Only then does the seat hold start (rooms.ts: 60 s in a game, 15 s in a lobby), so a
+ * locked phone has 90 to 105 s in a game before its seat opens.
+ *
+ * connectTimeout: how long a new connection may take to finish the handshake (default).
+ * connectionStateRecovery stays off: a seat is taken back with its token (`room:rejoin`),
+ * which also works after the server restarted the socket from nothing.
+ */
+export const SOCKET_TIMING = { pingInterval: 15_000, pingTimeout: 30_000, connectTimeout: 45_000 };
+
 /** Public STUN, always offered. The client keeps the same list as its fallback. */
 export const STUN_URLS = ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'];
 
@@ -82,6 +101,12 @@ export interface AppOptions {
   info?: () => ServerInfo;
   /** Obey the `dev` socket message (DEV_COMMANDS=1). Ignored when NODE_ENV=production. */
   devCommands?: boolean;
+  /**
+   * One line when a player's socket closes while they sit in a room, with engine.io's
+   * reason ("ping timeout", "transport close", "client namespace disconnect", ...): the
+   * only way to tell afterwards why somebody dropped. Unset = silent (tests).
+   */
+  log?: (line: string) => void;
 }
 
 export interface App {
@@ -140,6 +165,7 @@ export function createApp(opts: AppOptions = {}): App {
     // CORS does not cover WebSocket upgrades: refuse other origins outright.
     allowRequest: (req, cb) => cb(null, originAllowed(req.headers.origin)),
     maxHttpBufferSize: 256 * 1024,
+    ...SOCKET_TIMING,
   });
   const rooms = new Rooms();
   /** Rooms already wired to broadcast to their socket.io room. */
@@ -365,7 +391,8 @@ export function createApp(opts: AppOptions = {}): App {
       if (typeof ack === 'function') ack(runDev(devOn, room, cmd));
     });
 
-    socket.on('disconnect', () => {
+    socket.on('disconnect', (reason) => {
+      if (room && me !== null) opts.log?.(`[socket] room=${room.code} member=${me} side=${side() ?? '-'} phase=${room.phase} closed: ${socket.data?.replaced ? 'replaced by a newer tab' : reason}`);
       // Only drop the seat if this socket still owns it (a rejoin may have replaced it).
       if (socket.data?.replaced) return;
       detach(false);
