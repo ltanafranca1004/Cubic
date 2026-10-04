@@ -1,3 +1,4 @@
+import { STEP_MS } from '@cubic/shared';
 import { keyId } from '../input/bindings';
 import { DIR_VEC, gameAction, type KeyLike } from '../input/keymap';
 import type { Buffered } from './transition';
@@ -80,5 +81,34 @@ export class GameKeys {
     this.held = [];
     this.talkId = null;
     this.out.talk(false);
+  }
+}
+
+/**
+ * The held-key repeat: a direction held down steps once every `stepMs` (STEP_MS, the
+ * walking pace in shared/src/pace.ts). The keyboard, the gamepad and the touch d-pad all
+ * hold a key, so this one clock paces all three. The first step of a press is not its
+ * business: it goes out at once, and `restart` only books the next one.
+ */
+export class HoldRepeat {
+  private nextAt = 0;
+
+  constructor(private stepMs: number = STEP_MS) {}
+
+  /** A fresh press stepped at `now`: the first repeat is one whole step later. */
+  restart(now: number): void {
+    this.nextAt = now + this.stepMs;
+  }
+
+  /**
+   * Is a repeat due at `now`? Then it is taken. A frame that comes a little late does not
+   * push the next step back, so the pace is `stepMs` on average whatever the frame rate;
+   * after a real pause (a transition, a menu) it simply starts again from `now`.
+   */
+  take(now: number): boolean {
+    if (now < this.nextAt) return false;
+    const next = this.nextAt + this.stepMs;
+    this.nextAt = next > now ? next : now + this.stepMs;
+    return true;
   }
 }

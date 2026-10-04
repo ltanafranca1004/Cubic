@@ -1,4 +1,5 @@
 import {
+  AI_STEP_MS,
   CHAT_MAX_LEN,
   chooseGoal,
   leashAllows,
@@ -149,7 +150,7 @@ export class AiPlayer {
         }),
       onClosed: () => this.stop(),
     });
-    this.stepTimer = setInterval(() => this.guard('step', () => this.step()), opts.stepMs ?? 200);
+    this.stepTimer = setInterval(() => this.guard('step', () => this.step()), opts.stepMs ?? AI_STEP_MS);
     this.thinkTimer = setInterval(() => this.guard('think', () => this.maybeThink()), opts.idleMs ?? 8000);
     this.stepTimer.unref();
     this.thinkTimer.unref();

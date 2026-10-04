@@ -1,4 +1,4 @@
-import { FACE_NAMES, compassDrift, devSolve, devTeleport, voiceMix, type DevCommand, type FaceId, type Side } from '@cubic/shared';
+import { FACE_NAMES, STEP_MS, compassDrift, devSolve, devTeleport, voiceMix, type DevCommand, type FaceId, type Side } from '@cubic/shared';
 import { devHooks } from '../app';
 import { HotSeat } from './hotseat';
 
@@ -10,7 +10,7 @@ import { HotSeat } from './hotseat';
 //                arrows + . = inside, Tab switches which side is drawn
 // Teleport and solve are done by the server (DEV_COMMANDS=1), never by the client alone.
 
-const REPEAT_MS = 130;
+const REPEAT_MS = STEP_MS;
 const PING_MS = 1000;
 
 const MOVES: Record<string, [Side, number, number]> = {

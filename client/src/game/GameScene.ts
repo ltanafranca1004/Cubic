@@ -2,8 +2,10 @@ import Phaser from 'phaser';
 import { FACE_SIZE, TILE_PX, brightFace, canonToScreen, eq, itemsOn, linesOn, screenToCanon, tileAt, visibleObjects, defaultEnv, type FaceId, type GameEvent, type GameState, type Side, type Vec } from '@cubic/shared';
 import { inputPaused } from '../input/gate';
 import { settings } from '../style/settings';
+import type { PropPass } from '../world/biomes/dress';
 import { CodeArt, type ArtProvider } from './art';
-import { GameKeys } from './keys';
+import { PropFades, fadingProps, liftedProps, tallProps, type TallProp } from '../world/biomes/depth';
+import { GameKeys, HoldRepeat } from './keys';
 import { InputBuffer, easeInOut, hopBoxes, hopFrame, mirrorStrip, rollPoint, rollStrips, rollWalker, transitionKind, transitionMs, upBeforeFlip, type Buffered, type TransitionKind } from './transition';
 import { CARRY_PX, ITEM_HOP_MS, WALK_HOLD_MS, carryBob, facingFromStep, facingOf, itemHop, playerFlip, type Facing } from './turtle';
 
@@ -16,9 +18,14 @@ import { CARRY_PX, ITEM_HOP_MS, WALK_HOLD_MS, carryBob, facingFromStep, facingOf
 // ./transition.ts): outside the cube rolls, inside the character hops the wall while the
 // view slides, and with "reduce motion" either is a quick fade. The transition is drawn
 // with whole pixels on the 2D canvas, so it is identical in WebGL and in Canvas.
+//
+// Depth (../world/biomes/depth.ts): a tall prop whose base is on a lower screen row than
+// the character is in front of it. The ones that cover the character are left out of the
+// painted face and painted into a second canvas texture shown OVER the character and its
+// item, faded so the turtle stays easy to see. Same 2D drawing, so again no difference
+// between the renderers.
 
 export const VIEW_PX = FACE_SIZE * TILE_PX;
-const REPEAT_MS = 130;
 const ANIM_MS = 250;
 /** Inside: tiles this far from the player are fully lit / fully dark. */
 const LIGHT_NEAR = 1.5;
@@ -41,6 +48,7 @@ const wallTop = (upright: boolean): number => WALL_PX - 2 - (upright ? 1 : WALL_
 const HOP_PX = 14;
 const WALK_FRAME_MS = 90;
 const FACE_KEY = 'game:face';
+const FRONT_KEY = 'game:front';
 
 export interface GameInput {
   onMove(dx: number, dy: number): void;
@@ -93,6 +101,13 @@ export class GameScene extends Phaser.Scene {
   /** The two faces of a transition, painted off screen. */
   private fromG!: CanvasRenderingContext2D;
   private toG!: CanvasRenderingContext2D;
+  /** The tall props in front of the character: drawn over it. Empty most of the time. */
+  private front!: Phaser.Textures.CanvasTexture;
+  private frontImage!: Phaser.GameObjects.Image;
+  /** How faded each tall prop is, and what the front layer shows now (to repaint only on a change). */
+  private fades = new PropFades();
+  private lifted: TallProp[] = [];
+  private frontSig = '';
   private hero!: Phaser.GameObjects.Image;
   private carried!: Phaser.GameObjects.Image;
   /** The item while it hops onto the head or off it. */
@@ -111,7 +126,8 @@ export class GameScene extends Phaser.Scene {
   private frame = 0;
   /** What the keys mean (the player's bindings) and which are held: ./keys.ts. */
   private keys = new GameKeys({ act: (input) => this.act(input), talk: (down) => this.input_?.onTalk(down) });
-  private nextMoveAt = 0;
+  /** The walking pace of a held direction (STEP_MS in shared/src/pace.ts). */
+  private repeat = new HoldRepeat();
   private input_: GameInput | null = null;
   /** Key presses made during a transition: applied after it, never dropped. */
   private buffer = new InputBuffer();
@@ -128,13 +144,28 @@ export class GameScene extends Phaser.Scene {
     this.face = this.textures.createCanvas(FACE_KEY, VIEW_PX, VIEW_PX)!;
     this.fromG = layer();
     this.toG = layer();
+    if (this.textures.exists(FRONT_KEY)) this.textures.remove(FRONT_KEY);
+    this.front = this.textures.createCanvas(FRONT_KEY, VIEW_PX, VIEW_PX)!;
     this.add.image(0, 0, FACE_KEY).setOrigin(0, 0);
-    // Dev only: the checks in tools/screens read the painted face without the sprites on top of it.
-    if (import.meta.env.DEV) Object.assign(window, { __cubicFace: () => this.face.canvas });
+    // Dev only: the checks in tools/screens read the painted face without the sprites on top of it,
+    // and what the depth sort does (which props are over the character, how faded, and where the character is drawn).
+    if (import.meta.env.DEV)
+      Object.assign(window, {
+        __cubicFace: () => this.face.canvas,
+        __cubicProps: () => ({
+          lifted: this.lifted.map((p) => ({ key: p.key, sx: p.sx, sy: p.sy, alpha: this.fades.alpha(p.key) })),
+          faded: this.fades.entries(),
+          front: this.frontImage.visible,
+          transition: this.trans?.kind ?? null,
+          hero: this.hero.visible ? { x: this.hero.x, y: this.hero.y } : null,
+        }),
+      });
     this.shadow = this.add.rectangle(0, 0, 10, 2, 0x000000, 0.25).setOrigin(0, 0).setVisible(false);
     this.hero = this.add.image(0, 0, this.art.player('out', 0)).setOrigin(0, 0).setVisible(false);
     this.carried = this.add.image(0, 0, this.art.item('default')).setOrigin(0, 0).setVisible(false);
     this.flying = this.add.image(0, 0, this.art.item('default')).setOrigin(0, 0).setVisible(false);
+    // added last: over the character and the item on its head
+    this.frontImage = this.add.image(0, 0, FRONT_KEY).setOrigin(0, 0).setVisible(false);
     const down = (e: KeyboardEvent) => this.keyDown(e);
     const up = (e: KeyboardEvent) => this.keyUp(e);
     const blur = () => this.releaseAll();
@@ -159,6 +190,7 @@ export class GameScene extends Phaser.Scene {
       this.seen = null;
       this.facing = 'down';
       this.buffer.clear();
+      this.fades.clear();
     }
     this.state = state;
     this.me = me;
@@ -275,7 +307,7 @@ export class GameScene extends Phaser.Scene {
     // Step at once on a fresh press: a tap can be shorter than a frame. Every step, E and
     // Q goes through act(): pressed during a transition, it waits its turn in the buffer.
     const used = this.keys.down(e);
-    if (used === 'move') this.nextMoveAt = performance.now() + REPEAT_MS;
+    if (used === 'move') this.repeat.restart(performance.now());
     if (used) e.preventDefault(); // (a bound Space or Tab must not scroll or move the focus)
   }
 
@@ -283,7 +315,7 @@ export class GameScene extends Phaser.Scene {
     this.keys.up(e);
   }
 
-  update(time: number): void {
+  update(time: number, delta: number): void {
     const now = performance.now();
     if (this.trans && time - this.trans.t0 >= this.trans.ms) {
       this.trans = null;
@@ -299,10 +331,7 @@ export class GameScene extends Phaser.Scene {
       this.send(input);
     }
     const held = this.keys.heldDir();
-    if (held && this.state && !this.trans && !this.buffer.length && now >= this.nextMoveAt) {
-      this.nextMoveAt = now + REPEAT_MS;
-      this.move(held.dx, held.dy);
-    }
+    if (held && this.state && !this.trans && !this.buffer.length && this.repeat.take(now)) this.move(held.dx, held.dy);
     this.see();
     this.hopNow(time);
 
@@ -311,13 +340,64 @@ export class GameScene extends Phaser.Scene {
       this.frame = frame;
       this.dirty = true;
     }
+    this.sortProps(delta);
     if (this.trans) this.drawTransition(this.trans, time);
     else this.drawFace(time);
     this.dirty = false;
   }
 
+  /**
+   * The depth sort, once a frame: which tall props cover the character from the front
+   * (they fade), and which are drawn over it. A change asks for a repaint. The fade keeps
+   * running through a transition, so the props of the face we left are back to full
+   * before it is gone and the ones we arrive behind are already fading.
+   */
+  private sortProps(delta: number): void {
+    const state = this.state;
+    if (!state) {
+      this.lifted = [];
+      return;
+    }
+    const player = state.players[this.me];
+    const { face, up } = player.pose;
+    const [sx, sy] = canonToScreen(this.me, face, up, player.pose.x, player.pose.y);
+    const props = tallProps(this.me, face, up);
+    this.fades.aim(fadingProps({ sx, sy, carrying: !!player.carrying }, props).map((p) => p.key));
+    const moving = this.fades.moving;
+    this.fades.step(delta, settings().reduceMotion);
+    const lifted = liftedProps(props, (p) => this.fades.faded(p.key));
+    if (moving || lifted.length !== this.lifted.length || lifted.some((p, i) => p !== this.lifted[i])) this.dirty = true;
+    this.lifted = lifted;
+  }
+
+  /** The alpha of the prop on a screen tile of `face`, for a face painted whole (a transition): the fade is baked in. */
+  private bakedPass(face: FaceId, up: Vec): PropPass {
+    const props = tallProps(this.me, face, up);
+    return { water: true, alpha: (sx, sy) => this.fades.alpha(props.find((p) => p.sx === sx && p.sy === sy)?.key ?? '') };
+  }
+
+  /** The layer over the character: the lifted props, each as faded as it is now. Painted only when it changed. */
+  private paintFront(face: FaceId, up: Vec): void {
+    const lifted = this.lifted;
+    const sig = lifted.length ? `${face}|${up.join(',')}|${this.frame}|${settings().reduceMotion}|${lifted.map((p) => `${p.key}=${this.fades.alpha(p.key)}`).join(';')}` : '';
+    this.frontImage.setVisible(lifted.length > 0);
+    if (sig === this.frontSig) return;
+    this.frontSig = sig;
+    const g = this.front.context;
+    g.clearRect(0, 0, VIEW_PX, VIEW_PX);
+    g.imageSmoothingEnabled = false;
+    if (lifted.length) {
+      const alpha = (sx: number, sy: number) => {
+        const prop = lifted.find((p) => p.sx === sx && p.sy === sy);
+        return prop ? this.fades.alpha(prop.key) : 0;
+      };
+      this.art.dress?.(g, this.me, face, up, this.frame, { water: false, alpha });
+    }
+    this.front.refresh();
+  }
+
   /** Paint one face as `me` sees it with `up` as screen-up. `at` = the screen tile we stand on. */
-  private paint(g: CanvasRenderingContext2D, face: FaceId, up: Vec, at: { sx: number; sy: number }): void {
+  private paint(g: CanvasRenderingContext2D, face: FaceId, up: Vec, at: { sx: number; sy: number }, pass?: PropPass): void {
     const state = this.state!;
     const me = this.me;
     const world = defaultEnv.world;
@@ -334,7 +414,7 @@ export class GameScene extends Phaser.Scene {
         put(this.art.tile(me, face, tileAt(world, me, face, x, y), x, y, this.frame), sx, sy);
       }
     }
-    this.art.dress?.(g, me, face, up, this.frame);
+    this.art.dress?.(g, me, face, up, this.frame, pass);
     const objects = visibleObjects(state, me, face);
     for (const o of objects) {
       const [sx, sy] = canonToScreen(me, face, up, o.x, o.y);
@@ -427,16 +507,19 @@ export class GameScene extends Phaser.Scene {
       g.fillStyle = BG;
       g.fillRect(0, 0, VIEW_PX, VIEW_PX);
       this.face.refresh();
-      for (const o of [this.hero, this.shadow, this.carried, this.flying]) o.setVisible(false);
+      for (const o of [this.hero, this.shadow, this.carried, this.flying, this.frontImage]) o.setVisible(false);
       return;
     }
     const player = state.players[this.me];
     const { face, up } = player.pose;
     const [sx, sy] = canonToScreen(this.me, face, up, player.pose.x, player.pose.y);
     if (this.dirty) {
-      this.paint(this.face.context, face, up, { sx, sy });
+      // the lifted props are not on the ground: they are painted over the character below
+      const lifted = this.lifted;
+      this.paint(this.face.context, face, up, { sx, sy }, lifted.length ? { water: true, alpha: (px, py) => (lifted.some((p) => p.sx === px && p.sy === py) ? 0 : 1) } : undefined);
       this.face.refresh();
     }
+    this.paintFront(face, up);
     const walking = time - this.stepAt < WALK_HOLD_MS;
     this.placeHero(sx * TILE_PX, sy * TILE_PX, this.art.player(this.me, player.steps, this.facing), this.flip(), carryBob(walking, player.steps));
   }
@@ -490,10 +573,14 @@ export class GameScene extends Phaser.Scene {
     const pose = state.players[this.me].pose;
     const [sx, sy] = canonToScreen(this.me, pose.face, pose.up, pose.x, pose.y);
     if (this.dirty) {
-      // Both faces keep following the game while the transition plays.
-      this.paint(this.fromG, t.from.face, t.from.up, t.from);
-      this.paint(this.toG, pose.face, pose.up, { sx, sy });
+      // Both faces keep following the game while the transition plays. They are painted
+      // whole, each prop as faded as it is at this moment: the one we stood behind comes
+      // back on the old face, the one we arrive behind fades on the new one, with no jump
+      // when the transition starts or ends.
+      this.paint(this.fromG, t.from.face, t.from.up, t.from, this.bakedPass(t.from.face, t.from.up));
+      this.paint(this.toG, pose.face, pose.up, { sx, sy }, this.bakedPass(pose.face, pose.up));
     }
+    this.frontImage.setVisible(false);
     const elapsed = time - t.t0;
     const k = Phaser.Math.Clamp(elapsed / t.ms, 0, 1);
     const g = this.face.context;

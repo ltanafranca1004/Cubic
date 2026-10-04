@@ -7,3 +7,4 @@ export * from './game';
 export * from './bot';
 export * from './voice';
 export * from './signals';
+export * from './pace';

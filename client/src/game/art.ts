@@ -1,6 +1,7 @@
 import type Phaser from 'phaser';
 import { TILE_PX, type FaceId, type Side, type TileKind, type Vec } from '@cubic/shared';
 import { drawPuzzleItem, drawPuzzleObject } from './puzzleArt';
+import type { PropPass } from '../world/biomes/dress';
 import type { Facing } from './turtle';
 
 // ART. The scene asks an ArtProvider for texture keys and never draws pixels itself, so a
@@ -25,8 +26,10 @@ export interface ArtProvider {
   /**
    * The biome layer of a face (water banks, trees, tall grass...), drawn over the terrain
    * tiles and under the objects. `up` is the face's screen-up: props are drawn upright.
+   * `pass` picks which props and how opaque (the tall props over the player are a pass of
+   * their own); without it everything is drawn.
    */
-  dress?(g: CanvasRenderingContext2D, side: Side, face: FaceId, up: Vec, frame: number): void;
+  dress?(g: CanvasRenderingContext2D, side: Side, face: FaceId, up: Vec, frame: number, pass?: PropPass): void;
 }
 
 type G = CanvasRenderingContext2D;

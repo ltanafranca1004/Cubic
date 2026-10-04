@@ -33,11 +33,21 @@ export function propOnScreen(face: FaceId, up: Vec, sx: number, sy: number, tick
 /** Water moves at half the speed of the game's animation tick: a slow shimmer. */
 const waterFrame = (tick: number, reduceMotion: boolean) => (reduceMotion ? 0 : Math.floor(tick / 2));
 
-export function dressFace(g: CanvasRenderingContext2D, sheets: BiomeSheets, face: FaceId, up: Vec, tick: number, reduceMotion: boolean): void {
+/**
+ * One pass over a face's props. The face is painted in two: the ground pass (water and
+ * every prop that is not lifted), and the pass over the player (only the lifted props, see
+ * ./depth.ts). `alpha` is how opaque the prop on a screen tile is drawn; 0 leaves it out.
+ */
+export interface PropPass {
+  water: boolean;
+  alpha(sx: number, sy: number): number;
+}
+
+export function dressFace(g: CanvasRenderingContext2D, sheets: BiomeSheets, face: FaceId, up: Vec, tick: number, reduceMotion: boolean, pass?: PropPass): void {
   shown = tick;
   const tiles = defaultEnv.world.out[face].tiles;
   const row = waterRow(face, waterFrame(tick, reduceMotion));
-  for (let sy = 0; sy < FACE_SIZE; sy++) {
+  for (let sy = 0; pass?.water !== false && sy < FACE_SIZE; sy++) {
     for (let sx = 0; sx < FACE_SIZE; sx++) {
       const [x, y] = screenToCanon('out', face, up, sx, sy);
       if (tiles[y]?.[x] !== 'water') continue;
@@ -48,8 +58,12 @@ export function dressFace(g: CanvasRenderingContext2D, sheets: BiomeSheets, face
     for (let sx = 0; sx < FACE_SIZE; sx++) {
       const p = propOnScreen(face, up, sx, sy, tick, reduceMotion);
       if (!p) continue;
-      // the cell's lower half is this tile, its upper half hangs over the tile above
+      const alpha = pass ? pass.alpha(sx, sy) : 1;
+      if (alpha <= 0) continue;
+      g.globalAlpha = alpha;
+      // the cell's lower half is this tile, its upper half hangs over the tile above (off the face it is clipped by the canvas)
       g.drawImage(sheets.props, (p.cell % PROP_COLS) * PROP_W, Math.floor(p.cell / PROP_COLS) * PROP_H, PROP_W, PROP_H, sx * T, sy * T + T - PROP_H, PROP_W, PROP_H);
     }
   }
+  g.globalAlpha = 1;
 }

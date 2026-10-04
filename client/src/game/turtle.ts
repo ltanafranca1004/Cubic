@@ -1,4 +1,4 @@
-import { canonToScreen, type FaceId, type Side, type Vec } from '@cubic/shared';
+import { WALK_HOLD_MS, canonToScreen, type FaceId, type Side, type Vec } from '@cubic/shared';
 
 // The turtle's look, as pure math (no Phaser, no DOM): which way it faces, which frames
 // of its sheet play, and how the item it carries rides, bobs and hops. The scene
@@ -70,8 +70,8 @@ export function playerFlip(directional: boolean, facing: Facing, dir: number): b
   return directional ? facing === 'left' : dir < 0;
 }
 
-/** How long after the last step the player still shows the walk frame. */
-export const WALK_HOLD_MS = 260;
+/** How long after the last step the player still shows the walk frame (it follows the walking pace: shared/src/pace.ts). */
+export { WALK_HOLD_MS };
 
 // ---------- the carried item ----------
 
