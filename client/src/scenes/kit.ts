@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import type { ButtonVariant } from '../style/assets';
+import { device } from '../style/scale';
 import { EASE, ROLE, SIZE, TIME, hex } from '../style/tokens';
 
 // The UI kit for the menu scenes: text, 9-slice panels and buttons, built from the PNGs in
@@ -180,6 +181,8 @@ if (import.meta.env.DEV) {
   });
 }
 
+/** How far past its box a button listens on a touch screen, at most, in art pixels (half the gap in a menu). */
+const TOUCH_GROW = 4;
 /** How far the focus outline reaches outside a button, in art pixels. */
 const FOCUS_RING = 4;
 
@@ -231,7 +234,11 @@ export class Button {
     this.label = text(scene, 0, 0, opts.label, TEXT_ON[this.variant], opts.labelSize ?? 1);
     // a soft drop shadow lifts the button off whatever is behind it
     this.shadow = scene.add.rectangle(2, 3, this.width, this.height - 1, hex(ROLE.ink), 0.3).setOrigin(0, 0);
-    const zone = scene.add.zone(0, 0, this.width, this.height).setOrigin(0, 0).setInteractive({ cursor: HAND });
+    // Under a thumb the button listens a little past its own box (it looks the same): up to
+    // 44 CSS pixels high, and never further than half the gap to the next button.
+    const grow = device().touch ? Math.min(TOUCH_GROW, Math.max(0, Math.ceil((44 / scene.scale.zoom - this.height) / 2))) : 0;
+    const zone = scene.add.zone(0, 0, this.width, this.height).setOrigin(0, 0);
+    zone.setInteractive({ hitArea: new Phaser.Geom.Rectangle(-grow, -grow, this.width + grow * 2, this.height + grow * 2), hitAreaCallback: Phaser.Geom.Rectangle.Contains, cursor: HAND });
     // Three plain bands (filled rectangles: the same in WebGL and Canvas), so the outline
     // reads on the white menu, the sky and the dark half alike. It is a shape, not a tint.
     this.ring = scene.add.graphics();
