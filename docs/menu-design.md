@@ -275,3 +275,20 @@ pixels.
 - **Audio is an interface.** The UI sets volumes through `style/audioApi.ts`; `main.ts`
   plugs the real AudioManager into it with `setAudioApi()`. Which track plays on which
   screen is decided in `app.ts` (menu, lobby once you are in a room, then your side).
+
+## Update: mode menu, AI deferred, renderer-proof kit
+
+- **Mode screen** is now a small `SELECT MODE` title over one vertical menu, with the
+  cube net large and faded (22%) behind it. Buttons are solid yellow panels with ink
+  text, an ink outline and a drop shadow. No white text on light backgrounds.
+- **AI buttons are hidden** behind `ENABLE_AI` in `client/src/config.ts` (false). The AI
+  code, tests and server logic are untouched; set it to true to bring the two buttons back.
+- **The kit no longer depends on WebGL.** A browser without WebGL makes Phaser use its
+  Canvas renderer, which cannot tint bitmap text, draw text shadows or draw NineSlice
+  objects: panels vanished and all text went white. Text colour and outline are now baked
+  into per-colour copies of the font, and 9-slice boxes are composited into plain
+  textures (`client/src/scenes/kit.ts`). `?renderer=canvas` forces the fallback.
+- **Text over sky or art has a 1px ink outline** (tagline, side titles, status lines).
+- **Play** is larger (136x34, double-size label) with a slow glow behind it.
+- `tools/screens/check.ts` clicks through the menus with a mouse in both renderers.
+  Screenshots 10 and up in `docs/screens` predate this update.

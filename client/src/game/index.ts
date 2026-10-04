@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { rendererType } from '../style/renderer';
 import type { GameEvent, GameState, Side } from '@cubic/shared';
 import { EXTRA_SCENES } from '../scenes';
 import { SheetArt } from '../style/art';
@@ -23,7 +24,7 @@ export function createGameView(parent: HTMLElement, input: GameInput): GameHandl
   // Real tiles from assets/manifest.json, with the code-drawn art as the fallback.
   const scene = new GameScene((textures) => new SheetArt(textures, new CodeArt(textures)));
   const game = new Phaser.Game({
-    type: Phaser.AUTO,
+    type: rendererType(),
     parent,
     width: VIEW_PX,
     height: VIEW_PX,

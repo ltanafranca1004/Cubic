@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { rendererType } from '../style/renderer';
 import { logicalSize } from '../style/scale';
 import { ROLE } from '../style/tokens';
 import type { UIActions, UIState } from '../ui/hooks';
@@ -23,7 +24,7 @@ export interface Stage {
 export function createStage(parent: HTMLElement, actions: UIActions, initial: UIState): Stage {
   const size = logicalSize();
   const game = new Phaser.Game({
-    type: Phaser.AUTO,
+    type: rendererType(),
     parent,
     width: size.width,
     height: size.height,

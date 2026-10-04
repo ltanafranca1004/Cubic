@@ -37,3 +37,12 @@ create, wrong code, join, pick, side taken, ready, leave, rejoin, refresh and st
 AI modes, every face on both sides and the win screen, asserting each step, and writes the
 pictures and the cloud dive GIF to `docs/screens`. `npm run screens -- flow` (or `faces`,
 `ai`, `gif`) runs one part.
+
+## `npx tsx screens/check.ts`: the mouse check, in both renderers
+
+Clicks through Play, the mode menu, the join popup (wrong code, then a real one from a
+second client), side select, ready, start and settings with a real mouse, at 1920x1080 and
+1280x720, once in WebGL and once in Phaser's Canvas fallback (`?renderer=canvas`, what a
+browser without WebGL gets). It fails on any console error, any button that is missing,
+see-through, without a panel or dead, and any step that does not arrive. Pictures go to
+`docs/screens/check/`. Needs `npm run dev` running.

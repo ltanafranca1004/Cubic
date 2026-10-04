@@ -4,7 +4,7 @@ import { C, EASE, ROLE, TIME, hex, type Ramp } from '../style/tokens';
 import type { LobbyPlayer, LobbyState } from '../ui/hooks';
 import { Sky } from './clouds';
 import { MenuScene, type SceneData } from './flow';
-import { Button, centre, hop, seeded, shake, slice, text, textCentred, type Text } from './kit';
+import { Button, centre, hop, paint, seeded, shake, slice, text, textCentred, type Text } from './kit';
 
 type Slot = Side | 'mid';
 
@@ -77,9 +77,9 @@ export class SideSelectScene extends MenuScene {
     this.cubes = { out: make('out', 9), in: make('in', 40) };
 
     // titles sit on their own halves, in their side's voice
-    // (white on a sky with white clouds: an ink shadow keeps it readable over both)
-    textCentred(this, this.slotX.out, 38, 'OUTSIDE', ROLE.paper, 2).setDropShadow(1, 1, hex(ROLE.ink), 1);
-    textCentred(this, this.slotX.out, 54, 'ON TOP OF THE CUBE', ROLE.paper).setDropShadow(1, 1, hex(ROLE.ink), 1);
+    // (white on a sky with white clouds: an ink outline keeps it readable over both)
+    textCentred(this, this.slotX.out, 38, 'OUTSIDE', ROLE.paper, 2, true);
+    textCentred(this, this.slotX.out, 54, 'ON TOP OF THE CUBE', ROLE.paper, 1, true);
     textCentred(this, this.slotX.in, 38, 'INSIDE', ROLE.in.base, 2);
     textCentred(this, this.slotX.in, 54, 'INSIDE THE CUBE', ROLE.dimOnDark);
 
@@ -101,7 +101,7 @@ export class SideSelectScene extends MenuScene {
 
     const marker = (role: Role, y: number): Marker => {
       const plate = this.add.image(0, 0, role === 'host' ? 'marker-p1' : 'marker-p2').setOrigin(0.5, 0);
-      const note = text(this, 0, -13, '', ROLE.ink).setDropShadow(1, 1, hex(ROLE.ink), 0);
+      const note = text(this, 0, -13, '', ROLE.ink);
       const root = this.add.container(half, y, [plate, note]).setDepth(5);
       this.tweens.add({ targets: plate, y: 2, duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut', delay: role === 'host' ? 0 : 350 });
       return { root, note, slot: null, y };
@@ -113,7 +113,7 @@ export class SideSelectScene extends MenuScene {
     const barY = H - 30;
     new Button(this, { label: 'LEAVE', variant: 'light', width: 64, onClick: () => this.ctx.actions.onLeaveRoom() }).setPosition(8, barY);
     this.main = new Button(this, { label: 'START', variant: 'in', width: 112, onClick: () => this.mainAction() }).setPosition(W - 120, barY);
-    this.status = text(this, 0, barY + 3, '', ROLE.paper).setDropShadow(1, 1, hex(ROLE.ink), 1);
+    this.status = text(this, 0, barY + 3, '', ROLE.paper, 1, true);
 
     this.keys((e) => this.key(e));
     this.begin(data);
@@ -167,7 +167,7 @@ export class SideSelectScene extends MenuScene {
   }
 
   private setStatus(msg: string, color: string): void {
-    this.status.setText(msg).setTint(hex(color));
+    paint(this.status.setText(msg), color);
     // right-aligned against the main button
     this.status.x = Math.round(this.W - 128 - this.status.width);
   }
@@ -233,8 +233,7 @@ export class SideSelectScene extends MenuScene {
     m.note.setText(!p.connected ? 'AWAY' : isYou ? `${who} (YOU)` : who);
     m.note.x = Math.round(-m.note.width / 2);
     // on the dark half and over the sky the note needs light ink
-    m.note.setTint(hex(slot === 'mid' ? ROLE.ink : ROLE.paper));
-    m.note.dropShadowAlpha = slot === 'mid' ? 0 : 1;
+    paint(m.note, slot === 'mid' ? ROLE.ink : ROLE.paper, slot !== 'mid');
     m.root.setAlpha(p.connected ? 1 : 0.5);
     const x = this.slotX[slot];
     // in the middle the two arrows stand side by side; over a cube, above the hero's head

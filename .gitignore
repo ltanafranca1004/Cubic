@@ -152,3 +152,6 @@ cube.html
 
 # ElevenLabs audio cache (regenerate with: npm run tts:bank -w server)
 server/.tts-cache/
+
+# Output of tools/screens/check.ts (regenerated on every run)
+docs/screens/check/

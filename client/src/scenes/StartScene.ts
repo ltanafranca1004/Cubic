@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { EASE, ROLE, TIME, hex } from '../style/tokens';
+import { EASE, ROLE, TIME } from '../style/tokens';
 import { Sky } from './clouds';
 import { MenuScene, type SceneData } from './flow';
 import { Button, seeded, textCentred, type Text } from './kit';
@@ -30,9 +30,10 @@ export class StartScene extends MenuScene {
     const logoY = Math.round(H * 0.34);
     this.logo = this.add.image(cx, logoY, 'logo');
     const under = logoY + Math.round(this.logo.height / 2);
-    this.tagline = textCentred(this, cx, under + 12, 'TWO PLAYERS. ONE CUBE.', ROLE.paper).setDropShadow(1, 1, hex(ROLE.ink), 1);
-    this.play = new Button(this, { label: 'PLAY', variant: 'in', width: 96, onClick: () => this.dive() }).setCentre(cx, under + 26);
-    this.status = textCentred(this, cx, H - 14, '', ROLE.ink);
+    // white text over sky and white clouds: the ink outline keeps it readable on both
+    this.tagline = textCentred(this, cx, under + 13, 'TWO PLAYERS. ONE CUBE.', ROLE.paper, 1, true);
+    this.play = new Button(this, { label: 'PLAY', variant: 'in', width: 136, height: 34, labelSize: 2, pulse: true, onClick: () => this.dive() }).setCentre(cx, under + 28);
+    this.status = textCentred(this, cx, H - 14, '', ROLE.paper, 1, true);
 
     // the logo floats: two pixels up and down, landing on whole pixels
     this.tweens.add({ targets: this.logo, y: logoY - 2, duration: 1600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });

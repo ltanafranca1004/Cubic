@@ -1,8 +1,9 @@
 import Phaser from 'phaser';
 import { GRID, TILE_PX, defaultEnv, type FaceId, type TileKind } from '@cubic/shared';
+import { ENABLE_AI } from '../config';
 import { C, EASE, ROLE, TIME, hex } from '../style/tokens';
 import { MenuScene, type SceneData } from './flow';
-import { Button, centre, shake, slice, text, textCentred, type Text } from './kit';
+import { Button, centre, paint, shake, slice, text, textCentred, type Text } from './kit';
 
 /** Pixels per map tile in the cube net: each face is 40x40. */
 const NET_TILE = 4;
@@ -12,7 +13,9 @@ const FACE_PX = GRID * NET_TILE;
  * waist; 5 (top) and 6 (bottom) hang off face 1, each the right way up for that edge.
  */
 const NET: Record<FaceId, [number, number]> = { 5: [1, 0], 4: [0, 1], 1: [1, 1], 2: [2, 1], 3: [3, 1], 6: [1, 2] };
-const NET_ALPHA = 0.5;
+/** The net is scenery: large, pale, behind the menu. */
+const NET_ALPHA = 0.22;
+const NET_SCALE = 2;
 const CODE_LEN = 4;
 
 type Manifest = { tilesets: Record<string, { tiles: Record<TileKind, number[]> }> };
@@ -44,21 +47,36 @@ export class ModeScene extends MenuScene {
     this.add.rectangle(0, 0, W, H, hex(ROLE.surface)).setOrigin(0, 0);
 
     const cx = Math.round(W / 2);
-    const gridTop = Math.round(H * 0.66);
-    this.buildNet(cx, Math.round((gridTop - 6) / 2) + 6);
+    const cy = Math.round(H / 2);
+    // the world, faded, behind everything
+    this.buildNet(cx, cy);
 
-    const bw = 150;
-    const gap = 8;
-    const left = cx - bw - gap / 2;
-    const right = cx + gap / 2;
+    // a small title and one clear vertical menu
     const { actions } = this.ctx;
-    const create = new Button(this, { label: 'CREATE LOBBY', variant: 'dark', width: bw, onClick: () => actions.onCreateRoom() }).setPosition(left, gridTop);
-    const join = new Button(this, { label: 'JOIN LOBBY', variant: 'dark', width: bw, onClick: () => this.openJoin() }).setPosition(right, gridTop);
-    const aiOut = new Button(this, { label: 'PLAY OUTSIDE WITH AI', variant: 'out', width: bw, onClick: () => actions.onPlayWithAI('out') }).setPosition(left, gridTop + 28);
-    const aiIn = new Button(this, { label: 'PLAY INSIDE WITH AI', variant: 'in', width: bw, onClick: () => actions.onPlayWithAI('in') }).setPosition(right, gridTop + 28);
-    this.buttons = [create, join, aiOut, aiIn];
-    this.aiButtons = [aiOut, aiIn];
-    this.status = text(this, 0, gridTop + 56, '', ROLE.dimOnLight);
+    const bw = 176;
+    const bh = 26;
+    const gap = 8;
+    const items: { label: string; ai?: boolean; onClick(): void }[] = [
+      { label: 'CREATE LOBBY', onClick: () => actions.onCreateRoom() },
+      { label: 'JOIN LOBBY', onClick: () => this.openJoin() },
+    ];
+    // The AI partner is switched off in config.ts for now; nothing else changes.
+    if (ENABLE_AI) {
+      items.push({ label: 'PLAY OUTSIDE WITH AI', ai: true, onClick: () => actions.onPlayWithAI('out') });
+      items.push({ label: 'PLAY INSIDE WITH AI', ai: true, onClick: () => actions.onPlayWithAI('in') });
+    }
+    const menuH = items.length * bh + (items.length - 1) * gap;
+    const top = cy - Math.round(menuH / 2) + 8;
+    const title = textCentred(this, cx, top - 20, 'SELECT MODE', ROLE.ink);
+    this.buttons = [];
+    this.aiButtons = [];
+    items.forEach((item, i) => {
+      // solid yellow panels with ink text and outline: readable on the white screen
+      const b = new Button(this, { label: item.label, variant: 'in', width: bw, height: bh, onClick: item.onClick }).setCentre(cx, top + i * (bh + gap));
+      this.buttons.push(b);
+      if (item.ai) this.aiButtons.push(b);
+    });
+    this.status = text(this, 0, top + menuH + 10, '', ROLE.ink);
 
     this.keys((e) => this.key(e));
 
@@ -66,7 +84,7 @@ export class ModeScene extends MenuScene {
       // arriving through the clouds: the world grows as we fall, then the choices land
       this.net.setScale(0.3).setAlpha(0);
       this.tweens.add({ targets: this.net, scale: 1, alpha: NET_ALPHA, delay: TIME.dive * 0.4, duration: TIME.dive * 0.6, ease: EASE.out });
-      [...this.buttons.map((b) => b.root), this.status].forEach((o, i) => {
+      [title, ...this.buttons.map((b) => b.root), this.status].forEach((o, i) => {
         const y = o.y;
         o.setAlpha(0).setY(y + 10);
         this.tweens.add({ targets: o, y, alpha: 1, delay: TIME.dive * 0.8 + i * 50, duration: TIME.panel, ease: EASE.out });
@@ -107,7 +125,7 @@ export class ModeScene extends MenuScene {
       }
       this.textures.addCanvas(key, canvas);
     }
-    const image = this.add.image(0, 0, key);
+    const image = this.add.image(0, 0, key).setScale(NET_SCALE);
     this.net = this.add.container(cx, cy, [image]).setAlpha(NET_ALPHA);
     // idle: the net hangs in the air, a slow two-pixel bob
     this.tweens.add({ targets: image, y: 2, duration: 2200, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
@@ -118,8 +136,8 @@ export class ModeScene extends MenuScene {
     const busy = s.status === 'connecting' || !s.online;
     this.buttons.forEach((b) => b.setEnabled(!busy && !this.popup));
     this.aiButtons.forEach((b) => b.setEnabled(!busy && !this.popup && s.aiAvailable));
-    const msg = !s.online ? 'WAKING THE SERVER... THIS CAN TAKE A MINUTE.' : s.status === 'connecting' ? 'CONNECTING...' : !this.popup && s.error ? s.error.toUpperCase() : !s.aiAvailable ? 'THE AI PARTNER IS NOT AVAILABLE ON THIS SERVER.' : '';
-    this.status.setText(msg).setTint(hex(!this.popup && s.error && s.online ? ROLE.danger : ROLE.dimOnLight));
+    const msg = !s.online ? 'WAKING THE SERVER... THIS CAN TAKE A MINUTE.' : s.status === 'connecting' ? 'CONNECTING...' : !this.popup && s.error ? s.error.toUpperCase() : ENABLE_AI && !s.aiAvailable ? 'THE AI PARTNER IS NOT AVAILABLE ON THIS SERVER.' : '';
+    paint(this.status.setText(msg), !this.popup && s.error && s.online ? ROLE.danger : ROLE.ink);
     this.status.x = Math.round(this.W / 2 - this.status.width / 2);
 
     if (this.popup) {
@@ -158,8 +176,8 @@ export class ModeScene extends MenuScene {
       this.popup.key(e);
       return;
     }
-    // arrows walk the 2x2 grid, Enter presses
-    const move: Record<string, number> = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -2, ArrowDown: 2 };
+    // arrows (or W/S) walk the menu, Enter presses
+    const move: Record<string, number> = { ArrowUp: -1, ArrowDown: 1, w: -1, s: 1, W: -1, S: 1 };
     if (e.key in move) {
       const next = this.focus < 0 ? 0 : this.focus + move[e.key]!;
       if (next >= 0 && next < this.buttons.length) this.setFocus(next);
@@ -174,7 +192,7 @@ export class ModeScene extends MenuScene {
 class JoinPopup {
   private root: Phaser.GameObjects.Container;
   private boxes: Phaser.GameObjects.Container;
-  private slots: { idle: Phaser.GameObjects.NineSlice; active: Phaser.GameObjects.NineSlice; error: Phaser.GameObjects.NineSlice; letter: Text }[] = [];
+  private slots: { idle: Phaser.GameObjects.Image; active: Phaser.GameObjects.Image; error: Phaser.GameObjects.Image; letter: Text }[] = [];
   private message: Text;
   private join: Button;
   private code = '';
@@ -193,10 +211,10 @@ class JoinPopup {
     const H = scene.scale.height;
     const { w, h } = this;
     // a veil, not a curtain: the world stays in view
-    const veil = scene.add.rectangle(0, 0, W, H, hex(ROLE.ink), 0.35).setOrigin(0, 0).setInteractive();
+    const veil = scene.add.rectangle(0, 0, W, H, hex(ROLE.ink), 0.45).setOrigin(0, 0).setInteractive();
     const panel = slice(scene, 0, 0, 'panel', w, h);
     const title = textCentred(scene, w / 2, 14, 'JOIN LOBBY');
-    const hint = textCentred(scene, w / 2, 28, 'TYPE THE 4-LETTER ROOM CODE', ROLE.dimOnLight);
+    const hint = textCentred(scene, w / 2, 28, 'TYPE THE 4-LETTER ROOM CODE', ROLE.ink);
 
     const size = 28;
     const gap = 6;
@@ -212,7 +230,7 @@ class JoinPopup {
     }
     this.message = text(scene, 0, 74, '', ROLE.danger);
     const cancel = new Button(scene, { label: 'CANCEL', variant: 'light', width: 80, onClick: () => this.close() }).setPosition(12, h - 34);
-    this.join = new Button(scene, { label: 'JOIN', variant: 'dark', width: 80, onClick: () => this.submit() }).setPosition(w - 92, h - 34);
+    this.join = new Button(scene, { label: 'JOIN', variant: 'in', width: 80, onClick: () => this.submit() }).setPosition(w - 92, h - 34);
 
     const x = Math.round((W - w) / 2);
     const y = Math.round((H - h) / 2);

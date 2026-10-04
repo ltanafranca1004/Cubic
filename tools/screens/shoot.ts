@@ -11,6 +11,7 @@
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { chromium, type Browser, type Page } from 'playwright';
+import { ENABLE_AI } from '../../client/src/config';
 
 const BASE = process.env.BASE ?? 'http://localhost:5206';
 const OUT = new URL('../../docs/screens/', import.meta.url).pathname;
@@ -85,7 +86,7 @@ async function flow(browser: Browser): Promise<void> {
   await shot(a, '04-mode');
 
   // a wrong code: the popup shakes and says why
-  await press(a, 'ArrowRight', 'ArrowRight', 'Enter');
+  await press(a, 'ArrowDown', 'ArrowDown', 'Enter'); // the menu is vertical: Create, Join
   await a.waitForTimeout(500);
   await shot(a, '05-join-popup');
   await a.keyboard.type('zz9z!q'); // digits and symbols are ignored, letters are upper-cased
@@ -103,7 +104,7 @@ async function flow(browser: Browser): Promise<void> {
   await a.waitForTimeout(300);
 
   // host creates
-  await press(a, 'ArrowLeft', 'Enter');
+  await press(a, 'ArrowUp', 'Enter');
   await expect('the host is in a lobby', async () => (await net(a, (c) => c.room?.phase)) === 'lobby');
   const code = (await net(a, (c) => c.code))!;
   await a.waitForTimeout(700);
@@ -112,7 +113,7 @@ async function flow(browser: Browser): Promise<void> {
   // guest joins with the code
   const b = await open(browser);
   await toMode(b);
-  await press(b, 'ArrowRight', 'ArrowRight', 'Enter');
+  await press(b, 'ArrowDown', 'ArrowDown', 'Enter');
   await b.waitForTimeout(400);
   await b.keyboard.type(code.toLowerCase());
   await press(b, 'Enter');
@@ -151,7 +152,7 @@ async function flow(browser: Browser): Promise<void> {
   await shot(a, '14-lobby-guest-left-host');
   await b.waitForTimeout(700);
   await expect('the guest is back on the mode screen', async () => (await net(b, (c) => c.code)) === null);
-  await press(b, 'ArrowRight', 'ArrowRight', 'Enter');
+  await press(b, 'ArrowDown', 'ArrowDown', 'Enter');
   await b.waitForTimeout(400);
   await b.keyboard.type(code);
   await press(b, 'Enter');
@@ -246,7 +247,7 @@ async function faces(browser: Browser): Promise<void> {
 
 async function ai(browser: Browser): Promise<void> {
   console.log('ai modes');
-  for (const [side, keys] of [['out', ['ArrowRight', 'ArrowDown', 'Enter']], ['in', ['ArrowRight', 'ArrowRight', 'ArrowDown', 'Enter']]] as const) {
+  for (const [side, keys] of [['out', ['ArrowDown', 'ArrowDown', 'ArrowDown', 'Enter']], ['in', ['ArrowDown', 'ArrowDown', 'ArrowDown', 'ArrowDown', 'Enter']]] as const) {
     const page = await open(browser);
     await toMode(page);
     await press(page, ...keys);
@@ -284,7 +285,8 @@ const browser = await chromium.launch();
 try {
   if (!ONLY || ONLY === 'flow') await flow(browser);
   if (!ONLY || ONLY === 'faces') await faces(browser);
-  if (!ONLY || ONLY === 'ai') await ai(browser);
+  // the AI buttons are behind ENABLE_AI (client/src/config.ts)
+  if (ENABLE_AI && (!ONLY || ONLY === 'ai')) await ai(browser);
   if (!ONLY || ONLY === 'gif') await gif(browser);
 } catch (e) {
   // leave a picture of every open page next to the error

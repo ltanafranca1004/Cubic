@@ -46,7 +46,7 @@ export const ROLE = {
   /** Text and icons on dark surfaces. */
   paper: C.white,
   /** Secondary text on light / on dark. */
-  dimOnLight: C.mauve,
+  dimOnLight: C.mauveDark,
   dimOnDark: C.silver,
 
   /** Light surfaces: menus, the outside player's HUD. */
