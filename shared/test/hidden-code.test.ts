@@ -101,8 +101,8 @@ test('hidden-code: each side sees only its own half', () => {
   const idle = (seed: number) => JSON.stringify(seen(createGame(seed), 'in'));
   assert.equal(idle(1), idle(2));
   const state = createGame(11);
-  assert.match(objectiveFor(state, 'out'), /upright/);
-  assert.match(objectiveFor(state, 'in'), /ENTER/);
+  assert.match(objectiveFor(state, 'out'), /straight/);
+  assert.match(objectiveFor(state, 'in'), /Keys glow/);
   assert.ok(!objectiveFor(state, 'in').includes(codeIn(state)));
 });
 

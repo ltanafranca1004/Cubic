@@ -182,7 +182,11 @@ export interface SystemNote {
    * INSIDE in a game, P1 / P2 in the lobby. It is who they WERE: it never changes after.
    */
   who: string;
-  /** Their member id (compare with your own: a countdown about you is shown louder). */
+  /**
+   * Their member id. Compare with your own: a countdown about you is shown louder, and a
+   * line about the other player is worded "Your partner ..." by the client (the labels in
+   * `who` shift when the host is removed, so they are never shown to the one who stays).
+   */
   id: number;
   /** `idle` only: when they are removed (epoch ms, server clock). */
   until?: number;

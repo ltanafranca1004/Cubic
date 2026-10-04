@@ -347,9 +347,15 @@ markers). Its body can press E (`use` action). The interfaces, exactly: `docs/ai
   removed in m:ss", sent once with a deadline; the client counts it down in place
   (`chatText` in `client/src/ui/hooks.ts`). What ends it ("is back", "left due to
   inactivity", "disconnected") comes with the same message id and replaces it. The idle
-  player also gets it in the banner ("You are inactive. Press any key."). The lobby has no
-  chat: there the line is in the banner. Names: OUTSIDE / INSIDE in a game, P1 / P2 in the
-  lobby, frozen when the countdown starts.
+  player also gets it in the banner ("You are inactive. Press any key. Removed in m:ss").
+  The lobby has no chat: there the line is in the banner. Names on the server: OUTSIDE /
+  INSIDE in a game, P1 / P2 in the lobby, frozen when the countdown starts.
+- The player who STAYS never reads a label (P1 / P2 shift when the host is removed). The
+  client rewords every line about the other player per viewer, by the note's member id
+  (`viewerNote` in `client/src/net/notes.ts`): "Your partner is inactive, removed in
+  m:ss", "Your partner is back", "Your partner left due to inactivity", "Your partner
+  disconnected" / "Your partner left". A line about yourself (also the human's own line in
+  a solo room) keeps the server's words.
 - `INACTIVE_WARN_MS` later (default 60000) only that player is removed (`removed` socket
   message, back to the mode screen with the reason). The other keeps the room, becomes the
   host, and the seat opens. The room is deleted only when no human is left, present or held.

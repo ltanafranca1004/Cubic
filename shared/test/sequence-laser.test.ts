@@ -108,7 +108,7 @@ test('sequence-laser: nothing works before the battery is in', () => {
   assert.equal(JSON.stringify(t.state.puzzles['sequence-laser']), before);
   assert.equal(t.state.strikes, 0);
   assert.equal(lit(t, 'out').length + lit(t, 'in').length, 0);
-  assert.match(objectiveFor(t.state, 'out', t.env), /power/);
+  assert.match(objectiveFor(t.state, 'out', t.env), /power/i);
 });
 
 test('sequence-laser: a wrong press is a strike and the progress starts over; the order stays', () => {

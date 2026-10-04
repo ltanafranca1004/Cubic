@@ -25,6 +25,7 @@ import {
   type VoiceChunk,
 } from '@cubic/shared';
 import { soloLeftUntil, type Saved } from './left';
+import { viewerNote } from './notes';
 
 // Socket client + move prediction. The local player's input is applied at once to a
 // predicted copy of the state with the same /shared code the server runs; every server
@@ -73,9 +74,11 @@ const ACTIVITY_EVERY_MS = 3000;
 /**
  * A system line as the UI gets it: stamped with OUR clock. `at` is when it arrived, and a
  * countdown's `until` is moved from the server's clock to ours (`until - Date.now()` is
- * what is left).
+ * what is left). A line about the other player is worded "Your partner ..." (`viewerNote`):
+ * `me` is our member id.
  */
-function localNote(msg: ChatMessage): ChatMessage {
+function localNote(raw: ChatMessage, me: number | null): ChatMessage {
+  const msg = viewerNote(raw, me);
   const s = msg.system;
   if (!s) return msg;
   const now = Date.now();
@@ -210,7 +213,7 @@ export class Net {
       if (news.length) this.h.onEvents(news, false);
     });
     socket.on('chat', (raw) => {
-      const msg = localNote(raw);
+      const msg = localNote(raw, this.id);
       // a system line that has changed (the countdown ended) takes the place of its old form
       this.chat = this.chat.some((m) => m.id === msg.id) ? this.chat.map((m) => (m.id === msg.id ? msg : m)) : [...this.chat, msg];
       this.h.onChat(msg);
@@ -287,7 +290,7 @@ export class Net {
     this.code = res.code;
     this.id = res.id;
     this.setRoom(res.room);
-    this.chat = res.chat.map(localNote);
+    this.chat = res.chat.map((m) => localNote(m, res.id));
     this.server = res.state;
     // a new seat, or the same one after a reconnect: the server counts our moves from 0
     this.pending = [];

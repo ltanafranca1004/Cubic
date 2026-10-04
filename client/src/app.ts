@@ -63,7 +63,7 @@ export function hudOf(state: GameState, me: Side, now: number): HudState {
  */
 export const devHooks: { net: Net | null; viewSide: Side | null; render(): void } = { net: null, viewSide: null, render: () => {} };
 
-/** How long the lobby shows "left due to inactivity". */
+/** How long the lobby shows "Your partner left due to inactivity". */
 const NOTICE_MS = 10_000;
 
 export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null = null): void {
