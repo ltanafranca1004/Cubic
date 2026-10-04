@@ -1,37 +1,24 @@
-import Phaser from 'phaser';
-import { FACE_SIZE, TILE_PX, defaultEnv, type FaceId, type TileKind } from '@cubic/shared';
+import type Phaser from 'phaser';
 import { ENABLE_AI } from '../config';
 import { menuAction, stepFocus, typeCode } from '../input/keymap';
-import { C, EASE, ROLE, TIME, hex } from '../style/tokens';
+import { EASE, ROLE, TIME, hex } from '../style/tokens';
 import { MenuScene, type SceneData } from './flow';
 import { Button, centre, paint, shake, slice, text, textCentred, type Text } from './kit';
 
-/** Pixels per map tile in the cube net: each face is 40x40. */
-const NET_TILE = 4;
-const FACE_PX = FACE_SIZE * NET_TILE;
-/**
- * The cube unfolded, as [column, row] per face. Faces 4 1 2 3 run around the cube's
- * waist; 5 (top) and 6 (bottom) hang off face 1, each the right way up for that edge.
- */
-const NET: Record<FaceId, [number, number]> = { 5: [1, 0], 4: [0, 1], 1: [1, 1], 2: [2, 1], 3: [3, 1], 6: [1, 2] };
-/** The net is scenery: large, pale, behind the menu. */
-const NET_ALPHA = 0.22;
-const NET_SCALE = 2;
 const CODE_LEN = 4;
 
-type Manifest = { tilesets: Record<string, { tiles: Record<TileKind, number[]> }> };
-const hash = (f: number, x: number, y: number) => ((f * 73856093) ^ (x * 19349663) ^ (y * 83492791)) >>> 0;
-
 /**
- * Choose how to play. Far below, small and pale, is the world: the six real faces of the
- * cube laid out as a net, drawn from the actual maps and tiles.
+ * Choose how to play: SELECT MODE and the choices on a panel. Behind it, on the white you
+ * land on after the dive, the cube keeps turning (CubeBackdropScene, the scene underneath:
+ * this scene draws no background of its own).
  */
 export class ModeScene extends MenuScene {
-  private net!: Phaser.GameObjects.Container;
   private buttons: Button[] = [];
   private aiButtons: Button[] = [];
   private back!: Button;
   private status!: Text;
+  /** The status line is centred on this x. */
+  private statusX = 0;
   /** Index into [...buttons, back]; -1 until a key is pressed. */
   private focus = -1;
   private popup: JoinPopup | null = null;
@@ -47,17 +34,10 @@ export class ModeScene extends MenuScene {
     this.popup = null;
     this.joining = false;
     this.focus = -1;
-    this.add.rectangle(0, 0, W, H, hex(ROLE.surface)).setOrigin(0, 0);
-
-    const cx = Math.round(W / 2);
+    // the menu sits left of centre; the cube has the right of the screen
+    const cx = Math.round(W * 0.31);
     const cy = Math.round(H / 2);
-    // the world, faded, behind everything
-    this.buildNet(cx, cy);
 
-    // Back button in bottom-left corner, over the net: 16px from the left and the bottom
-    this.back = new Button(this, { label: 'BACK', variant: 'light', width: 80, height: 26, onClick: () => this.ctx.flow.back() }).setPosition(16, H - 42);
-
-    // a small title and one clear vertical menu
     const { actions } = this.ctx;
     const bw = 176;
     const bh = 26;
@@ -73,68 +53,36 @@ export class ModeScene extends MenuScene {
     }
     const menuH = items.length * bh + (items.length - 1) * gap;
     const top = cy - Math.round(menuH / 2) + 8;
-    const title = textCentred(this, cx, top - 20, 'SELECT MODE', ROLE.ink);
+    // a small title and one clear vertical menu, on a panel
+    const pad = 12;
+    const panel = slice(this, cx - bw / 2 - pad, top - 34, 'panel', bw + pad * 2, menuH + 34 + pad + 4);
+    // Back button in the bottom-left corner, 16px from the left and the bottom. The panel is
+    // already down and the cube is in the scene underneath: no scenery is drawn over it.
+    this.back = new Button(this, { label: 'BACK', variant: 'light', width: 80, height: 26, onClick: () => this.ctx.flow.back() }).setPosition(16, H - 42);
+
+    const title = textCentred(this, cx, top - 18, 'SELECT MODE', ROLE.ink);
     this.buttons = [];
     this.aiButtons = [];
     items.forEach((item, i) => {
-      // solid yellow panels with ink text and outline: readable on the white screen
+      // solid yellow panels with ink text and outline: readable on the white panel
       const b = new Button(this, { label: item.label, variant: 'in', width: bw, height: bh, onClick: item.onClick }).setCentre(cx, top + i * (bh + gap));
       this.buttons.push(b);
       if (item.ai) this.aiButtons.push(b);
     });
-    this.status = text(this, 0, top + menuH + 10, '', ROLE.ink);
+    this.status = text(this, 0, top + menuH + pad + 10, '', ROLE.ink);
+    this.statusX = cx;
 
     this.keys((e) => this.key(e));
 
     if (data.intro) {
-      // arriving through the clouds: the world grows as we fall, then the choices land
-      this.net.setScale(0.3).setAlpha(0);
-      this.tweens.add({ targets: this.net, scale: 1, alpha: NET_ALPHA, delay: TIME.dive * 0.4, duration: TIME.dive * 0.6, ease: EASE.out });
-      [title, ...this.buttons.map((b) => b.root), this.status, this.back.root].forEach((o, i) => {
+      // arriving through the clouds: the cube settles, then the choices land
+      [panel, title, ...this.buttons.map((b) => b.root), this.status, this.back.root].forEach((o, i) => {
         const y = o.y;
         o.setAlpha(0).setY(y + 10);
         this.tweens.add({ targets: o, y, alpha: 1, delay: TIME.dive * 0.8 + i * 50, duration: TIME.panel, ease: EASE.out });
       });
     }
     this.begin(data);
-  }
-
-  /** Draw the six outside faces from the real maps with the real tiles, 4px per tile. */
-  private buildNet(cx: number, cy: number): void {
-    const key = 'cube-net';
-    const w = FACE_PX * 4 + 5;
-    const h = FACE_PX * 3 + 4;
-    if (!this.textures.exists(key)) {
-      const canvas = document.createElement('canvas');
-      canvas.width = w;
-      canvas.height = h;
-      const g = canvas.getContext('2d')!;
-      g.imageSmoothingEnabled = false;
-      const manifest = this.cache.json.get('manifest') as Manifest;
-      for (const face of [1, 2, 3, 4, 5, 6] as FaceId[]) {
-        const [col, row] = NET[face];
-        const ox = 1 + col * (FACE_PX + 1);
-        const oy = 1 + row * (FACE_PX + 1);
-        g.fillStyle = C.ink;
-        g.fillRect(ox - 1, oy - 1, FACE_PX + 2, FACE_PX + 2);
-        const sheet = this.textures.get(`tiles-out-${face}`).getSourceImage() as HTMLImageElement;
-        const cols = Math.floor(sheet.width / TILE_PX);
-        const tiles = manifest.tilesets[`out-${face}`]!.tiles;
-        const map = defaultEnv.world.out[face];
-        for (let y = 0; y < FACE_SIZE; y++)
-          for (let x = 0; x < FACE_SIZE; x++) {
-            const list = tiles[map.tiles[y]![x]!];
-            const f = list[hash(face, x, y) % list.length]!;
-            // the middle of the tile, one map tile to 4 pixels: its colours, not its detail
-            g.drawImage(sheet, (f % cols) * TILE_PX + 4, Math.floor(f / cols) * TILE_PX + 4, 8, 8, ox + x * NET_TILE, oy + y * NET_TILE, NET_TILE, NET_TILE);
-          }
-      }
-      this.textures.addCanvas(key, canvas);
-    }
-    const image = this.add.image(0, 0, key).setScale(NET_SCALE);
-    this.net = this.add.container(cx, cy, [image]).setAlpha(NET_ALPHA);
-    // idle: the net hangs in the air, a slow two-pixel bob
-    this.tweens.add({ targets: image, y: 2, duration: 2200, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
   }
 
   protected sync(): void {
@@ -146,7 +94,8 @@ export class ModeScene extends MenuScene {
     this.back.setEnabled(s.status !== 'connecting' && !this.popup);
     const msg = !s.online ? 'WAKING THE SERVER... THIS CAN TAKE A MINUTE.' : s.status === 'connecting' ? 'CONNECTING...' : !this.popup && s.error ? s.error.toUpperCase() : ENABLE_AI && !s.aiAvailable ? 'THE AI PARTNER IS NOT AVAILABLE ON THIS SERVER.' : '';
     paint(this.status.setText(msg), !this.popup && s.error && s.online ? ROLE.danger : ROLE.ink);
-    this.status.x = Math.round(this.W / 2 - this.status.width / 2);
+    // centred under the panel, but never off the left of the screen
+    this.status.x = Math.max(6, Math.round(this.statusX - this.status.width / 2));
 
     if (this.popup) {
       this.popup.setBusy(s.status === 'connecting');
@@ -203,7 +152,7 @@ export class ModeScene extends MenuScene {
 
 /**
  * Type a 4-letter room code. Letters only, upper-cased as you type; Enter joins, Esc
- * closes. A bad code shakes the boxes and says why. The cube net stays visible behind it.
+ * closes. A bad code shakes the boxes and says why. The cube keeps turning behind the veil.
  */
 class JoinPopup {
   private root: Phaser.GameObjects.Container;

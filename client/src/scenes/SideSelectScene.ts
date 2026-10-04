@@ -3,7 +3,6 @@ import type { Role, Side } from '@cubic/shared';
 import { menuAction } from '../input/keymap';
 import { C, EASE, ROLE, TIME, hex, type Ramp } from '../style/tokens';
 import type { LobbyPlayer, LobbyState } from '../ui/hooks';
-import { Sky } from './clouds';
 import { MenuScene, type SceneData } from './flow';
 import { Button, centre, hop, paint, seeded, shake, slice, text, textCentred, type Text } from './kit';
 
@@ -25,7 +24,6 @@ interface Marker {
  * Everything shown here is the server's lobby state, so both screens always match.
  */
 export class SideSelectScene extends MenuScene {
-  private sky!: Sky;
   private zoom = 2;
   private slotX!: Record<Slot, number>;
   private cubes!: Record<Side, { image: Phaser.GameObjects.Image; hero: Phaser.GameObjects.Sprite; ring: Phaser.GameObjects.Graphics; top: number; heroY: number }>;
@@ -54,9 +52,9 @@ export class SideSelectScene extends MenuScene {
     this.zoom = H >= 340 ? 3 : 2;
     const z = this.zoom;
 
-    // left: the open sky of the outside. right: the dark inside of the cube.
-    this.sky = new Sky(this, 0, half, H, [3, 2, 2, 1], 23);
-    this.add.rectangle(half, 0, W - half, H, hex(ROLE.void)).setOrigin(0, 0);
+    // left: the open sky of the outside. right: the dark inside of the cube. Both are drawn
+    // by CubeBackdropScene underneath, with the big cube still turning, dimmed, between them
+    // and this screen.
     const rnd = seeded(5);
     for (let i = 0; i < 26; i++) {
       // dust in the lantern light
@@ -284,9 +282,5 @@ export class SideSelectScene extends MenuScene {
     ring.fillRect(x - 2 * z, top - 2 * z, w + 4 * z, z);
     ring.fillStyle(hex(ramp.dark));
     ring.fillRect(x - 2 * z, top + h + z, w + 4 * z, z);
-  }
-
-  update(_time: number, delta: number): void {
-    this.sky.update(delta);
   }
 }

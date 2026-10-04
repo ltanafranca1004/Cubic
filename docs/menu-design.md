@@ -292,3 +292,28 @@ pixels.
 - **Play** is larger (136x34, double-size label) with a slow glow behind it.
 - `tools/screens/check.ts` clicks through the menus with a mouse in both renderers.
   Screenshots 10 and up in `docs/screens` predate this update.
+
+## Update: the cube behind the menus and in the HUD
+
+- **One cube, always turning.** `CubeBackdropScene` sits under the title, the mode screen,
+  the join popup and the side select and is never stopped between them. Menu to menu, only
+  the menu fades (camera alpha); the cube glides to its place for the next screen. Into and
+  out of the game the whole stage still goes through white or ink.
+- **Drawn by `client/src/cube`**: a small software rasterizer (backface culling, painter's
+  order, nearest-neighbour, one flat shade per face, a 1px ink outline) over six textures
+  baked from the real maps, tiles, objects and the turtle. It writes plain pixels, so WebGL
+  and Canvas show the same cube. The faces are baked once and the cube is redrawn live 15 times a second (one turn in 48 s).
+  A turntable alone never shows the cave underneath, so the cube also rolls half over twice
+  per turn: all six biomes come past.
+- **Title**: sky and far clouds behind the cube, near clouds in front of it, logo and Play
+  on top of everything. **Dive**: the far clouds part too, the cube comes up at the camera
+  and settles to the right of the mode screen. **Mode**: white, `SELECT MODE` and the
+  buttons on a panel left of centre. **Side select**: the cube stays in the middle at 40%.
+- **HUD**: the flat net is now a cube that shows your face flat on, your up at the top,
+  with the faces above and to the right in view. Chips on the four edges name the face in
+  each direction; the chip on the way to your partner blinks in their colour, and their
+  face has a pulsing marker when it is in view. Solved faces get a green frame, the open
+  portal a violet one, and six pips under the cube keep the whole progress in sight.
+  Crossing an edge turns the cube a quarter the way you walked (400 ms, eased; a snap with
+  reduce motion). The cube map (`cube/api.ts`) is the same cube, larger, turned by hand.
+- Check and film it: `tools/screens/cube.ts` (screenshots and GIFs in `docs/screens/cube`).

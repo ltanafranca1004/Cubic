@@ -269,6 +269,6 @@ test('onboarding: the rules stay pure and the layer is mounted once, with a repo
   assert.doesNotMatch(rules, /document\.|window\.|Date\.now|Math\.random|setTimeout|setInterval|from 'phaser'/);
   assert.match(rules, /FACE_SIZE - 1/, 'the face edge comes from FACE_SIZE');
   assert.equal(src('app.ts').match(/mountOnboarding\(/g)?.length, 1);
-  assert.match(src('ui/onboarding/anchors.ts'), /cube: '\.cu-net'/);
+  assert.match(src('ui/onboarding/anchors.ts'), /cube: '\.cu-cube'/);
   assert.match(src('ui/settingsPanel.ts'), /kind: 'toggle', key: 'hints', label: 'Hints'/);
 });

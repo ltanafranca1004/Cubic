@@ -89,6 +89,8 @@ export interface HudState {
   won: boolean;
   /** Item in hand, if any. */
   carrying: { id: string; kind: string } | null;
+  /** The face your partner is on (the HUD cube marks it, or points the way). */
+  partnerFace?: FaceId | null;
 }
 
 export interface VoiceState {

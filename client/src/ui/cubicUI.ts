@@ -1,5 +1,6 @@
-import { FACE_SIZE, NO_SIGNALS, TILE_PX, type FaceId, type SignalView } from '@cubic/shared';
+import { FACE_SIZE, NO_SIGNALS, TILE_PX, type SignalView } from '@cubic/shared';
 import { cubeMap } from '../cube/api';
+import { createCubeHud } from '../cube/hud';
 import { mountGamepad } from '../input/gamepad';
 import { isMapHeld, setMapHeld } from '../input/gate';
 import { gameAction } from '../input/keymap';
@@ -7,7 +8,7 @@ import { createStage, type Stage } from '../scenes/stage';
 import { ITEM_DEFAULT_FRAME, ITEM_FRAMES, asset } from '../style/assets';
 import { uiScale } from '../style/scale';
 import { bindSettings, onSettings, setSetting, settings } from '../style/settings';
-import { netCellLabel, textScale } from './a11y';
+import { textScale } from './a11y';
 import { caption, onCaption, onPartnerSpeaking, partnerSpeaking, type Caption } from './captions';
 import { CSS } from './css';
 import { focusFirst, modalKey, topModal } from './focus';
@@ -28,9 +29,6 @@ const clock = (ms: number) => {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 };
 
-/** The cube unfolded: grid position (column, row) of each face in the HUD's little net. */
-const NET_CELL: Record<FaceId, [number, number]> = { 5: [2, 1], 4: [1, 2], 1: [2, 2], 2: [3, 2], 3: [4, 2], 6: [2, 3] };
-
 const HTML = `
 <div class="cu-stage" id="cu-stage"></div>
 <header class="cu-top">
@@ -46,7 +44,7 @@ const HTML = `
       <div class="cu-rule"></div>
       <div class="cu-where"><span class="cu-dim" id="cu-faceno"></span><b id="cu-face"></b></div>
       <div class="cu-drift"><i class="cu-compass" id="cu-compass"></i><span class="cu-dim">Drift</span><span id="cu-drift"></span></div>
-      <div class="cu-net" id="cu-net"></div>
+      <div class="cu-cube" id="cu-cube"></div>
     </div>
     <div class="cu-panel">
       <p class="cu-obj" id="cu-obj"></p>
@@ -326,7 +324,8 @@ export const cubicUI: UIHost = {
 
     let voiceSig = '';
     let chatSig = '';
-    let netSig = '';
+    // The cube in the HUD (client/src/cube): your face, its neighbours, your partner, progress.
+    const cube = createCubeHud($('cu-cube'));
 
     function renderVoice(s: UIState): void {
       const v = s.voice;
@@ -391,22 +390,7 @@ export const cubicUI: UIHost = {
         carry.innerHTML = hud.carrying ? `<i class="cu-item" style="background-position: calc(${-16 * frame}px * var(--u)) 0"></i><span></span><span class="cu-dim">Q to drop</span>` : `<i class="cu-ico hand"></i><span class="cu-dim">Empty hands</span>`;
         if (hud.carrying) carry.querySelector('span')!.textContent = hud.carrying.kind;
       }
-      // progress: the cube unfolded. A solved face takes its biome colour.
-      const sig = `${hud.solved.join('')}|${hud.face}|${hud.portalOpen}`;
-      if (sig !== netSig) {
-        netSig = sig;
-        $('cu-net').innerHTML = ([1, 2, 3, 4, 5, 6] as FaceId[])
-          .map((n) => {
-            const [col, row] = NET_CELL[n];
-            const cell = { solved: hud.solved.includes(n), here: n === hud.face, portal: n === 6 && hud.portalOpen };
-            const cls = [cell.solved ? 'ok' : '', cell.here ? 'here' : '', cell.portal ? 'portal' : ''].join(' ');
-            // every state has a shape as well as a colour: tick = solved, pip = you, ring = portal
-            const shapes = `${cell.solved ? '<i class="cu-tick"></i>' : ''}${cell.here ? '<i class="cu-pip"></i>' : ''}${cell.portal ? '<i class="cu-ring"></i>' : ''}`;
-            const label = netCellLabel(n, cell);
-            return `<div class="${cls}" style="grid-column:${col};grid-row:${row};--c:var(--face-${n})" title="${label}" aria-label="${label}"><span>${n}</span>${shapes}</div>`;
-          })
-          .join('');
-      }
+      cube.update({ side: s.side ?? 'out', face: hud.face, drift: hud.drift, partnerFace: hud.partnerFace ?? null, solved: hud.solved, portalOpen: hud.portalOpen });
       $('cu-clock').textContent = clock(hud.elapsedMs);
       $('cu-strikes').textContent = String(hud.strikes);
       $('cu-wintxt').textContent = `Escaped in ${clock(hud.elapsedMs)} with ${hud.strikes} strike${hud.strikes === 1 ? '' : 's'}.`;
@@ -501,6 +485,7 @@ export const cubicUI: UIHost = {
         window.removeEventListener('resize', rescale);
         gearOff();
         settingsOff();
+        cube.destroy();
         panel.destroy();
         stage?.destroy();
         el.remove();
