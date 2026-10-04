@@ -7,9 +7,10 @@ so a module must be deterministic and must never touch sockets, the DOM, timers,
 
 ## Start here
 
-The six puzzles are registered in `index.ts` with fixed ids, faces and export names. Each
-file starts as a stub (press E on the crystal). To build one, replace its file, keeping
-`id`, `face` and the export name; do not edit `index.ts`. `_template.ts` shows every hook.
+The six puzzles are registered in `index.ts` with fixed ids, faces and export names. To
+rebuild one, replace its file, keeping `id`, `face` and the export name; do not edit
+`index.ts`. `_template.ts` shows every hook, and every module's header comment says what it
+does, which map objects it uses and why nobody can get stuck in it.
 
 1. Put what it needs on the map: your two banner sections in `shared/src/maps/default.ts`
    (outside and inside of your face) and your legend characters in your section of
@@ -20,16 +21,26 @@ file starts as a stub (press E on the crystal). To build one, replace its file, 
 
 ## The puzzles in the game
 
-| Face | File | id | Needs |
-| --- | --- | --- | --- |
-| 1 | `hiddenCode.ts` | `hidden-code` | nothing |
-| 2 | `equationSafe.ts` | `equation-safe` | nothing |
-| 3 | `mirroredGlyph.ts` | `mirrored-glyph` | nothing |
-| 4 | `botanicalMirror.ts` | `botanical-mirror` | face 6 |
-| 5 | `sequenceLaser.ts` | `sequence-laser` | face 2 (the battery) |
-| 6 | `laserPath.ts` | `laser-path` | face 5 |
+| Face | File | id | Outside | Inside | Needs | Gives |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | `hiddenCode.ts` | `hidden-code` | reads the 3-digit number laid out in the grass (right only at compass drift 0) | types it on the floor keypad, ENTER | nothing | nothing |
+| 2 | `equationSafe.ts` | `equation-safe` | counts bushes, rocks and hopping birds (1 to 4 each) | types 3 x bushes x 2 x birds x rocks, ENTER | nothing | the battery (inside) |
+| 3 | `mirroredGlyph.ts` | `mirrored-glyph` | describes the symbol in the snow | flips tiles with E to copy it (mirrored); CLEAR in the corner | nothing | nothing |
+| 4 | `botanicalMirror.ts` | `botanical-mirror` | plants the flower in the pot the partner names | sees which of five pots holds that colour | face 6 (the flower) | the end of the chain |
+| 5 | `sequenceLaser.ts` | `sequence-laser` | calls the order seven symbols light up in; E on REPLAY | battery into the emitter, then E on the symbols in that order | face 2 (the battery) | the laser on face 6 |
+| 6 | `laserPath.ts` | `laser-path` | pushes two mirrors until the beam burns the crate, then calls the path it reveals | walks that path over the lava to the button, E | face 5 | the flower (outside) |
 
-The game is won the moment all six are solved (the world has no portal).
+Chain: 2 -> 5 -> 6 -> 4. Faces 1 and 3 stand alone. The game is won the moment all six are
+solved (the world has no portal). Strikes: a wrong code (1, 2), a wrong press (5), a wrong
+pot (4), a lava tile off the path (6). Face 3 has none.
+
+**The lava of face 6** is deadly only while face 5 is solved and face 6 is not. Before the
+laser is on and after the button is pressed it is cold: anyone walks straight across.
+That is deliberate, so the pathfinding (the bot, the test scripts) never has to know about
+lava on a face nobody has a reason to be on yet.
+
+`chain.ts` holds what one face hands to the next (the battery, the flower, the flower's
+colour), so the modules agree without reading each other's state.
 
 **Randomness.** A module may not call `Math.random` or `Date.now`. Everything random comes
 from the game's seed: `ctx.rand(...keys)` in a hook (`mix(ctx.seed, ...keys)`), `ctx.seed`
@@ -97,7 +108,8 @@ from the AI partner.
 
 ## Items
 
-A map object of type `item` is carryable (E to pick up / drop, one at a time, it travels
+No map has an item today: the battery and the flower are spawned by their puzzles. A map
+object of type `item` is carryable (E to pick up / drop, one at a time, it travels
 across faces with the player). A map object of type `target` receives items: dropping an
 accepted item on it fires `onItem` with `kind: 'placed'` and the item stays there.
 `target` prop `accepts` = an item id or kind (empty = anything). A puzzle can also make an item
@@ -105,6 +117,6 @@ accepted item on it fires `onItem` with `kind: 'placed'` and the item stays ther
 
 ```ts
 onItem(s, _ctx, ev) {
-  if (ev.kind === 'placed' && ev.item.kind === 'rose' && ev.target?.name === 'pot') s.done = true;
+  if (ev.kind === 'placed' && ev.item.kind === BATTERY_KIND && ev.target?.name === 'f5-emitter') s.powered = true;
 }
 ```

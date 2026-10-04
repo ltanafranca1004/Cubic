@@ -13,8 +13,9 @@ import type { FaceId, Side } from '../types';
 // column 0, column 11), so a player crossing in from a neighbouring face can always step
 // in. shared/test/maps.test.ts fails if a map breaks it. Objects may stand on the ring.
 //
-// The C on every face is the stub puzzle's
-// crystal; it goes away with the stub.
+// Not everything is on these maps: a puzzle also draws tiles of its own through visible()
+// (the number of face 1, all of face 2, the symbol and flip tiles of face 3, the lava and
+// the mirrors of face 6). The banner comments say which tiles to keep free for them.
 
 export const STRING_MAPS: Record<Side, Record<FaceId, string[]>> = {
   out: {
