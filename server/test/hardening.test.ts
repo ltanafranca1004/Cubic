@@ -105,3 +105,16 @@ test('a refresh starts the move sequence again: the old ack is not kept', async 
   await sleep(50);
   assert.equal(again.ack('out'), 1);
 });
+
+test('rate-limited moves are not broadcast, but the sender still gets every ack', async () => {
+  const { a, b } = await pair(true);
+  await sleep(100);
+  const before = b.states.length;
+  const N = 300;
+  for (let seq = 1; seq <= N; seq++) a.sock.emit('move', { dx: seq % 2 ? 1 : -1, dy: 0, seq });
+  await until(() => a.ack('out') === N, `ack ${N}`);
+  await sleep(100);
+  const got = b.states.length - before;
+  // only the moves the budget allowed (the burst plus the refill meanwhile) reach the partner
+  assert.ok(got >= 1 && got <= LIMITS.moveBurst + 15, `the partner got ${got} state updates for ${N} moves`);
+});

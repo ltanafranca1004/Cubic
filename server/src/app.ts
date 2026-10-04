@@ -110,6 +110,12 @@ export function createApp(opts: AppOptions = {}): App {
     wired.add(room);
     room.listen({
       onState: (u) => io.to(room.code).emit('state', u),
+      onAck: (id, u) => {
+        for (const sid of io.sockets.adapter.rooms.get(room.code) ?? []) {
+          const s = io.sockets.sockets.get(sid);
+          if (s?.data?.id === id) s.emit('state', u);
+        }
+      },
       onChat: (m) => io.to(room.code).emit('chat', m),
       onQuick: (q) => io.to(room.code).emit('quick', q),
       onRoom: (r) => io.to(room.code).emit('room', r),
