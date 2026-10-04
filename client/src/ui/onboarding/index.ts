@@ -1,11 +1,12 @@
 import { voiceMix, type GameState, type RoomInfo, type Side } from '@cubic/shared';
+import { inputPaused } from '../../input/gate';
 import { gameAction } from '../../input/keymap';
 import { onFit, viewport, visibleSize } from '../../style/scale';
 import { onSettings, settings } from '../../style/settings';
 import { ANCHOR } from './anchors';
 import { showCaption } from './caption';
 import { ONBOARDING_CSS } from './css';
-import { controlsHint, createOnboarding, EMPTY_VIEW, HINT_TEXT, type ContextHint, type GameSnapshot, type OnboardingView } from './rules';
+import { controlsHint, createOnboarding, EMPTY_VIEW, fadeMs, HINT_TEXT, type ContextHint, type GameSnapshot, type OnboardingView } from './rules';
 
 // ONBOARDING: the side intro card, the controls hint, the three context hints and the
 // narrator's captions. One DOM layer over the HUD that never takes a click, so the gear,
@@ -23,6 +24,16 @@ export interface OnboardingSource {
 }
 
 const TICK_MS = 100;
+/** Per tab, like the seat (net/client.ts): the game whose controls hint has been shown. */
+const CONTROLS_KEY = 'cubic.onb.controls';
+function controlsSeenFor(): number | null {
+  try {
+    const id = Number(sessionStorage.getItem(CONTROLS_KEY) ?? NaN);
+    return Number.isFinite(id) ? id : null;
+  } catch {
+    return null; // storage blocked: the hint is only once per page load
+  }
+}
 /** Close the side card if it is up (Esc does this before it would pause). True if it was. */
 let dismissCard: () => boolean = () => false;
 export const dismissSideCard = (): boolean => dismissCard();
@@ -83,9 +94,10 @@ export function mountOnboarding(root: HTMLElement, source: OnboardingSource): ()
   const gotIt = card.querySelector<HTMLButtonElement>('button')!;
   gotIt.firstElementChild!.textContent = HINT_TEXT.cardDismiss;
 
-  const rules = createOnboarding();
+  const rules = createOnboarding({ controlsSeenFor: controlsSeenFor() });
   let view: OnboardingView = EMPTY_VIEW;
-  let interacted = false;
+  let moved = false;
+  let controlsSaved: number | null = null;
   let dismissed = false;
 
   /** Close the side card now. True if it was up. */
@@ -110,10 +122,11 @@ export function mountOnboarding(root: HTMLElement, source: OnboardingSource): ()
   window.addEventListener('pointerdown', onPress, true);
 
   const onKey = (e: KeyboardEvent) => {
-    const type = gameAction(e)?.type; // (the live bindings; null for a repeat)
-    if (type !== 'interact' && type !== 'drop') return;
+    if (gameAction(e)?.type !== 'move') return; // (the live bindings; null for a repeat)
     if (document.activeElement instanceof HTMLInputElement) return; // typing in the chat
-    if (host.dataset.screen === 'game') interacted = true;
+    if (host.dataset.screen !== 'game' || inputPaused()) return; // a menu is on top: not a step
+    moved = true;
+    tick(); // the controls hint goes with the key, not up to a tick later
   };
   window.addEventListener('keydown', onKey, true);
 
@@ -166,11 +179,21 @@ export function mountOnboarding(root: HTMLElement, source: OnboardingSource): ()
   }
 
   function tick(): void {
-    const next = rules.step({ now: Date.now(), hints: settings().hints, game: snapshot(), interacted, dismissed });
-    interacted = false;
+    const game = snapshot();
+    const next = rules.step({ now: Date.now(), hints: settings().hints, game, moved, dismissed });
+    moved = false;
     dismissed = false;
     renderKeys();
-    layer.classList.toggle('still', settings().reduceMotion);
+    layer.classList.toggle('still', fadeMs(settings().reduceMotion) === 0);
+    // The controls hint has had its time: remember for which game, so a reload does not show it again.
+    if (game && game.id !== controlsSaved && rules.seen().includes('controls')) {
+      controlsSaved = game.id;
+      try {
+        sessionStorage.setItem(CONTROLS_KEY, String(game.id));
+      } catch {
+        // storage blocked: see controlsSeenFor
+      }
+    }
 
     // Content changes only when something comes on: what is leaving keeps its text while it fades.
     if (next.card && next.card !== view.card) {
