@@ -15,7 +15,7 @@ export type ButtonVariant = (typeof BUTTON_VARIANTS)[number];
 /** Frames of sprites/player-*.png. */
 export const PLAYER_FRAMES = { idle: [0, 1], walk: [2, 3] } as const;
 /** Frames of sprites/items.png by item kind; anything else is the bundle. */
-export const ITEM_FRAMES: Record<string, number> = { rose: 0, key: 1 };
+export const ITEM_FRAMES: Record<string, number> = { rose: 0, key: 1, battery: 3, 'flower-red': 4, 'flower-blue': 5, 'flower-yellow': 6, 'flower-pink': 7, 'flower-white': 8 };
 export const ITEM_DEFAULT_FRAME = 2;
 
 /** Every image the menu scenes load, by texture key. */

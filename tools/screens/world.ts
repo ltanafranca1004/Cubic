@@ -4,7 +4,11 @@
 // only the client has to run.
 //
 //   client:  npm run dev -w client -- --port 5406
-//   then:    cd tools && BASE=http://localhost:5406 npx tsx screens/world.ts [shots|gifs|fps|checks]
+//   then:    cd tools && BASE=http://localhost:5406 npx tsx screens/world.ts [shots|gifs|fps|checks|biomes]
+//
+// `biomes` checks the biome layer (client/src/world/biomes): the crown of a tree is drawn
+// over a player standing behind it, tall grass closes over their feet, steps leave prints in
+// the snow, the trees really move, and with reduce motion they stand still.
 //
 // The GIFs need ffmpeg on the PATH (or FFMPEG=/path/to/ffmpeg).
 import { execFileSync } from 'node:child_process';
@@ -29,6 +33,10 @@ interface Stats {
   cap: number;
   decor: number;
   birds: { x: number; y: number }[];
+  canopy: boolean;
+  wade: boolean;
+  prints: number;
+  tick: number;
   loop: string | null;
   frameMs: number;
   fps: number;
@@ -46,8 +54,13 @@ function watch(page: Page): void {
   page.on('console', (m) => m.type() === 'error' && problems.push(`console: ${m.text()}`));
 }
 
-/** Put the player in the middle of a face, the way tools/screens/shoot.ts does. */
-async function goTo(page: Page, side: string, face: number, x = 5, y = 6): Promise<void> {
+/** A floor tile to stand on per outside face, clear of the landmark so the picture shows it. */
+const STAND: Record<number, [number, number]> = { 1: [5, 8], 2: [5, 8], 3: [7, 5], 4: [5, 6], 5: [5, 8], 6: [4, 4] };
+/** Where each face's clip starts: in the tall grass, by the oasis, by the pond, under the trees, by the pool. */
+const CLIP: Record<number, [number, number]> = { 1: [3, 8], 2: [3, 8], 3: [7, 8], 4: [1, 4], 5: [4, 8], 6: [5, 3] };
+
+/** Put the player on a tile of a face (a real step onto it, so the view redraws from the game state). */
+async function goTo(page: Page, side: string, face: number, x = side === 'out' ? STAND[face]![0] : 5, y = side === 'out' ? STAND[face]![1] : 6): Promise<void> {
   await page.evaluate(
     ({ side, face, up, x, y }) => {
       const c = window.__cubic;
@@ -127,8 +140,11 @@ async function gifs(browser: Browser): Promise<void> {
       watch(page);
       const t0 = Date.now();
       await page.goto(`${BASE}/?mock=game&side=${side}`);
+      // the clips are of the world: no onboarding cards or hints over it
+      await page.evaluate(`import('/src/style/settings.ts').then((m) => m.setSetting('hints', false))`);
       await page.waitForTimeout(1500);
-      await goTo(page, side, face);
+      if (side === 'out') await goTo(page, side, face, ...CLIP[face]!);
+      else await goTo(page, side, face);
       await page.waitForTimeout(900);
       const from = (Date.now() - t0) / 1000;
       const box = (await page.locator('#game canvas').boundingBox())!;
@@ -188,6 +204,76 @@ async function checks(browser: Browser): Promise<void> {
   await page.close();
 }
 
+/** The game canvas as PNG bytes with the moving particles out of the way: only the painted face. */
+async function facePixels(page: Page): Promise<string> {
+  return page.evaluate(() => {
+    const canvas = (window as unknown as { __cubicFace(): HTMLCanvasElement }).__cubicFace();
+    return canvas.toDataURL();
+  });
+}
+
+/** The biome layer: what is drawn over the player, what moves, and what stops with reduce motion. */
+async function biomes(browser: Browser): Promise<void> {
+  for (const renderer of ['webgl', 'canvas']) {
+    const page = await open(browser, 'out', renderer);
+    // behind a tree: the forest has one at 0,5, so 0,4 is the tile its crown hangs over
+    await goTo(page, 'out', 4, 1, 4);
+    await page.waitForTimeout(700);
+    if ((await stats(page)).canopy) problems.push(`${renderer}: a crown is drawn over a player who is not behind a tree`);
+    await page.keyboard.press('a');
+    await page.waitForTimeout(500);
+    if (!(await stats(page)).canopy) problems.push(`${renderer}: behind the tree at 0,5 the crown is not drawn over the player`);
+    await page.locator('#game canvas').screenshot({ path: `${OUT}biome-behind-tree${renderer === 'canvas' ? '-canvas' : ''}.png` });
+
+    // the trees sway: the painted face changes over a gust (3.5 s), and not at all with reduce motion
+    const seen = new Set<string>();
+    for (let i = 0; i < 16; i++) {
+      seen.add(await facePixels(page));
+      await page.waitForTimeout(250);
+    }
+    if (seen.size < 3) problems.push(`${renderer}: the forest did not move (${seen.size} different frames in 4 s)`);
+    console.log('  ', renderer, 'forest:', seen.size, 'different frames in 4 s');
+
+    // tall grass: wading in, the blades close over the feet
+    await goTo(page, 'out', 1, 5, 8);
+    await page.waitForTimeout(700);
+    if ((await stats(page)).wade) problems.push(`${renderer}: wading on open ground`);
+    await goTo(page, 'out', 1, 1, 8);
+    await page.waitForTimeout(150);
+    await page.locator('#game canvas').screenshot({ path: `${OUT}biome-tall-grass${renderer === 'canvas' ? '-canvas' : ''}.png` });
+    if (!(await stats(page)).wade) problems.push(`${renderer}: in the tall grass at 1,8 the blades are not drawn over the player`);
+
+    // snow: steps leave prints
+    await goTo(page, 'out', 3, 3, 3);
+    await page.waitForTimeout(700);
+    for (const key of 'dddd') {
+      await page.keyboard.press(key);
+      await page.waitForTimeout(170);
+    }
+    const prints = (await stats(page)).prints;
+    if (prints < 3) problems.push(`${renderer}: ${prints} footprints after four steps in the snow`);
+    await page.locator('#game canvas').screenshot({ path: `${OUT}biome-footprints${renderer === 'canvas' ? '-canvas' : ''}.png` });
+    console.log('  ', renderer, 'snow:', prints, 'footprints');
+
+    // reduce motion: every face stands still
+    await page.evaluate(`import('/src/style/settings.ts').then((m) => m.setSetting('reduceMotion', true))`);
+    for (const face of FACES) {
+      await goTo(page, 'out', face);
+      await page.waitForTimeout(900);
+      const still = new Set<string>();
+      for (let i = 0; i < 8; i++) {
+        still.add(await facePixels(page));
+        await page.waitForTimeout(250);
+      }
+      // (the portal and the crystals are puzzle objects with their own animation: faces 1 and 6 may show 2 to 4 frames)
+      const limit = face === 1 || face === 6 ? 4 : 1;
+      if (still.size > limit) problems.push(`${renderer} reduce motion: ${name('out', face)} still moves (${still.size} frames)`);
+      console.log('  ', renderer, 'reduce motion', name('out', face), still.size, 'frame(s)');
+    }
+    await page.close();
+  }
+}
+
 // A string, not a function: tsx wraps named functions in a helper the page does not have.
 const MEASURE = `new Promise((done) => {
   const gaps = [];
@@ -234,6 +320,7 @@ try {
   if (!ONLY || ONLY === 'gifs') await gifs(browser);
   if (!ONLY || ONLY === 'fps') await fps(browser);
   if (!ONLY || ONLY === 'checks') await checks(browser);
+  if (!ONLY || ONLY === 'biomes') await biomes(browser);
 } finally {
   await browser.close();
 }

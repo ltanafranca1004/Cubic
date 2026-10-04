@@ -21,6 +21,7 @@ not in the Resurrect 64 palette.
 | `art/font.ts` | m5x7.ttf to a bitmap font (PNG + XML) |
 | `art/tiles.ts` | the twelve face tilesets (outside: Ninja Adventure tiles recoloured; inside: ours) |
 | `art/sprites.ts` | the two characters, puzzle objects, items |
+| `art/biomes.ts` | the biome layer of the outside faces: trees, cacti, the snowman, tall grass, small floor things (`sprites/biomes.png`, plus `biomes-veil.png`), and every face's water with its banks (`tiles/water.png`). The cell order is `client/src/world/biomes/sheet.ts` |
 | `art/ui.ts` | panels, buttons, fields, sliders, icons, cursor, markers, badges |
 | `art/scenery.ts` | sky, clouds, logo, the two side select cubes |
 | `art/vendor/ninja-adventure/` | the CC0 source sheets the tiles are cut from |
@@ -99,7 +100,7 @@ cd tools && RENDERER=canvas npx tsx screens/playtest.ts break,menus
 | `walk` | every face on both sides, every edge of every face out and back, the corner loop and its drift |
 | `items` | E and Q, carrying over an edge, the other side cannot take your item |
 | `rejoin` | refresh mid-game on each player, leave and rejoin on each |
-| `puzzles` | every puzzle of the table, the portal, the win screen, Play again (`puzzles:rose-pot` runs one) |
+| `puzzles` | every puzzle of the table in chain order (1, 3, 2, 5, 6, 4), the win screen that follows the last one, Play again (`puzzles:hidden-code` runs one, no finale) |
 | `break` | key spam, held keys, overlays opened mid-transition, both crossing at once, resizes, a third player |
 | `menus` | double clicks on every menu button, key mashing, resizes, Done over a menu button |
 
@@ -108,6 +109,30 @@ Env: `BASE` (client URL), `RENDERER` (`webgl` or `canvas`), `OUT` (default
 puzzle GIFs, which need ffmpeg). Results also go to `OUT/results.json`.
 
 **New puzzle?** Add one entry to `PUZZLE_SCRIPTS` at the top of the file: a list of steps
-per player (`goto` a map object, an item or a tile; `keys`; `wait`; `expect`). The walk is
-planned on the live state with the game's own pathfinding and pressed as W A S D. The run
-fails if a puzzle registered in `shared/src/puzzles/index.ts` has no entry.
+per player (`goto` a map object, an item or a tile; `keys`; `wait`; `expect`; and `plan`,
+a function of the live server state that returns more steps, for whatever is seeded per
+game: the code, the counts, the order of the symbols, the path, which pot is which). A
+`plan` only reads what its player could see (`visibleObjects`), never the puzzle state.
+The walk is planned on the live state with the game's own pathfinding and pressed as
+W A S D. The run fails if a puzzle registered in `shared/src/puzzles/index.ts` has no
+entry. The entries are in chain order because they run on one game: face 5 needs the
+battery of face 2, face 6 the laser of face 5, face 4 the flower of face 6.
+
+`screens/puzzles.ts` is retired (it exits with a pointer here): it had its own table for
+the five old puzzles and walked to the portal.
+
+## `npx tsx screens/faces.ts`: every face from both sides
+
+One two-player game on the Canvas renderer, played with real keys. For each puzzle both
+players stand on its face and a picture of each is saved unsolved, then half way or solved:
+`docs/status/puzzles/face<N>-<out|in>-<state>.png`, 1280x720.
+
+```
+PORT=3409 npm run dev -w server
+VITE_SERVER_URL=http://localhost:3409 npm run dev -w client -- --port 5509
+cd tools && npx tsx screens/faces.ts
+```
+
+Env: `BASE` (client URL), `OUT`. It is not a test: it stops at the first thing that goes
+wrong. The last tile of face 3 is flipped at the very end, because the game is won the
+moment the sixth face is solved and the win screen covers whatever comes last.

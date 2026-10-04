@@ -1,5 +1,6 @@
 import { voiceMix, type GameState, type RoomInfo, type Side } from '@cubic/shared';
 import { gameAction } from '../../input/keymap';
+import { onFit, viewport, visibleSize } from '../../style/scale';
 import { onSettings, settings } from '../../style/settings';
 import { ANCHOR } from './anchors';
 import { showCaption } from './caption';
@@ -149,8 +150,8 @@ export function mountOnboarding(root: HTMLElement, source: OnboardingSource): ()
     if (at.place === 'bottom') y = a.bottom - h; // it grows upwards with a larger text, never out of the view
     if (at.place === 'right') x = a.right + 5 * u;
     if (at.place === 'left') x = a.left - w - 5 * u;
-    x = Math.max(2 * u, Math.min(window.innerWidth - w - 2 * u, x));
-    y = Math.max(24 * u, Math.min(window.innerHeight - h - 2 * u, y)); // never under the top bar
+    x = Math.max(2 * u, Math.min(viewport().width - w - 2 * u, x));
+    y = Math.max(24 * u, Math.min(viewport().height - h - 2 * u, y)); // never under the top bar
     el.style.transform = `translate(${Math.round(x / u) * u}px, ${Math.round(y / u) * u}px)`;
   }
 
@@ -160,7 +161,7 @@ export function mountOnboarding(root: HTMLElement, source: OnboardingSource): ()
     if (view.hint) place(hint, HINT_AT[view.hint]);
     // The captions (narrator, AI) sit at the bottom, where the controls hint is: while it
     // is up they stack on top of it instead of covering it.
-    const lift = view.controls ? window.innerHeight - keys.getBoundingClientRect().top : 0;
+    const lift = view.controls ? visibleSize().height - keys.getBoundingClientRect().top : 0;
     host!.style.setProperty('--subs-lift', `${Math.round(lift)}px`);
   }
 
@@ -197,7 +198,7 @@ export function mountOnboarding(root: HTMLElement, source: OnboardingSource): ()
 
   const timer = setInterval(tick, TICK_MS);
   const settingsOff = onSettings(tick); // "Hints" off takes everything away at once
-  window.addEventListener('resize', layout);
+  const fitOff = onFit(layout);
   // Dev only, like window.__cubic: lets the screenshot script see what has been shown.
   if (import.meta.env.DEV) Object.assign(window, { __cubicOnboarding: rules });
   tick();
@@ -205,7 +206,7 @@ export function mountOnboarding(root: HTMLElement, source: OnboardingSource): ()
   return () => {
     clearInterval(timer);
     settingsOff();
-    window.removeEventListener('resize', layout);
+    fitOff();
     window.removeEventListener('keydown', onKey, true);
     window.removeEventListener('pointerdown', onPress, true);
     dismissCard = () => false;

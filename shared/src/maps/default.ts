@@ -1,189 +1,237 @@
 import type { FaceId, Side } from '../types';
 
-// Placeholder string maps (legend in ./strings.ts and /maps/README.md).
+// String maps (legend in ./strings.ts and /maps/README.md).
 // Any face with a /maps/<side>-<face>.tmj file is replaced by that file (npm run maps).
-// Rows are canonical: the INSIDE player sees their maps mirrored left-right.
+// Rows are canonical: the INSIDE player sees their maps mirrored left-right, and inside
+// (x, y) is directly behind outside (x, y). Never write a mirrored copy.
+//
+// One banner section per face and side. Each puzzle owns the two sections of its face:
+// edit only yours. Outside terrain (T, ~, #) is the biome: move it only with the biome
+// test (client/test/biomes.test.ts) green.
+//
+// EDGE RULE: no solid terrain (#, T, ~) on the outer ring of any face (row 0, row 11,
+// column 0, column 11), so a player crossing in from a neighbouring face can always step
+// in. shared/test/maps.test.ts fails if a map breaks it. Objects may stand on the ring.
+//
+// Not everything is on these maps: a puzzle also draws tiles of its own through visible()
+// (the number of face 1, all of face 2, the symbol and flip tiles of face 3, the lava and
+// the mirrors of face 6). The banner comments say which tiles to keep free for them.
 
 export const STRING_MAPS: Record<Side, Record<FaceId, string[]>> = {
   out: {
-    // Grass. Example puzzle: the door D only opens while the inside player stands on a plate.
-    // R is a rose to carry to the pot (U) on face 6.
+    // ============================================================
+    // FACE 1 OUTSIDE: Grass (hidden-code)
+    // ============================================================
+    // Rows 2-6, columns 0-10 are where the number is laid out (CODE_ORIGIN in hiddenCode.ts):
+    // keep that block floor.
     1: [
-      'T..........T',
+      '............',
+      '.T.T.....TT.',
       '............',
       '............',
       '............',
-      '....###.....',
-      '....#C#.....',
-      '....#D#.....',
       '............',
-      '........T...',
-      '..R.........',
       '............',
-      'T..........T',
+      '........~~..',
+      '.......~~~T.',
+      '............',
+      '.T........T.',
+      '............',
     ],
-    // Desert
+    // ============================================================
+    // FACE 2 OUTSIDE: Desert (equation-safe)
+    // ============================================================
+    // No walls here: a grey block would pass for one of the rocks the puzzle has counted.
     2: [
       '............',
+      '.T..........',
+      '.........T..',
       '............',
-      '..#.........',
+      '.....T~~....',
+      '....~~~~T...',
+      '.....~~~....',
+      '.......T....',
       '............',
-      '........#...',
-      '............',
-      '............',
-      '...#........',
-      '............',
-      '........#...',
-      '............',
+      '.T..........',
+      '..........T.',
       '............',
     ],
-    // Snow. Code relay: six sign stones (1-6), each in its own niche so nobody crosses one by accident.
+    // ============================================================
+    // FACE 3 OUTSIDE: Snow (mirrored-glyph)
+    // ============================================================
+    // The symbol is drawn by the puzzle (GLYPH in puzzles/mirroredGlyph.ts) and covers most of
+    // the face: the pines, the snowman's tile (#) and the pond stand clear of it.
     3: [
       '............',
-      '..###..###..',
-      '..#1#..#2#..',
+      '.T........T.',
+      '..........T.',
       '............',
-      '.#........#.',
-      '#3........#.',
-      '.#........4#',
-      '.#........#.',
       '............',
-      '..#5#..#6#..',
-      '..###..###..',
+      '............',
+      '..........T.',
+      '.TT.........',
+      '..........#.',
+      '.........~~.',
+      '.........~~.',
       '............',
     ],
-    // Forest. Mirror maze: the clearing in the middle is where the safe stones show (no trees there).
+    // ============================================================
+    // FACE 4 OUTSIDE: Forest (botanical-mirror)
+    // ============================================================
+    // p = a pot (five of them). The inside pots stand on the same tiles (drawn by the puzzle).
     4: [
       '............',
+      '.T.T...T.TT.',
+      '.........TT.',
+      '.T......p.T.',
+      '...p........',
       '.T........T.',
-      '............',
-      '............',
-      '............',
-      'T..........T',
-      '............',
-      '............',
-      '............',
-      '............',
-      '.T........T.',
+      '.....p......',
+      '..p.........',
+      '.T......p.T.',
+      '.TT......TT.',
+      '.TT.T..T.TT.',
       '............',
     ],
-    // Rooftop. Skylight: two glass panes, S lights bridge B below and s lights bridge b.
+    // ============================================================
+    // FACE 5 OUTSIDE: Rooftop (sequence-laser)
+    // ============================================================
     5: [
       '............',
+      '.##.........',
+      '.#...u..T...',
+      '...u...u....',
+      '.....~~.....',
+      '....~~~.....',
+      '..u..~..u...',
       '............',
-      '..##....T.S.',
-      '..#.........',
-      '......~~....',
-      '.....~~~....',
-      '......~.....',
-      '............',
-      '..T....##...',
-      '.s......#...',
-      '............',
+      '..T.u.u.....',
+      '.....v..##..',
+      '.........#..',
       '............',
     ],
-    // Cave. The portal: both players stand on it once every puzzle is solved.
+    // ============================================================
+    // FACE 6 OUTSIDE: Cave (laser-path)
+    // ============================================================
     6: [
       '............',
+      '.T........T.',
       '............',
-      '..#......#..',
+      '.T.....x....',
       '............',
-      '............',
-      '.....OO.....',
-      '.....OO.....',
-      '............',
-      '........U...',
-      '..#......#..',
-      '............',
-      '............',
+      '.....Y......',
+      '...x........',
+      '..........T.',
+      '...z..x.....',
+      '.#...~~~....',
+      '.#T...~~..#.',
+      '.........y..',
     ],
   },
   in: {
-    // Plate room
+    // ============================================================
+    // FACE 1 INSIDE: Keypad room (hidden-code)
+    // ============================================================
+    // The inside view is mirrored, so on screen the keys read 1 2 3 / 4 5 6 / 7 8 9 / 0 ENTER.
     1: [
       '............',
       '............',
+      '....ddd.....',
       '............',
-      '........P...',
-      '............',
-      '............',
-      '...#........',
-      '............',
+      '....321.....',
+      '....654.....',
+      '....987.....',
+      '....e0......',
       '............',
       '............',
       '............',
       '............',
     ],
+    // ============================================================
+    // FACE 2 INSIDE: Vault (equation-safe)
+    // ============================================================
+    // The safe stands in the gap of the wall; everything else (clue row, keypad, display) is
+    // laid out in shared/src/puzzles/equationSafe.ts.
     2: [
       '............',
       '............',
       '............',
-      '....#.......',
-      '............',
-      '.......#....',
+      '....#.#.....',
       '............',
       '............',
-      '...#........',
+      '............',
+      '............',
+      '............',
       '............',
       '............',
       '............',
     ],
-    // Frost room. Code relay: stand on the plate P to read the tablet G; the lamps L count the signs.
+    // ============================================================
+    // FACE 3 INSIDE: Tile room (mirrored-glyph)
+    // ============================================================
+    // All floor: the puzzle lays a flip tile on every tile, and CLEAR in the corner.
     3: [
       '............',
       '............',
-      '..#......#..',
-      '............',
-      '....LLLL....',
-      '.....G......',
-      '.....P......',
       '............',
       '............',
-      '..#......#..',
+      '............',
+      '............',
+      '............',
+      '............',
+      '............',
+      '............',
       '............',
       '............',
     ],
-    // Echo room. Mirror maze: a walled trap floor, doorway E, crystal C at the far end.
+    // ============================================================
+    // FACE 4 INSIDE: Greenhouse (botanical-mirror)
+    // ============================================================
+    // Empty: the five flowerpots are the outside pots, seen from behind.
     4: [
       '............',
-      '.##########.',
-      '.#......C.#.',
-      '.#........#.',
-      '.#........#.',
-      '.#........#.',
-      '.#........#.',
-      '.#........#.',
-      '.#........#.',
-      '.#........#.',
-      '.##E#######.',
+      '............',
+      '............',
+      '............',
+      '............',
+      '............',
+      '............',
+      '............',
+      '............',
+      '............',
+      '............',
       '............',
     ],
-    // Pillars. Skylight: two rings of water, one bridge each (B then b), the crystal on the island.
+    // ============================================================
+    // FACE 5 INSIDE: Laser room (sequence-laser)
+    // ============================================================
     5: [
       '............',
-      '.#........#.',
-      '..~~~~~~~~..',
-      '..~......~..',
-      '..~.~~~~.~..',
-      '..~.~..b.~..',
-      '..B.~C.~.~..',
-      '..~.~~~~.~..',
-      '..~......~..',
-      '..~~~~~~~~..',
-      '.#........#.',
+      '............',
+      '.....u......',
+      '...u...u....',
+      '............',
+      '.....w......',
+      '..u.....u...',
+      '............',
+      '....u.u.....',
+      '............',
+      '............',
       '............',
     ],
-    // Core
+    // ============================================================
+    // FACE 6 INSIDE: Lava room (laser-path)
+    // ============================================================
     6: [
       '............',
       '............',
       '............',
-      '....#..#....',
       '............',
-      '.....OO.....',
-      '.....OO.....',
       '............',
-      '....#..#....',
+      '............',
+      '......X.....',
+      '............',
+      '............',
       '............',
       '............',
       '............',

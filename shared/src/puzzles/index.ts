@@ -1,18 +1,18 @@
-import { glyphCodePuzzle } from './glyphCode';
-import { mirrorMaze } from './mirrorMaze';
-import { plateDoor } from './plateDoor';
-import { rosePot } from './rosePot';
-import { skylight } from './skylight';
+import { botanicalMirror } from './botanicalMirror';
+import { equationSafe } from './equationSafe';
+import { hiddenCode } from './hiddenCode';
+import { laserPath } from './laserPath';
+import { mirroredGlyph } from './mirroredGlyph';
+import { sequenceLaser } from './sequenceLaser';
 import type { PuzzleModule } from './types';
 
 export * from './types';
-export { CODE_LEN, glyphCode } from './glyphCode';
-export { safeLine } from './mirrorMaze';
 
 /**
- * Every puzzle in the game. Add yours here (one per face).
- * The portal on face 6 opens once all of these are solved.
- * Faces: 1 plate-door, 3 glyph-code, 4 mirror-maze, 5 skylight, 6 rose-pot (and the portal).
+ * Every puzzle in the game, one per face. The game is won when all of them are solved.
+ * Faces: 1 hidden-code, 2 equation-safe, 3 mirrored-glyph, 4 botanical-mirror,
+ * 5 sequence-laser, 6 laser-path. Chain: 2 -> 5 -> 6 -> 4; 1 and 3 stand alone.
+ * The ids, faces and export names are fixed: replace a module's file, not this list.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const PUZZLES: PuzzleModule<any>[] = [plateDoor, glyphCodePuzzle, mirrorMaze, skylight, rosePot];
+export const PUZZLES: PuzzleModule<any>[] = [hiddenCode, equationSafe, mirroredGlyph, botanicalMirror, sequenceLaser, laserPath];

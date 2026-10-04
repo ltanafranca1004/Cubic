@@ -78,6 +78,13 @@ export interface GameState {
   /** Faces whose puzzle is solved (latched). */
   solved: FaceId[];
   strikes: number;
+  /**
+   * What every puzzle's random content is mixed from (ctx.rand). Picked by the server per
+   * game and sent with the state, so the client predicts with the same numbers.
+   * Always set by createGame; optional only so hand-built states stay valid. Read it with
+   * seedOf(state) (shared/src/game.ts), never directly.
+   */
+  seed?: number;
   /** Epoch ms. */
   startedAt: number;
   wonAt: number | null;
@@ -88,7 +95,10 @@ export type GameEvent =
   | { type: 'bump'; side: Side }
   /** Walked over a cube edge onto another face. dx/dy is the screen direction walked. */
   | { type: 'flip'; side: Side; from: FaceId; to: FaceId; dx: number; dy: number }
+  /** A puzzle's onPush moved something (a box). */
   | { type: 'push'; side: Side }
+  /** E on a tile with nothing to pick up and empty hands, on a face whose puzzle listens (onUse). */
+  | { type: 'use'; side: Side }
   | { type: 'solve'; face: FaceId; puzzle: string }
   | { type: 'strike'; side: Side }
   | { type: 'win' }
@@ -122,12 +132,24 @@ export interface MemberInfo {
   ready: boolean;
 }
 
+/**
+ * A held seat: its player is not here, and the place is kept for them until `until`.
+ * reconnecting = their connection dropped, left = they pressed Leave. Both are epoch ms on
+ * the SERVER clock: count down with `until - now`, measured from when the message arrived.
+ */
+export interface SeatAway {
+  kind: 'reconnecting' | 'left';
+  until: number;
+  /** The server's clock when this was sent. */
+  now: number;
+}
+
 export interface RoomInfo {
   code: string;
   mode: RoomMode;
   phase: RoomPhase;
   /** Seat status per side: who holds (or, in the lobby, has picked) it. */
-  seats: Record<Side, { taken: boolean; connected: boolean; isAI: boolean }>;
+  seats: Record<Side, { taken: boolean; connected: boolean; isAI: boolean; away?: SeatAway }>;
   members: Record<Role, MemberInfo | null>;
 }
 
@@ -218,7 +240,8 @@ export type DevCommand =
 
 export interface ClientToServer {
   'room:create': (ack: Ack<Seat>) => void;
-  'room:join': (msg: { code: string }, ack: Ack<Seat>) => void;
+  /** `token`: the one you held in this room. Within the grace window it gets your seat back. */
+  'room:join': (msg: { code: string; token?: string }, ack: Ack<Seat>) => void;
   /** Phase 2: play alone as `side`; an AI takes the other one. */
   'room:createAI': (msg: { side: Side }, ack: Ack<Seat>) => void;
   'room:rejoin': (msg: { code: string; token: string }, ack: Ack<Seat>) => void;

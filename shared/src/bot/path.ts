@@ -1,5 +1,5 @@
 import { stepPose } from '../cube';
-import { defaultEnv, isBlocked, type GameEnv } from '../game';
+import { defaultEnv, isBlocked, visibleObjects, type GameEnv } from '../game';
 import type { FaceId, GameState, Pose, Side, TileRef } from '../types';
 
 // Pathfinding over the cube surface: breadth-first search in (face, up, tile) space using
@@ -21,8 +21,8 @@ const keyOf = (p: Pose) => `${p.face}|${p.up.join(',')}|${p.x},${p.y}`;
  * Shortest list of moves from `side`'s current pose to a pose accepted by `goal`,
  * or null if there is none. Blockers are evaluated against the current state.
  * `allow` fences the search: the path never crosses onto a face it rejects (the AI's leash).
- * `avoid` marks poses the path may never enter, goal included (trap floor, a partner's
- * sign stones): the walker's own rules on top of the real blockers.
+ * `avoid` marks poses the path may never enter, goal included (hot lava, tiles a puzzle
+ * script keeps off): the walker's own rules on top of the real blockers. See hazardAvoid.
  */
 export function findPath(
   state: GameState,
@@ -58,6 +58,38 @@ export function findPath(
     frontier = next;
   }
   return null;
+}
+
+/**
+ * What the body knows to be deadly, from what its OWN side sees: an object of this type in
+ * this state. Face 6 inside: the lava ("f6-lava", "hot" while face 5 is solved and face 6
+ * is not; "cold" lava is plain floor).
+ */
+export const HAZARD_OBJECTS: readonly { type: string; state: string }[] = [{ type: 'f6-lava', state: 'hot' }];
+/** Objects that stand in the middle of a hazard: as deadly as it, while the face has any hazard tile. */
+export const HAZARD_ISLANDS: readonly string[] = ['button'];
+
+/** The tiles of one face that are deadly for `side` right now (canonical). */
+export function hazardTiles(state: GameState, side: Side, face: FaceId, env: GameEnv = defaultEnv): TileRef[] {
+  const objects = visibleObjects(state, side, face, env);
+  const hot = objects.filter((o) => HAZARD_OBJECTS.some((h) => h.type === o.type && h.state === o.state));
+  if (hot.length === 0) return [];
+  return [...hot, ...objects.filter((o) => HAZARD_ISLANDS.includes(o.type))].map((o) => ({ face, x: o.x, y: o.y }));
+}
+
+/**
+ * An `avoid` predicate for findPath / planAction: true on every tile, on any face, that is
+ * deadly for `side` right now. `except` (canonical tiles) are walked anyway: a path the
+ * partner read out. Evaluated against the current state, once per face.
+ */
+export function hazardAvoid(state: GameState, side: Side, env: GameEnv = defaultEnv, except: readonly TileRef[] = []): (pose: Pose) => boolean {
+  const byFace = new Map<FaceId, Set<string>>();
+  const free = new Set(except.map((t) => `${t.face}|${t.x},${t.y}`));
+  return (pose) => {
+    let tiles = byFace.get(pose.face);
+    if (!tiles) byFace.set(pose.face, (tiles = new Set(hazardTiles(state, side, pose.face, env).map((t) => `${t.x},${t.y}`))));
+    return tiles.has(`${pose.x},${pose.y}`) && !free.has(`${pose.face}|${pose.x},${pose.y}`);
+  };
 }
 
 /** Moves to reach a tile (on any face). */

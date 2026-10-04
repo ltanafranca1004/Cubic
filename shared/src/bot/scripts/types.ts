@@ -1,5 +1,6 @@
 import type { BotAction } from '../actions';
 import type { Observation } from '../observe';
+import type { LineArgs } from '../partner';
 import type { Heard, Token } from '../talk';
 import type { Cell } from './grid';
 
@@ -7,15 +8,15 @@ import type { Cell } from './grid';
 //
 // One file per puzzle module id (shared/src/puzzles/<id>), registered in ./index.ts. The
 // partner core (../partner.ts) does everything that is not about a puzzle: finding the
-// human, the portal, "wait" / "go", safe walking, small talk. When the bot stands on a
+// human, "wait" / "go", safe walking, small talk. When the bot stands on a
 // puzzle's face with the human on the same wall, the core asks that puzzle's script what
 // to do. A puzzle with no script still works: the bot says it does not know this one,
 // keeps off everything it can see on that face, and follows the human.
 //
 // A script is pure, like the puzzle it plays: no clock of its own (ctx.now), no
 // randomness, no networking. It reads ONLY ctx.o (observe(): what its own side can see, in
-// its own screen coordinates) and what the human typed (ctx.heard / ctx.tokens). It never
-// reads GameState or the puzzle's own state.
+// its own screen coordinates) and what the human typed (ctx.heard / ctx.tokens; the raw
+// line is heard[i].text). It never reads GameState or the puzzle's own state.
 
 export interface ScriptCtx<M> {
   /** What this side sees right now. */
@@ -37,9 +38,11 @@ export interface ScriptCtx<M> {
   /**
    * Say one of this script's `lines`. By default a line is said once per visit to the face.
    * `every`: again after this many ms. `force`: now, whatever was said before.
+   * `args`: a RELAY line: what the bot sees, put into the {placeholders} of the line's
+   * words ("The code is {code}."). The same key with other args counts as another line.
    * Returns whether it was said.
    */
-  say(key: string, opts?: { every?: number; force?: boolean }): boolean;
+  say(key: string, opts?: { every?: number; force?: boolean; args?: LineArgs }): boolean;
 }
 
 /** What a script wants the body to do right now. */
@@ -48,14 +51,17 @@ export interface Play {
   action: BotAction | null;
   /** The human depends on the body staying exactly here (a plate, a pane): nothing else may move it. */
   hold?: boolean;
-  /** Hazard tiles this action is allowed to enter (its own target). */
+  /**
+   * Tiles this action is allowed to enter although they are off limits: the script's own
+   * hazards (its target), and deadly tiles (hot lava) on a path the human read out.
+   */
   allow?: (Cell | undefined)[];
   /** One line on what it is doing, for the logs and the model. */
   status: string;
 }
 
 export interface PuzzleScript<M = unknown> {
-  /** The puzzle module's id (shared/src/puzzles), e.g. "glyph-code". */
+  /** The puzzle module's id (shared/src/puzzles), e.g. "hidden-code". */
   id: string;
   /** Every line key this script can say, each starting with "<id>.". The words live in server/src/ai/scripted.ts. */
   lines: readonly string[];
@@ -63,7 +69,8 @@ export interface PuzzleScript<M = unknown> {
   init(): M;
   /**
    * Tiles on this face that no walk may enter while the puzzle is unsolved, from what this
-   * side can see: trap floor, sign stones, panes, dark bridges. Asked on every decision
+   * side can see: tiles that cost a strike, keys that must not be pressed by walking. Deadly
+   * lava needs no entry here: the core keeps off it on every face. Asked on every decision
    * made on this face, also when the bot is only passing through.
    */
   hazards?(o: Observation): Cell[];

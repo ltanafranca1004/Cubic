@@ -5,6 +5,7 @@ import {
   applyMove,
   defaultEnv,
   needsTick,
+  seedOf,
   objectsOn,
   pathTo,
   tick,
@@ -18,6 +19,7 @@ import {
   type Side,
   type TileRef,
 } from '../src/index';
+import { mix } from '../src/puzzles/util';
 
 // Shared helpers for the puzzle smoke tests (puzzles.test.ts, world.test.ts).
 // Not a test file itself: `npm test` only runs test/*.test.ts.
@@ -47,7 +49,7 @@ export interface Solver {
   go(side: Side, target: TileRef): GameEvent[];
   /** One step in `side`'s own screen space (dx, dy: one of them is -1 or 1). */
   move(side: Side, dx: number, dy: number): GameEvent[];
-  /** The E key: pick up the item on this tile, or drop / place the carried one. */
+  /** The E key: drop / place the carried item, pick up the one on this tile, or use the tile. */
   interact(side: Side): GameEvent[];
   /** Let time pass (runs the server tick every TICK_MS). */
   wait(ms: number): GameEvent[];
@@ -99,7 +101,7 @@ export function solver(state: GameState, env: GameEnv = defaultEnv, startAt = 10
       assert.ok(path, `no path for ${side} to ${where}`);
       const out: GameEvent[] = [];
       for (const [dx, dy] of path) {
-        if (state.wonAt !== null) return out; // the game ends the moment both touch the portal
+        if (state.wonAt !== null) return out; // the game is over
         const evs = t.move(side, dx, dy);
         assert.ok(!evs.some((e) => e.type === 'bump' && e.side === side), `${side} was blocked on the way to ${where}`);
         out.push(...evs);
@@ -128,6 +130,7 @@ export function puzzleCtx(state: GameState, env: GameEnv, puzzle: AnyPuzzle, now
   const readOnly = (what: string) => () => assert.fail(`${puzzle.id}: isSolved() must not call ctx.${what}()`);
   return {
     world: env.world,
+    seed: seedOf(state),
     state,
     now,
     solved: state.solved.includes(puzzle.face),
@@ -141,6 +144,11 @@ export function puzzleCtx(state: GameState, env: GameEnv, puzzle: AnyPuzzle, now
     emit: readOnly('emit'),
     strike: readOnly('strike'),
     teleport: readOnly('teleport'),
+    rand: (...keys) => mix(seedOf(state), ...keys),
+    faceSolved: (face) => state.solved.includes(face),
+    spawnItem: readOnly('spawnItem'),
+    giveItem: readOnly('giveItem'),
+    removeItem: readOnly('removeItem'),
   };
 }
 
@@ -187,6 +195,10 @@ export function recordingEnv(base: GameEnv): { env: GameEnv; missing: Set<string
       ...(p.onItem ? { onItem: (s, ctx, ev) => p.onItem!(s, spy(ctx), ev) } : {}),
       ...(p.onTick ? { onTick: (s, ctx, dt) => p.onTick!(s, spy(ctx), dt) } : {}),
       ...(p.visible ? { visible: (s, ctx, side) => p.visible!(s, spy(ctx), side) } : {}),
+      ...(p.onUse ? { onUse: (s, ctx, side, tile) => p.onUse!(s, spy(ctx), side, tile) } : {}),
+      ...(p.onPush ? { onPush: (s, ctx, side, tile, dx, dy) => p.onPush!(s, spy(ctx), side, tile, dx, dy) } : {}),
+      ...(p.lines ? { lines: (s, ctx, side) => p.lines!(s, spy(ctx), side) } : {}),
+      ...(p.bright ? { bright: true } : {}),
       ...(p.objective ? { objective: (s, ctx, side) => p.objective!(s, spy(ctx), side) } : {}),
     } satisfies AnyPuzzle;
   };

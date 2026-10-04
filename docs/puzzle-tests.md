@@ -1,114 +1,134 @@
-# Puzzle tests: add a solution script for your puzzle
+# Puzzle tests
 
-For friend 1 (puzzles). Every puzzle registered in `shared/src/puzzles/index.ts` needs a
-**solution script**: a few lines that play the puzzle with real moves. `npm test` fails
-until it exists, and from then on it proves on every commit that your puzzle can still be
-solved and that the whole game can still be won.
+For friend 1 (puzzles). Every puzzle registered in `shared/src/puzzles/index.ts` has:
 
-You edit one file: `shared/test/solutions.ts`. You do not write a test.
+- a **solution script** in `shared/test/solutions.ts`: a few lines that play the puzzle
+  with real moves. `npm test` fails if one is missing, and proves on every commit that the
+  puzzle can still be solved and the whole game can still be won;
+- a **unit test file** `shared/test/<id>.test.ts` for the rest: wrong answers, what each
+  side sees, seeds, the edge rule, never stuck;
+- an entry in `PUZZLE_SCRIPTS` in `tools/screens/playtest.ts`: the same solve in two real
+  browsers with real keys.
 
 ## The puzzles, and how each one is solved
 
-Five puzzles, one per face; face 2 has none. The portal on face 6 wakes when all five are
-solved, then both players step on it and the win screen comes up. Any order works.
+Six puzzles, one per face. Chain: 2 -> 5 -> 6 -> 4; faces 1 and 3 stand alone. The game is
+won the moment the sixth is solved: there is no portal.
 
 | Puzzle (id) | Face | The outside player | The inside player | Why it cannot be done alone |
 | --- | --- | --- | --- | --- |
-| Plate and door (`plate-door`) | 1 Grass / Plate room | walks through the door to the crystal | stands on the plate, which holds the door open | the door only opens while the inside player's body is on the plate, and the crystal is outside |
-| Code relay (`glyph-code`) | 3 Snow / Frost room | steps on the sign stone the partner names, four times | stands on the plate and reads the tablet: one sign at a time | the wanted sign is drawn only for the inside player, the stones only listen while the inside player is on the plate, and the code is different every game |
-| Mirror maze (`mirror-maze`) | 4 Forest / Echo room | reads the pale stepping stones and talks the partner along them | walks the trap floor from the doorway to the crystal, one called step at a time | the safe tiles are drawn only for the outside player, they are different every game, and every fall draws a new line; only the inside player can enter the room |
-| Skylight (`skylight`) | 5 Rooftop / Pillars | stands on glass pane a, then on pane b when told | crosses bridge a to the dry ring, waits, then crosses bridge b to the crystal | a bridge only exists while the outside player's body is on its pane, one pane lights one bridge, and the crystal is inside |
-| Rose and pot (`rose-pot`) | 6 Cave / Core | carries the rose from face 1 to the pot | nothing (the one solo puzzle: it pulls the two apart, out of earshot) | it can |
+| Hidden code (`hidden-code`) | 1 Grass / Keypad room | reads the 3-digit number laid out in the grass, at compass drift 0 | types it on the floor keypad (E on a key), then ENTER | the number is drawn outside only and differs every game; the keypad is inside only |
+| Equation safe (`equation-safe`) | 2 Desert / Vault | counts the berry bushes, the round rocks and the birds (1 to 4 each) | types 3 x bushes x 2 x birds x rocks, then ENTER | the counts are outside, the formula and the keypad inside |
+| Mirrored glyph (`mirrored-glyph`) | 3 Snow / Tile room | describes the symbol in the snow | flips floor tiles (E) until exactly the symbol is on | the symbol is outside only, the tiles inside only, and the inside view is mirrored |
+| Botanical mirror (`botanical-mirror`) | 4 Forest / Greenhouse | plants the flower in the pot the partner names | says which of the five pots holds the flower's colour | the pots are empty outside; which colour stands where differs every game |
+| Sequence laser (`sequence-laser`) | 5 Rooftop / Laser room | calls the order the seven symbols light up in | puts the battery in the emitter, presses the symbols in that order | the lights are outside only, the buttons inside only, the order differs every game |
+| Laser and path (`laser-path`) | 6 Cave / Lava room | pushes two mirrors until the beam burns the crate, then calls the path | walks the path over the lava to the button, E | the mirrors and the path are outside only, the button is inside |
 
-All three new puzzles put both players on the same wall, so they hear each other at full
-volume while they work; the walk between faces is where the voice fades.
+What each face hands on: face 2 the battery (inside), face 5 the laser beam on face 6, face
+6 the flower (outside), which face 4 needs.
 
 ### Exact solve steps
 
 Tiles are canonical `x,y` (as drawn in `shared/src/maps/default.ts`).
 
-**Code relay, face 3.**
-1. Inside walks onto the plate at `5,6`. The tablet at `5,5` shows a sign and the six stones
-   outside light up.
-2. Inside says the sign (sun, moon, star, drop, bolt or ring). Outside walks onto that
-   stone: sun `3,2`, moon `8,2`, star `1,5`, drop `10,6`, bolt `3,9`, ring `8,9`. Each
-   stone is in its own niche, so no walk crosses another stone.
-3. A lamp lights inside and the tablet shows the next sign. Repeat until four are in.
-4. A wrong stone: one strike, the lamps go out and the code changes. Stepping off the
-   plate keeps the progress but puts the stones to sleep.
+**Hidden code, face 1.** The number covers rows 2 to 6 from column 0: three digits of 3x5
+tiles, each digit made of one thing (flowers, rocks or worn ground). The inside player walks
+onto a key, presses E, three times, then E on ENTER. A wrong code: one strike, the display
+clears. Right: the keypad turns green for good.
 
-**Mirror maze, face 4.**
-1. Outside stands anywhere on the Forest face and sees a line of pale stones in the
-   clearing: the first has an amber dot (it is the tile just inside the doorway), the last
-   a pink crystal.
-2. Inside walks to the doorway at `3,10` and steps in onto `3,9`.
-3. Outside calls the line one step at a time. The inside player sees the wall from behind,
-   so the outside player's left is the inside player's right (and either view may be
-   turned by compass drift): agree on a landmark first. Tiles that held are marked inside.
-4. Inside reaches the crystal at `8,2`. A wrong tile: one strike, back to the doorway, and
-   the stones move to a new line.
+**Equation safe, face 2.** The answer is at most 384 and is typed without leading zeros.
+Wrong: one strike, the display clears. Right: the safe opens and the battery lies on the
+tile in front of it (`5,4`), for the inside player.
 
-**Skylight, face 5.**
-1. Inside waits at the outer water. Outside stands on pane a at `10,2`: bridge a appears at
-   `2,6` and the room lights up.
-2. Inside crosses bridge a and walks round the dry ring to `8,5`, next to bridge b.
-3. Inside says so. Outside walks to pane b at `1,9`: bridge a goes dark, bridge b appears at `7,5`.
-4. Inside crosses bridge b to the crystal at `5,6`. Both bridges stay from then on.
-5. If the outside player steps off while the inside player is ON a bridge: one strike and
-   the inside player is put back on the last dry tile. If the inside player is left in the
-   dark on the ring or the island, a dark bridge can still be walked outwards (never
-   inwards), so they can always leave.
+**Mirrored glyph, face 3.** 47 tiles. E on the corner tile `11,11` (CLEAR) turns every tile
+off. No strikes. Once the flipped tiles are exactly the symbol they lock.
 
-### What the tests prove
+**Sequence laser, face 5.**
+1. Inside drops the battery on the emitter at `5,5`. Anything else comes straight back.
+2. The seven outside symbols light up once each, 0.5 s apiece. E on REPLAY (`5,9`, outside)
+   plays it again.
+3. Inside presses E on the seven symbol tiles in that order. A wrong press: one strike and
+   the presses start over. The order never changes during a game.
 
-`shared/test/coop.test.ts` (25 tests, real moves through the engine):
+**Laser and path, face 6.**
+1. The beam comes up at `5,5` and runs north. The mirrors start at `4,2` ("/") and `9,4`
+   ("\"). Three pushes do it: from `3,2` into `4,2`, from `9,5` into `9,4`, from `9,4` into
+   `9,3`. The beam then turns east at `5,2`, south at `9,2` and hits the crate at `9,11`.
+2. The crate burns: the flower lies beside it, and the path is drawn on the cave floor.
+   E on RESET (`3,8`) puts the mirrors back, which also uncovers a path tile they stand on.
+3. The path starts at `1,5`. The inside player steps onto the ring tile `0,5` from the face
+   next door, walks the path to the button at `6,6` and presses E.
+4. A lava tile off the path: one strike, back to `0,5`. The path stays the same.
 
-- per-side visibility: the outside list never has the tablet, the inside list never has the
-  stepping stones or the panes;
-- **cannot be solved alone**: with nobody on the plate no stone changes the puzzle state
-  (so no sequence can); the outside view is identical in 40 games whose codes differ; the
-  inside view of the maze is identical in 40 games whose safe lines differ, and walking
-  another game's line always falls; the crystal of the skylight room is unreachable with
-  the outside player parked on any single tile of the roof, panes included;
-- wrong input: strike, reset, new code / new line;
-- never stuck: every face stays reachable for both players after a fall, in the dark on
-  the ring, in the dark on the island, and after every puzzle of a whole game.
+**The lava is deadly only while face 5 is solved and face 6 is not.** Before the laser is on
+it is cold rock, and it cools again when the button is pressed. So a script (and the bot)
+may walk straight across face 6 at any other time, and must walk around it while it is hot:
+`insideGo` in `laser-solutions.ts` does that.
 
-`server/test/twoClient.test.ts` plays all five over real sockets to the win.
-`tools/screens/puzzles.ts` plays all five in two real browsers with real key presses, in
-WebGL and in Canvas, to the win screen (screenshots in `docs/screens/puzzles/`).
+**Botanical mirror, face 4.** Until face 6 is solved the pots are asleep: anything put in
+one comes straight back. Then: the wrong pot is one strike and the flower is back in hand;
+the right pot blooms.
+
+## The test files
+
+| File | What it proves |
+| --- | --- |
+| `shared/test/puzzles.test.ts` | every registered puzzle has a solution script and the other way round; ids are unique, one puzzle per face; per puzzle: not solved at the start, solved after its script, latched once, state still plain JSON |
+| `shared/test/smoke.test.ts` | all 12 maps load, spawn tiles are free, everything a puzzle looks up exists in the world, every face is reachable for both sides, the whole game is winnable with the registered puzzles |
+| `shared/test/hidden-code.test.ts`, `equation-safe.test.ts`, `mirrored-glyph.test.ts`, `botanical-mirror.test.ts`, `sequence-laser.test.ts`, `laser-path.test.ts` | one file per puzzle: the solve, wrong input = strike, each side sees only its half, seeded content (two seeds differ, one seed agrees), no ring tile is ever blocked, never stuck |
+| `shared/test/lib-*.test.ts` | the building blocks in `shared/src/puzzles/lib` |
+| `shared/test/maps.test.ts` | map parsing and the edge rule (no solid terrain on the outer ring) |
+| `server/test/twoClient.test.ts` | a whole game over real sockets, to the win |
+| `client/test/biomes.test.ts` | no decoration, tree crown or landmark covers a puzzle tile |
+
+Not test files: `shared/test/harness.ts` (`t`, the `Solver`, and the lookup recorder),
+`shared/test/solutions.ts` (the scripts), `shared/test/laser-solutions.ts` (the scripts of
+faces 5 and 6 and the helpers their unit tests share: `stepTo`, `insideGo`,
+`solveSequenceLaser`, `solveLaserPath`).
+
+`tools/screens/playtest.ts puzzles` plays all six in two real browsers with real key
+presses, in WebGL and in Canvas, to the win screen. Its table is `PUZZLE_SCRIPTS`: one
+entry per puzzle, in chain order (1, 3, 2, 5, 6, 4), made of `goto`, `keys`, `wait`,
+`expect` and `plan` steps. A `plan` step is a function of the live server state that
+returns more steps, for content that is seeded per game: it reads what one player sees
+(`visibleObjects`) and returns what the other has to do. Details: `tools/README.md`.
 
 ### Seeing what a player sees in a script
 
-The new scripts need what a player SEES (the sign on the tablet, the stones). They read
+A script may only use what a player on that side can SEE. It reads
 `visibleObjects(t.state, side, face, t.env)`, the same list the screen is drawn from, and
 never the puzzle's state:
 
 ```ts
-const sign = sees(t, 'in', 3, 'tablet')[0]!.state; // inside: "it shows a moon"
-const stone = sees(t, 'out', 3, 'glyph').find((g) => g.state === sign)!; // outside finds the moon stone
-t.go('out', { face: 3, x: stone.x, y: stone.y });
+// outside counts, inside types
+const seen = (type: string) => visibleObjects(t.state, 'out', 2, t.env).filter((o) => o.type === type).length;
+const answer = 3 * seen('f2-bush') * 2 * seen('f2-bird') * seen('f2-rock');
+const key = visibleObjects(t.state, 'in', 2, t.env).find((o) => o.type === 'key' && o.state === '7')!;
+t.go('in', { face: 2, x: key.x, y: key.y });
+t.interact('in'); // E on the key
 ```
 
-## Add a script (copy, paste, edit)
+## Add or change a script
 
-Open `shared/test/solutions.ts` and add an entry to `SOLUTIONS`. The key is your module's
-`id`, exactly as written in your puzzle file.
+Open `shared/test/solutions.ts`. One delimited block per puzzle, keyed by the module's
+`id`; edit only yours.
 
 ```ts
-  // Face 2. One line on how it is solved.
+  // ---------- face 2: my-puzzle ----------
   'my-puzzle': (t) => {
-    // Inside walks onto the lever.
+    // Inside walks onto the lever and pulls it.
     t.go('in', t.find('in', 2, 'lever'));
+    t.interact('in'); // E with empty hands: onUse
     // Outside picks up the key (item id "key") and puts it on the lock.
     t.go('out', t.item('key'));
     t.interact('out'); // E: pick up
     t.go('out', t.find('out', 2, 'target', 'lock'));
     t.interact('out'); // E: place
   },
+  // ---------- end face 2 ----------
 ```
 
-That is the whole job. The tests then check, for your puzzle:
+The tests then check, for your puzzle:
 
 - a fresh game does not start solved,
 - after your script, your module's `isSolved()` returns true,
@@ -116,18 +136,18 @@ That is the whole job. The tests then check, for your puzzle:
 - the game state is still plain JSON,
 - every `ctx.objects(side, face, 'type')` and `ctx.item('id')` your module asks for finds
   something in the maps,
-- the game is winnable: every script runs on one game, then both players walk into the portal.
+- the game is winnable: every script runs on one game, and the last solve wins it.
 
 ## What `t` can do
 
 | Call | What it does |
 | --- | --- |
 | `t.go(side, tile)` | Walk to a tile by the shortest legal path (crosses faces). Fails if there is no path. |
-| `t.move(side, dx, dy)` | One step in that player's own screen space. Returns the events (check for `bump`). |
-| `t.interact(side)` | The E key: pick up the item on the tile, or drop / place the carried one. |
+| `t.move(side, dx, dy)` | One step in that player's own screen space. Returns the events (check for `bump`). Walking into a box pushes it. |
+| `t.interact(side)` | The E key: drop / place the carried item, else pick up the item on the tile, else use the tile (`onUse`). |
 | `t.wait(ms)` | Let time pass. Runs your `onTick` every 250 ms. |
-| `t.find(side, face, type, name?)` | Tile of a map object, e.g. `t.find('in', 1, 'plate')`. Fails if the map has none. |
-| `t.item(id)` | Tile an item is lying on right now, e.g. `t.item('rose')`. |
+| `t.find(side, face, type, name?)` | Tile of a map object, e.g. `t.find('in', 1, 'key', 'enter')`. Fails if the map has none. |
+| `t.item(id)` | Tile an item is lying on right now, e.g. `t.item('battery')`. |
 | `t.state` | The game state, **read only**. For example `t.state.solved`, `t.state.players.out.carrying`. |
 | `t.events` | Every event so far (`solve`, `puzzle`, `bump`, ...). |
 
@@ -135,27 +155,30 @@ That is the whole job. The tests then check, for your puzzle:
 in the map), so you can also write `t.go('out', { face: 2, x: 4, y: 7 })`.
 
 Time is real: every step and every E costs 100 ms of game time and `onTick` runs on that
-clock, so a timed door has to be beaten at walking speed.
+clock, so a light sequence has to be watched at walking speed.
 
 ## Rules
 
 1. **Real moves only.** Never write to `t.state` or to your puzzle state. If a script cannot
    solve the puzzle by walking, pressing E and waiting, neither can a player.
-2. **Look things up, do not hardcode tiles.** Use `t.find` and `t.item`. Friend 3 moves
-   things on the maps and your script should keep working.
+2. **Look things up, do not hardcode tiles.** Use `t.find`, `t.item` and `visibleObjects`.
+   Friend 3 moves things on the maps and your script should keep working.
 3. **Do not assume where the players stand.** Your script runs on a fresh game (players at
    spawn) and also after the other scripts (players anywhere). `t.go` handles both.
-4. **Needs another puzzle solved first?** Say so at the top of your script:
+4. **Needs another puzzle solved first?** Play it at the top of your script, as the chain
+   does:
 
    ```ts
-   'my-puzzle': (t) => {
-     if (!t.state.solved.includes(1)) SOLUTIONS['plate-door']!(t);
+   'botanical-mirror': (t) => {
+     if (!t.state.solved.includes(6)) SOLUTIONS['laser-path']!(t);
      // ...
    },
    ```
 
 5. One puzzle per face, unique `id`. The engine latches "solved" per face, so a second
    puzzle on the same face would never be checked. A test fails if two share a face.
+6. **The edge rule.** Never block a tile of the outer ring, for either side, in any state.
+   Every puzzle's test file checks it.
 
 ## Run just these tests
 
@@ -165,8 +188,8 @@ From the repo root:
 # the puzzle solutions and the world smoke tests only
 npx tsx --test shared/test/puzzles.test.ts shared/test/smoke.test.ts
 
-# only your puzzle (matches the test name, which contains your id)
-npx tsx --test --test-name-pattern="my-puzzle" shared/test/puzzles.test.ts
+# one puzzle's own tests
+npx tsx --test shared/test/laser-path.test.ts
 
 # everything, as before every commit
 npm test
@@ -183,12 +206,3 @@ npm test
 | `isSolved() is still false after the solution script` | The script finished but the puzzle is not solved: a step is missing. |
 | `a puzzle looked up something the maps do not have` | Your module calls `ctx.objects(...)` or `ctx.item(...)` for something no map has. The message lists the exact call. |
 | `face N is not solved after its script (run after: ...)` | Your script works alone but not after the listed faces were solved (rule 3). |
-
-## Where things are
-
-- `shared/test/solutions.ts`: the scripts. The only file you edit.
-- `shared/test/coop.test.ts`: the rules of the three co-op puzzles, and that none can be solved alone.
-- `shared/test/puzzles.test.ts`: one test per registered puzzle, plus the registry checks.
-- `shared/test/smoke.test.ts`: all 12 maps load, spawn tiles are free, required objects
-  exist, every face is reachable, the game is winnable.
-- `shared/test/harness.ts`: `t` (the `Solver`) and the lookup recorder.

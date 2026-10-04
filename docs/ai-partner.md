@@ -1,0 +1,380 @@
+# The AI partner: interfaces
+
+The briefing for anyone who adds a puzzle script, changes the Gemini or voice budgets, or
+builds the solo mode UI. Everything here is in the code as written; paths are from the repo
+root.
+
+## The parts
+
+| Part | File | What it is |
+| --- | --- | --- |
+| Eyes | `shared/src/bot/observe.ts` | `observe(state, side, env?) -> Observation`: only what that side sees, in its own screen coords (col 0 = its left, row 0 = its top) |
+| Ears | `shared/src/bot/talk.ts` | `parseHuman(text) -> Heard`: one chat line as protocol tokens, plus the raw text |
+| Brain (core) | `shared/src/bot/partner.ts` | `decide(mind, o, heard, now, scripts?) -> Decision`. Knows no puzzle |
+| Brain (per puzzle) | `shared/src/bot/scripts/<id>.ts` | one `PuzzleScript` per puzzle module id, registered in `scripts/index.ts` |
+| Body | `shared/src/bot/actions.ts`, `path.ts` | `planAction` turns a `BotAction` into steps; `findPath` is the BFS; `nextStep` (in `partner.ts`) takes the first step |
+| Runner | `server/src/ai/aiPlayer.ts` | `AiPlayer`: one `decide` + one step per 200 ms on a real `Room` |
+| Words | `server/src/ai/scripted.ts` | the text of every line key, per persona |
+| Advisor | `server/src/ai/gemini.ts`, `prompt.ts` | Gemini: optional, never drives |
+| Voice | `server/src/ai/tts.ts`, `server/tts/bank/` | bank, disk cache, ElevenLabs, else the browser voice |
+
+`shared/src/bot` is pure: no clock (the caller passes `now`), no randomness, no networking.
+The game is won the moment the last puzzle is solved: there is no portal in the partner
+code. (`Observation.portalOpen` / `portalFace` and `objective.ts` still exist for the test
+fixture world; `decide` does not read them.)
+
+## State of the registry
+
+`PUZZLE_SCRIPTS` in `shared/src/bot/scripts/index.ts` is EMPTY. With no script for a
+puzzle the partner still runs: it greets (`hello.out` / `hello.in`), finds the human by
+voice or "face N", stays on their wall, says `unknown` once per visit, obeys "wait" /
+"go", says `solved` / `win`, and keeps off hot lava. It never presses or picks up anything.
+
+The six puzzle ids and faces (`shared/src/puzzles/index.ts`): 1 `hidden-code`, 2
+`equation-safe`, 3 `mirrored-glyph`, 4 `botanical-mirror`, 5 `sequence-laser`, 6
+`laser-path`. Chain: 2 -> 5 -> 6 -> 4.
+
+## The script plug-in interface (`shared/src/bot/scripts/types.ts`, verbatim)
+
+```ts
+export interface ScriptCtx<M> {
+  /** What this side sees right now. */
+  o: Observation;
+  /** The script's own memory. Mutate it. Starts as init() and is reset whenever the bot enters the face. */
+  mem: M;
+  /** What the human said since the last decision, one entry per chat line, oldest first. */
+  heard: readonly Heard[];
+  /** All tokens of `heard`, flattened. */
+  tokens: readonly Token[];
+  /** Did the human say any of these kinds of word? */
+  has(...kinds: Token['t'][]): boolean;
+  /** Game time in ms. */
+  now: number;
+  /** The strike counter went up since the last decision. */
+  struck: boolean;
+  /** Objects of one type that this side sees on this face. */
+  objs(type: string): Observation['objects'];
+  say(key: string, opts?: { every?: number; force?: boolean; args?: LineArgs }): boolean;
+}
+
+export interface Play {
+  /** Where to walk next (re-asked before every step), or null to stand still. */
+  action: BotAction | null;
+  /** The human depends on the body staying exactly here: nothing else may move it. */
+  hold?: boolean;
+  /** Tiles this action may enter although they are off limits (own hazards, deadly tiles on a told path). */
+  allow?: (Cell | undefined)[];
+  /** One line on what it is doing, for the logs and the model. */
+  status: string;
+}
+
+export interface PuzzleScript<M = unknown> {
+  id: string;                               // the puzzle module's id, e.g. "hidden-code"
+  lines: readonly string[];                 // every line key it can say, each starting with "<id>."
+  init(): M;                                // fresh memory, JSON-serializable
+  hazards?(o: Observation): Cell[];         // tiles of this face no walk may enter while unsolved
+  play(ctx: ScriptCtx<M>): Play | null;     // on the face, unsolved, human on the same wall
+  errand?(ctx: ScriptCtx<M>): Play | null;  // work away from the face (carrying), asked on any face
+}
+```
+
+`Cell` is `{ col: number; row: number }` in the bot's own screen coords (`scripts/grid.ts`,
+which also has `same`, `around`, `walkable`, `route`, `flood`, `far`, `throughWall`,
+`agreeTurn`, `dirOf`). `LineArgs` is `Record<string, string | number>` (`partner.ts`).
+
+### What a script receives each turn
+
+`decide` runs before every body step (every 200 ms). In order:
+
+1. Won: says `win`, returns. Otherwise greets once; says `solved` on a new solve.
+2. "wait" pauses 10 s (`wait.ok`); "go" / "yes" ends the pause.
+3. `errand(ctx)` of every script whose puzzle is in the game and unsolved, on ANY face. The
+   first non-null `Play` wins. Use it to carry the battery (2 -> 5) or the flower (6 -> 4).
+4. Paused: stands still (`hold`).
+5. Human not on this wall (`o.voiceSignal < 3`): walks towards them (`go_face`). No script
+   is asked.
+6. Same wall, `o.puzzleHere`: `play(ctx)` of the script whose `id === o.puzzleId`. `null`
+   = nothing to do for this side: the core waits with the human.
+
+`ctx.o` is the `Observation` (`shared/src/bot/observe.ts`): `you`, `face`, `faceName`,
+`compassDrift`, `position {col,row}`, `grid` (12 strings; `.` `#` `T` `~` `@` `*`),
+`objects [{type, state?, col, row}]` (exactly what the puzzle's `visible(side)` returns),
+`items [{kind, col, row}]`, `carrying` (item kind or null), `edges`, `objective`,
+`puzzleHere`, `puzzleId`, `puzzleList [{id, face}]`, `solvedFaces`, `strikes`,
+`voiceSignal` (3 same wall, 1 next face, 0 opposite), `won`. A script never reads
+`GameState`, the puzzle's state or the other side.
+
+`mem` is reset to `init()` each time the bot enters the face; lines said by the script may
+be said again on the next visit.
+
+### What it may return
+
+- `action`: any `BotAction` (below) or `null`. It is planned again before every step, so
+  return the same action until what you SEE says it is done.
+- `ctx.say(key, opts)`: `key` must be in the script's `lines`, else it is dropped. Default:
+  once per visit to the face. `every: ms` = again after that long. `force` = now. Returns
+  whether it was said. Lines go out one at a time, 1.5 s apart (`LINE_GAP_MS`), through the
+  room's chat rate limit, at most 6 waiting.
+- Wait: `{ action: null, status }`, or `{ action: null, hold: true, status }` when the
+  human needs the body to stay exactly there (a Gemini suggestion cannot move it).
+- `null`: nothing to do here.
+
+### Relay lines
+
+A relay line carries what the bot sees. The words have `{placeholders}`:
+
+```ts
+// shared/src/bot/scripts/hiddenCode.ts
+ctx.say('hidden-code.read', { args: { code: '4 7 2' } });
+// server/src/ai/scripted.ts, in PUZZLE
+'hidden-code.read': 'The number is {code}.',
+```
+
+`lineText(persona, key, args?)` fills them (`fillLine`). The same key with other args is
+another line: it is said again when the value changes. The filled text must stay within 80
+characters (`MAX_SAY_CHARS`; `room.say` cuts at `CHAT_MAX_LEN`). A relay line is said
+exactly as written (never reworded by Gemini) and is never in the voice bank, so the
+browser voice reads it (see Voice). `Say` is `{ key, args?, flavor? }`; only core small
+talk is `flavor` (may be reworded).
+
+### How chat from the human reaches a script
+
+`AiPlayer.act` reads new `room.chat` lines from the human and runs `parseHuman`:
+
+```ts
+export interface Heard {
+  text: string;     // the line as typed, trimmed
+  tokens: Token[];  // sign | dir (+n) | face | yes | no | go | wait | again
+  plain: boolean;   // every word was a protocol word, a number or a filler
+}
+```
+
+- `plain` (protocol words, numbers, fillers): straight to the next `decide` as `heard`.
+  "4 7 2" is plain: it arrives with no tokens and `text: '4 7 2'`.
+- Anything else: to Gemini if it is free. Its answer's `heard` (protocol words) becomes the
+  tokens; the script still gets the line as typed in `text`.
+- Gemini busy, absent or failing: the line is passed on as it is. A line with no token
+  that is not plain also gets the `huh` line (at most every 8 s), or, with a working
+  Gemini, waits for the next free call (only the latest waits).
+
+So every human line reaches `ctx.heard` with its raw `text`, with or without Gemini: a
+script reads its own words (digits, colours) from `heard[i].text`. CAUTION: a word that is
+not in `talk.ts` ("red") still triggers `huh` without Gemini even if a script understood
+it; add such words to `talk.ts` (`Token`, `parseHuman`, `FILLER`, and the list in
+`prompt.ts`) if that matters. Quick chat is 1 Here! (yes), 2 Wait, 3 Yes, 4 No.
+
+### Registering a script
+
+1. `shared/src/bot/scripts/<id>.ts`: export the `PuzzleScript`.
+2. Add it to `PUZZLE_SCRIPTS` in `shared/src/bot/scripts/index.ts`.
+3. Give every key of `lines` its words in `PUZZLE` in `server/src/ai/scripted.ts` (same
+   words in both personas; `server/test/ai.test.ts` fails on a key with no words, a line
+   over 80 characters or an em dash).
+4. Add its `HumanScript` to `HUMAN_SCRIPTS` in `shared/test/partnerSim.ts`.
+5. If Gemini should know the rule, add a line to `PUZZLE_RULES` in `server/src/ai/prompt.ts`
+   (between the `PUZZLES V2 PLACEHOLDER` markers).
+
+## The body
+
+### Actions (`shared/src/bot/actions.ts`)
+
+```ts
+export type BotAction =
+  | { type: 'goto'; col: number; row: number }
+  | { type: 'go_face'; face: number }
+  | { type: 'step_on'; object: string }          // nearest visible object type or item kind
+  | { type: 'move'; dir: 'up' | 'down' | 'left' | 'right'; steps?: number }
+  | { type: 'pick_up' }                          // the item on this tile
+  | { type: 'drop' }                             // on a target it gets placed
+  | { type: 'use'; col?: number; row?: number; object?: string; state?: string }
+  | { type: 'wait' };
+
+export function planAction(
+  state: GameState, side: Side, action: BotAction, env: GameEnv = defaultEnv,
+  leash?: (face: FaceId) => boolean,
+  avoidTiles: readonly { col: number; row: number }[] = [],  // current face, screen coords
+  avoidPose?: (pose: Pose) => boolean,                       // any face
+): { steps: BotStep[] } | { error: string };                 // BotStep = Move | 'interact'
+```
+
+### The `use` action
+
+Presses E with empty hands: the engine's "use" branch of `applyInteract`, which calls the
+puzzle's `onUse` (keypad keys, flip tiles, symbol buttons, REPLAY, RESET, the lava button).
+
+- Target: `col` + `row` (a tile), or `object` (+ `state`): the nearest visible object of
+  that type on the bot's face, e.g. `{ type: 'use', object: 'key', state: '7' }`, `{ type:
+  'use', object: 'key', state: 'enter' }`. Neither: where it stands.
+- Plan: the walk to the target, then one `'interact'`.
+- Refused (`error`): carrying something (E would drop it), a loose item on the target tile
+  (E would pick it up), no such object in sight, no way there.
+- ONE press per plan. `nextStep` takes one step of a fresh plan each time, so once the body
+  stands on the target the same action presses again every 200 ms. Decide from the
+  observation whether a press is still needed (count the filled `display` cells, read the
+  tile's `state`) and return another action or `null` once it is not.
+- `parseAction` accepts it from a model, but `ADVICE_TYPES` in `aiPlayer.ts` does not:
+  Gemini may not press anything.
+
+### The avoid predicate (`shared/src/bot/path.ts`)
+
+```ts
+export function findPath(state, side, goal: (pose: Pose) => boolean, env = defaultEnv,
+  allow?: (face: FaceId) => boolean,     // faces the path may enter (leash)
+  avoid?: (pose: Pose) => boolean,       // poses the path may never enter, goal included
+): Move[] | null;
+
+export const HAZARD_OBJECTS = [{ type: 'f6-lava', state: 'hot' }];
+export const HAZARD_ISLANDS = ['button'];   // as deadly as the hazard around it
+export function hazardTiles(state, side, face, env = defaultEnv): TileRef[];
+export function hazardAvoid(state, side, env = defaultEnv, except: readonly TileRef[] = []): (pose: Pose) => boolean;
+```
+
+`hazardTiles` is built from what that side's own `visibleObjects` shows: on face 6 inside,
+while face 5 is solved and face 6 is not, every lava tile is `hot`: all 100 inner tiles,
+the button included. Cold lava is plain floor. Nothing in `shared/src/game.ts` changed.
+
+`nextStep(state, side, decision, env?)` always plans with `hazardAvoid`, on every face, so
+`go_face` routes around the inside of face 6 and a `goto` / `use` into the lava returns
+null (the body stands still). Exceptions:
+
+- `Play.allow`: cells of the current face the walk may enter anyway. A face 6 script lists
+  the path tiles the human read out; the body then walks only those lava tiles.
+- If the body already stands on a deadly tile, the predicate is dropped for that step.
+- `Decision.soft`: on a face with no script the core avoids every visible object and item.
+  That is caution only: if it leaves no walk, the step is planned again without it. Deadly
+  tiles never give way.
+
+Gemini's suggested moves are checked against the same predicate (`AiPlayer.take`,
+`adviceStep`).
+
+## The simulation harness (`shared/test/partnerSim.ts`)
+
+```ts
+export interface HumanScript<M = unknown> {
+  id: string;                         // the puzzle module's id
+  init(): M;
+  play(ctx: HumanCtx<M>): void;       // once per tick: on the face, unsolved, AI on the same wall
+  errand?(ctx: HumanCtx<M>): boolean; // any face, first; true = it acted this tick
+}
+export interface HumanCtx<M> {
+  side: Side; o: Observation; mem: M;
+  inbox: readonly HeardLine[];        // AI lines not yet acted on: { key, args? }
+  next(): HeardLine | undefined;      // take the oldest
+  seen(type: string): VisibleObject[];          // canonical tiles, own side only
+  at(t: { x; y }): boolean;
+  walk(to: { x; y; face? }): boolean; // one careful step; true = already there
+  move(dx, dy): void;                 // one raw step (a mistake)
+  interact(): void;                   // E
+  say(text: string): void;            // type a chat line
+  errand(to: TileRef, then?: () => void): void; // walk there over the next ticks, then run
+}
+export const HUMAN_SCRIPTS: HumanScript<any>[] = [];   // the registry, empty
+
+export function play(aiSide: Side, opts: PlayOptions = {}, env = defaultEnv): Played;
+// PlayOptions: scripts? (default PUZZLE_SCRIPTS), humans? (default HUMAN_SCRIPTS), order?,
+//   announce?, maxMs? (default 30 min of game time), until?(state), state?, startAt?
+// Played: { state, mind, lines: LineKey[], human: SimHuman (human.said: string[]), ms,
+//   trodden: Set<"face:x,y">, decisions: Decision[] }
+```
+
+`play()` is the pure loop, no server. Each 200 ms step: `decide` for the AI, one
+`nextStep`, the AI's lines go to `human.hear(key, args)`, then `human.tick()`, then the
+engine `tick`. What the human `say`s is parsed with `parseHuman` and reaches the next
+`decide`. The human core walks to the next unsolved face of `order` that it has a
+`HumanScript` for, waits there for the AI (`voiceSignal 3`), then calls `play`. A mocked
+human is just a `HumanScript` (or none: the AI then plays alone). To start mid-game, pass
+`state` (e.g. after `devSolve(state, 5)`).
+
+Example with a test-only script, a relay line, the raw chat line and `use`: the last test
+of `shared/test/partner.test.ts`. The same `SimHuman` drives the real `AiPlayer` on a
+`Room` in `server/test/ai.test.ts` (`humanOn(room, side, lines)`); its three whole-game
+tests are skipped until every puzzle has a `PuzzleScript` and a `HumanScript`.
+
+## Gemini (`server/src/ai/gemini.ts`, `prompt.ts`, `aiPlayer.ts`)
+
+Called from exactly one place: `AiPlayer.ask` -> `Brain.think(turn, signal)` ->
+`ai.models.generateContent` in `geminiBrain`. An `AiPlayer` only exists in an AI room.
+
+- Created in `server/src/index.ts`: `advisor = !AI_FAKE && GEMINI_API_KEY ? geminiBrain(key,
+  model, persona) : null`. `null` = the script plays alone and nothing is ever called.
+- Triggers (`AiPlayer.act`), each only if `free(now)` (an advisor, no call in flight, past
+  `nextThinkAt`):
+  1. a `flavor` line of the core (`hello.*`, `solved`, `win`): reworded;
+  2. a human chat line that is not plain protocol words: answered and turned into `heard`.
+     If not free and the line has no token, the latest such line waits in `pending`.
+- Sent: `systemPrompt(persona)` (rules + persona) and `turnPrompt`: `{ youAre,
+  observation (without puzzleId / puzzleList), planner (Decision.status), scriptLine,
+  partnerSaid, chat (last 12 lines) }`. Reply JSON `{ say, heard, action }`
+  (`REPLY_SCHEMA`). `action` is limited to `goto`, `step_on`, `move`, `wait` on the
+  current face, and only walked while the script is idle and not holding.
+- Limits: one call per 6 s per room (`MIN_THINK_MS`), no backlog; 3 s deadline
+  (`TIMEOUT_MS`); on error / timeout / 429 back off 6 s doubling to 60 s; `maxOutputTokens`
+  1024, `thinkingBudget` 0, temperature 0.8. There is NO cap per game, per room lifetime or
+  across rooms, and no daily budget: a chatty human costs up to 10 calls a minute for as
+  long as the room lives. Token counts are logged per call and on stop.
+- While the human is disconnected (seat held 60 s, `LIMITS.seatHoldMs`) `act` returns
+  early: no decisions, no calls.
+
+## Voice (`server/src/ai/tts.ts`, wired in `server/src/index.ts` `onSay`)
+
+For each line the AI says: `tts.speak(msg.text, room.code, { cacheOnly: scripted ||
+ttsMode === 'browser' })`. A clip goes out as socket event `tts` `{ chatId, mime, data }`;
+no clip = event `speak` `{ chatId, text }` and the client's `speechSynthesis` reads it.
+Every line is also a caption (`client/src/ui/captions.ts`).
+
+`speak` resolves in this order:
+
+1. Bank: `server/tts/bank/<bankFileName(text)>`, where `bankFileName = sha256(normalizeLine(
+   text)).hex.slice(0, 24) + '.mp3'` and `normalizeLine` lowercases, strips punctuation and
+   collapses spaces. So a line maps to a clip by its normalized TEXT only, not by key,
+   voice or model.
+2. Disk cache: `server/.tts-cache/<sha256(voiceId \n modelId \n text)>.mp3` (not committed).
+3. ElevenLabs (`POST /v1/text-to-speech/{voice}`), only when not `cacheOnly`, with a key,
+   and under `TTS_SESSION_LINES` generated lines for that room (default 15).
+4. `null`: browser voice.
+
+So scripted lines (core, puzzle and relay) never reach ElevenLabs; only Gemini's own lines
+can, and only with `TTS_MODE=elevenlabs` and a key.
+
+The bank: `bankLines()` = `bankedScriptLines()` (the CORE lines, both personas) + the
+generic lines in `server/tts/bank-lines.txt`. Puzzle lines are not banked. `npm run
+tts:bank -w server` (`server/scripts/ttsBank.ts`, calls ElevenLabs: do not run it without
+being asked) adds missing clips and rewrites `server/tts/bank/index.json`:
+
+```json
+{ "voiceId": "...", "modelId": "eleven_flash_v2_5",
+  "lines": [ { "file": "5789cac39d2333dfcf5a0c9a.mp3", "chars": 77, "text": "Hi! I am outside the cube. ..." } ] }
+```
+
+The index is a record only; the server looks clips up by file name. Clips are never
+deleted: the four portal clips are still there and in the index, used by no line
+(`server/test/tts.test.ts` allows a clip without a line only if the index lists it).
+
+## Env vars (`server/.env.example`; keys never reach the client)
+
+| Var | Default | Effect |
+| --- | --- | --- |
+| `GEMINI_API_KEY` | none | with it, Gemini advises; without it, script only |
+| `GEMINI_MODEL` | `gemini-3.5-flash` | model id |
+| `AI_FAKE` | unset | `1` = never create the advisor, even with a key |
+| `AI_PERSONA` | `default` | `default` or `tsundere`: tone only |
+| `TTS_MODE` | `browser`, or `elevenlabs` when `NODE_ENV=production` | falls back to `browser` without a key |
+| `TTS_SESSION_LINES` | 15 | ElevenLabs lines one room may buy |
+| `ELEVENLABS_API_KEY` | none | |
+| `ELEVENLABS_VOICE_ID` | `21m00Tcm4TlvDq8ikWAM` | |
+| `ELEVENLABS_MODEL_ID` | `eleven_flash_v2_5` | |
+
+Client: `ENABLE_AI` in `client/src/config.ts` (a constant, not an env var) shows or hides
+PLAY WITH AI. Tests and local runs: `AI_FAKE=1 TTS_MODE=browser`.
+
+## The solo flow today
+
+Mode screen (`client/src/scenes/ModeScene.ts`) -> PLAY WITH AI opens `AiPopup.ts` (pick
+outside or inside) -> `actions.onPlayWithAI(side)` -> `net.playWithAI(side)`
+(`client/src/net/client.ts`) emits `room:createAI { side }` -> `server/src/app.ts` creates
+`rooms.create('ai')` (phase `playing` at once, no lobby), seats the human, calls
+`onAiRoom(room, humanSide)` -> `server/src/index.ts` constructs `new AiPlayer(room,
+otherSide, advisor, { persona, onSay })`, which takes the other seat (`room.sit(side,
+true)`, `isAI`) and starts its 200 ms timer. The AI stops when the room closes (60 s after
+the human leaves). A two-player room never creates an `AiPlayer`, so it never calls Gemini
+or ElevenLabs.

@@ -2,6 +2,7 @@ import type Phaser from 'phaser';
 import { ENABLE_AI } from '../config';
 import { menuAction, pasteCode, stepFocus, typeCode } from '../input/keymap';
 import { overlayOwnsInput } from '../input/overlay';
+import { CODEPAD_EVENT } from '../input/touch';
 import { EASE, ROLE, TIME, hex } from '../style/tokens';
 import { AiPopup } from './AiPopup';
 import { BLOCKED_TEXT, MenuScene, type SceneData } from './flow';
@@ -269,6 +270,8 @@ class JoinPopup {
       scene.tweens.add({ targets: veil, alpha: 1, duration: TIME.panel });
     }
     this.draw();
+    // a touch screen has no keyboard: ui/mobile puts letter keys beside the popup
+    window.dispatchEvent(new CustomEvent(CODEPAD_EVENT, { detail: true }));
   }
 
   /**
@@ -353,6 +356,7 @@ class JoinPopup {
   private close(): void {
     if (this.closed) return;
     this.closed = true;
+    window.dispatchEvent(new CustomEvent(CODEPAD_EVENT, { detail: false }));
     this.scene.tweens.add({ targets: this.root, alpha: 0, duration: TIME.quick, onComplete: () => this.root.destroy() });
     this.onClose();
   }

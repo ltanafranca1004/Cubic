@@ -14,13 +14,14 @@ export const keyOf = (t: XY): string => `${t.x},${t.y}`;
 
 /**
  * A 32-bit hash of a list of numbers. This is the puzzles' only source of variation:
- * feed it `ctx.state.startedAt` (different every game, the same on server and client) and
- * whatever else should change the result (an attempt counter, a tile).
+ * feed it the game's seed (different every game, the same on server and client) and
+ * whatever else should change the result (an attempt counter, a tile). In a hook, use
+ * `ctx.rand(...keys)`, which is `mix(ctx.seed, ...keys)`.
  */
 export function mix(...values: number[]): number {
   let h = 0x9e3779b9;
   for (const v of values) {
-    // startedAt is epoch ms, wider than 32 bits: fold both halves in.
+    // Values may be wider than 32 bits (epoch ms): fold both halves in.
     for (const part of [v % 0x100000000, Math.floor(v / 0x100000000)]) {
       h ^= part >>> 0;
       h = Math.imul(h ^ (h >>> 16), 0x85ebca6b);

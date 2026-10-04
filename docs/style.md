@@ -13,6 +13,10 @@ rooms. Every visual decision serves that sentence. The tokens live in
    1920x1080, x3 at 1280x720) and the HUD column beside it its own (`hudScale`). No
    fractional scaling, no smoothing, positions rounded to whole pixels
    (`pixelArt: true`, `roundPixels: true`, `image-rendering: pixelated`).
+   On a phone or tablet the grid is the device pixel instead of the CSS pixel
+   (`client/src/style/fit.ts`): an art pixel is still a whole number of real pixels (five
+   of them on an iPhone 14, which CSS calls 1.667), so the view can fill a 340px high
+   screen instead of stopping at x1.
 2. **One palette.** Every pixel we ship is a Resurrect 64 colour. The art generator fails
    the build if a PNG has any other colour.
 3. **Two worlds, one kit.** The outside player's screen is a sky with light panels. The
@@ -145,6 +149,17 @@ Rules:
   recoloured onto the palette by brightness rank (`tools/art/tiles.ts`). Inside faces are
   our own flagstones and pillars. Props get a one pixel contact shadow in the biome's
   deep colour so they sit on the ground.
+- **Biome layer** (outside only, `client/src/world/biomes`, drawn by `tools/art/biomes.ts`):
+  the same map terrain is a different thing on each face. A `tree` tile is a bush on the
+  grass, a cactus in the desert (a palm beside water), a snowy pine in the snow, an oak in
+  the forest, a planter on the roof and a stalagmite in the cave; water gets a bank on
+  every side that touches land. Every face is composed around one landmark: the tall-grass
+  meadow and lily pond, the oasis, the snowman by the frozen pond, the ring of swaying
+  trees round the clearing, the roof pool, the black pool under the dripping roof. Props
+  are one tile wide and up to two high, always upright however the face is turned; a gust
+  crosses the screen every 3.5 s and everything that can sway leans as it passes (whole
+  pixels, 250 ms steps, nothing moves with reduce motion). Small floor things (grass,
+  mushrooms, pebbles, drifts, puddles) never block and never sit on a puzzle tile.
 - **Objects**: door, plates (red outside, amber inside), crystal, portal (cold stone when
   shut, a turning violet vortex when open), the pot, the rose, a key.
 

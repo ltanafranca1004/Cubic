@@ -3,7 +3,8 @@ import { CANON_UP } from './cube';
 import { SPAWN, isSolidTile, loadWorld, objectsOn } from './maps';
 import type { MapObject, World } from './maps/types';
 import { PUZZLES } from './puzzles';
-import type { ItemEvent, PuzzleCtx, PuzzleModule, VisibleObject } from './puzzles/types';
+import type { ItemEvent, PuzzleCtx, PuzzleInitCtx, PuzzleLine, PuzzleModule, VisibleObject } from './puzzles/types';
+import { mix } from './puzzles/util';
 import { FACES, SIDES, type FaceId, type GameEvent, type GameState, type InteractOnly, type Item, type Side, type TileRef } from './types';
 
 // The game engine: pure functions over GameState. The server runs them as the truth, the
@@ -22,7 +23,11 @@ export const defaultEnv: GameEnv = { world: loadWorld(), puzzles: PUZZLES };
 
 const objectId = (o: MapObject, side: Side, face: FaceId) => o.name || `${side}${face}-${o.x}-${o.y}`;
 
-export function createGame(now: number, env: GameEnv = defaultEnv): GameState {
+/**
+ * A fresh game. `seed` is what every puzzle's random content comes from: the server passes
+ * real randomness, tests pass a fixed number (the default is derived from `now`).
+ */
+export function createGame(now: number, env: GameEnv = defaultEnv, seed: number = mix(now)): GameState {
   const items: Record<string, Item> = {};
   for (const side of SIDES) {
     for (const face of FACES) {
@@ -41,15 +46,19 @@ export function createGame(now: number, env: GameEnv = defaultEnv): GameState {
     steps: 0,
     carrying: null,
   });
-  const init = { world: env.world, objects: (side: Side, face: FaceId, type?: string) => objectsOn(env.world, side, face, type) };
+  const init: PuzzleInitCtx = { world: env.world, seed, objects: (side: Side, face: FaceId, type?: string) => objectsOn(env.world, side, face, type) };
   const puzzles: Record<string, unknown> = {};
   for (const p of env.puzzles) puzzles[p.id] = p.init(init);
-  return { players: { out: player('out'), in: player('in') }, puzzles, items, solved: [], strikes: 0, startedAt: now, wonAt: null };
+  return { players: { out: player('out'), in: player('in') }, puzzles, items, solved: [], strikes: 0, seed, startedAt: now, wonAt: null };
 }
+
+/** The game's seed as a plain number. A hand-built state without one reads as 0. */
+export const seedOf = (state: Pick<GameState, 'seed'>): number => state.seed ?? 0;
 
 function makeCtx(state: GameState, env: GameEnv, puzzle: AnyPuzzle, now: number, events: GameEvent[]): PuzzleCtx {
   return {
     world: env.world,
+    seed: seedOf(state),
     state,
     now,
     get solved() {
@@ -71,13 +80,35 @@ function makeCtx(state: GameState, env: GameEnv, puzzle: AnyPuzzle, now: number,
       const pose = state.players[side].pose;
       state.players[side].pose = { ...pose, x, y };
     },
+    rand: (...keys) => mix(seedOf(state), ...keys),
+    faceSolved: (face) => state.solved.includes(face),
+    spawnItem: ({ id, kind, side, face, x, y, props }) => {
+      if (state.items[id]) throw new Error(`duplicate item id "${id}"`);
+      state.items[id] = { id, kind, side, face, x, y, carriedBy: null, placedOn: null, props: { ...props } };
+    },
+    giveItem: (side, id) => {
+      const item = state.items[id];
+      const player = state.players[side];
+      if (!item || (player.carrying !== null && player.carrying !== id)) return false;
+      for (const s of SIDES) if (state.players[s].carrying === id) state.players[s].carrying = null;
+      Object.assign(item, { side, carriedBy: side, placedOn: null });
+      player.carrying = id;
+      return true;
+    },
+    removeItem: (id) => {
+      for (const s of SIDES) if (state.players[s].carrying === id) state.players[s].carrying = null;
+      delete state.items[id];
+    },
   };
 }
 
-/** Every puzzle is solved: the portal is awake. */
+/** Every puzzle is solved: the portal (if the world has one) is awake. */
 export function portalOpen(state: GameState, env: GameEnv = defaultEnv): boolean {
   return env.puzzles.every((p) => state.solved.includes(p.face));
 }
+
+/** The face the portal is on, or null: without a portal the game is won on the last solve. */
+export const portalFace = (env: GameEnv = defaultEnv): FaceId | null => FACES.find((face) => SIDES.some((side) => objectsOn(env.world, side, face, 'portal').length > 0)) ?? null;
 
 const onPortal = (state: GameState, env: GameEnv, side: Side) => {
   const p = state.players[side].pose;
@@ -94,7 +125,11 @@ function settle(state: GameState, env: GameEnv, now: number, events: GameEvent[]
       events.push({ type: 'solve', face: p.face, puzzle: p.id });
     }
   }
-  if (state.wonAt === null && portalOpen(state, env) && state.players.out.pose.face === state.players.in.pose.face && onPortal(state, env, 'out') && onPortal(state, env, 'in')) {
+  // No portal in the world: the last solve wins. With one, both players have to stand on it.
+  const arrived = portalFace(env) !== null
+    ? state.players.out.pose.face === state.players.in.pose.face && onPortal(state, env, 'out') && onPortal(state, env, 'in')
+    : env.puzzles.length > 0;
+  if (state.wonAt === null && portalOpen(state, env) && arrived) {
     state.wonAt = now;
     events.push({ type: 'win' });
   }
@@ -120,9 +155,20 @@ export function applyMove(state: GameState, side: Side, dx: number, dy: number, 
   const fromTile: TileRef = { face: from.face, x: from.x, y: from.y };
   const toTile: TileRef = { face: to.face, x: to.x, y: to.y };
 
+  // Pushing: only within a face. A puzzle may move its box out of the way first.
+  if (!crossed) {
+    let pushed = false;
+    for (const p of env.puzzles) {
+      if (p.face === to.face && p.onPush?.(state.puzzles[p.id], makeCtx(state, env, p, now, events), side, toTile, to.x - from.x, to.y - from.y)) pushed = true;
+    }
+    if (pushed) events.push({ type: 'push', side });
+  }
+
   if (isBlocked(state, side, toTile, env, now)) {
     player.pose = { ...from, dir: to.dir };
-    return [{ type: 'bump', side }];
+    events.push({ type: 'bump', side });
+    if (events.length > 1) settle(state, env, now, events); // something was pushed
+    return events;
   }
 
   player.pose = to;
@@ -140,8 +186,9 @@ const accepts = (target: MapObject, item: Item) => {
 };
 
 /**
- * E key: drop the carried item on this tile, or pick up the item lying on it.
- * `only` narrows it: 'drop' (Q key) never picks up, 'pick' never drops.
+ * E key, in this order: drop the carried item on this tile; else pick up the item lying on
+ * it; else "use" the tile (the onUse hook of the puzzle on this face, with a `use` event).
+ * `only` narrows it: 'drop' (Q key) never picks up, 'pick' never drops, and neither uses.
  */
 export function applyInteract(state: GameState, side: Side, now: number = Date.now(), env: GameEnv = defaultEnv, only?: InteractOnly): GameEvent[] {
   if (state.wonAt !== null) return [];
@@ -170,8 +217,12 @@ export function applyInteract(state: GameState, side: Side, now: number = Date.n
       events.push({ type: 'drop', side, item: item.id });
       fire({ kind: 'dropped', side, item, tile });
     }
+  } else if (!lying || lying.placedOn) {
+    const users = env.puzzles.filter((p) => p.face === face && p.onUse);
+    if (only || users.length === 0) return [];
+    events.push({ type: 'use', side });
+    for (const p of users) p.onUse!(state.puzzles[p.id], makeCtx(state, env, p, now, events), side, tile);
   } else {
-    if (!lying || lying.placedOn) return [];
     lying.carriedBy = side;
     player.carrying = lying.id;
     events.push({ type: 'pickup', side, item: lying.id });
@@ -211,6 +262,14 @@ export function visibleObjects(state: GameState, side: Side, face: FaceId, env: 
   }
   return [...byTile.values()];
 }
+
+/** The lines (beams) `side` sees over `face`, from the face's puzzle. Canonical tile centres. */
+export function linesOn(state: GameState, side: Side, face: FaceId, env: GameEnv = defaultEnv): PuzzleLine[] {
+  return env.puzzles.flatMap((p) => (p.face === face && p.lines ? p.lines(state.puzzles[p.id], makeCtx(state, env, p, 0, []), side) : []));
+}
+
+/** Is the inside of `face` drawn fully lit? (its puzzle is `bright`) */
+export const brightFace = (face: FaceId, env: GameEnv = defaultEnv): boolean => env.puzzles.some((p) => p.face === face && !!p.bright);
 
 /** Items lying on one side of a face (not the carried ones). */
 export function itemsOn(state: GameState, side: Side, face: FaceId): Item[] {

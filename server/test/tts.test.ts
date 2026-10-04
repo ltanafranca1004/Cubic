@@ -189,13 +189,18 @@ test('the committed bank holds a real clip for every line, and git tracks it', a
     assert.ok(head.toString('latin1') === 'ID3' || (head[0] === 0xff && (head[1]! & 0xe0) === 0xe0), l);
     assert.ok(statSync(join(TTS_BANK_DIR, bankFileName(l))).size > 2000, l);
   }
-  // No clip without a line (a reworded line leaves no orphan behind).
+  // No stray clip: one that no line uses any more (a retired line: clips are never deleted)
+  // is still in the bank's index, with its text.
   const wanted = new Set(lines.map(bankFileName));
-  assert.deepEqual(readdirSync(TTS_BANK_DIR).filter((f) => f.endsWith('.mp3') && !wanted.has(f)), []);
+  const index = JSON.parse(readFileSync(join(TTS_BANK_DIR, 'index.json'), 'utf8')) as { lines: { file: string; text: string }[] };
+  const indexed = new Set(index.lines.map((l) => l.file));
+  const retired = readdirSync(TTS_BANK_DIR).filter((f) => f.endsWith('.mp3') && !wanted.has(f));
+  assert.deepEqual(retired.filter((f) => !indexed.has(f)), []);
+  for (const l of index.lines) assert.equal(l.file, bankFileName(l.text), l.text);
   // Served in production with no key, no cache and no network: this is the lookup the server does.
   const prod = createTts({ cacheDir: tmp(), fetchFn: (() => assert.fail('the bank must not call the API')) as unknown as typeof fetch, log: () => {} });
   for (const l of bankedScriptLines()) assert.equal((await prod.speak(l, 'ROOM', { cacheOnly: true }))?.source, 'bank', l);
-  assert.equal(prod.bankSize, lines.length);
+  assert.equal(prod.bankSize, lines.length + retired.length);
   // Not ignored: the clips are part of the repo, so a deploy has them.
   const ignored = (() => {
     try {

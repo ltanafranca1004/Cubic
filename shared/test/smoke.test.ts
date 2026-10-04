@@ -15,12 +15,13 @@ import {
   findPath,
   isBlocked,
   isSolidTile,
+  linesOn,
   loadWorld,
   objectiveFor,
   objectsOn,
   parseStringMap,
   parseTmj,
-  pathTo,
+  portalFace,
   portalOpen,
   visibleObjects,
   type FaceId,
@@ -144,21 +145,23 @@ test('smoke: item ids are unique and every target accepts something that exists'
   });
 });
 
-test('smoke: portals exist on both sides, on the same tiles of the same faces', () => {
+test('smoke: portals, if any, are on the same tiles of the same faces on both sides', () => {
   const world = loadWorld();
   const tiles = (side: Side) =>
     FACES.flatMap((face) => objectsOn(world, side, face, 'portal').map((o) => `face ${face} ${key(o)}`)).sort();
-  assert.ok(tiles('out').length > 0, 'no portal on the outside');
   assert.deepEqual(tiles('out'), tiles('in'));
 });
 
 test('smoke: every object and item a registered puzzle looks up exists in the world', () => {
   // Play the whole game with the puzzles wrapped, so every hook runs at least once
-  // (init, isBlocked, onEnter, onLeave, onItem, isSolved), then ask for what each side sees.
+  // (init, isBlocked, onEnter, onLeave, onUse, onPush, onItem, isSolved), then ask for what each side sees.
   const { env, missing, found } = recordingEnv(defaultEnv);
   const state = createGame(0, env);
   const look = () => {
-    each((side, face) => visibleObjects(state, side, face, env));
+    each((side, face) => {
+      visibleObjects(state, side, face, env);
+      linesOn(state, side, face, env);
+    });
     for (const side of SIDES) objectiveFor(state, side, env);
   };
   look();
@@ -186,15 +189,6 @@ test('smoke: every face is reachable from spawn, for both sides', () => {
   });
 });
 
-test('smoke: both sides can reach the same portal tile from spawn', () => {
-  const state = createGame(0);
-  const shared = FACES.flatMap((face) => objectsOn(defaultEnv.world, 'out', face, 'portal').map((o): TileRef => ({ face, x: o.x, y: o.y })));
-  assert.ok(
-    shared.some((tile) => SIDES.every((side) => pathTo(state, side, tile))),
-    'no portal tile is reachable by both players',
-  );
-});
-
 // ---------- the whole game ----------
 
 test('smoke: the whole game is winnable with the registered puzzles', () => {
@@ -205,14 +199,9 @@ test('smoke: the whole game is winnable with the registered puzzles', () => {
   solveAll(t);
   assert.deepEqual(state.solved, PUZZLES.map((p) => p.face).sort());
   assert.equal(portalOpen(state), true);
+  assert.equal(portalFace(), null);
 
-  // Both players walk to the same portal tile: the win fires when the second one arrives.
-  const portal = FACES.flatMap((face) => objectsOn(defaultEnv.world, 'out', face, 'portal').map((o): TileRef => ({ face, x: o.x, y: o.y }))).find((tile) =>
-    SIDES.every((side) => pathTo(state, side, tile)),
-  );
-  assert.ok(portal, 'no portal tile both players can reach once everything is solved');
-  t.go('out', portal);
-  t.go('in', portal);
+  // The shipped world has no portal: the last solve is the win.
   assert.ok(t.events.some((e) => e.type === 'win'), 'no win event');
   assert.notEqual(state.wonAt, null);
   assert.deepEqual(t.move('out', 1, 0), [], 'the game goes on after the win');

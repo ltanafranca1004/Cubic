@@ -172,14 +172,14 @@ test('sockets: Q (drop only) never picks an item up; E still does', async () => 
   await b.ready();
   await a.start();
   const room = app.rooms.get(seat.code)!;
-  const rose = room.state.items.rose!;
-  // stand the outside player on the rose (the test owns the room: no need to walk there)
-  Object.assign(room.state.players.out.pose, { face: rose.face, x: rose.x, y: rose.y });
+  // an item under the outside player's feet (the test owns the room: no need to walk there)
+  const { face, x, y } = room.state.players.out.pose;
+  room.state.items.parcel = { id: 'parcel', kind: 'parcel', side: 'out', face, x, y, carriedBy: null, placedOn: null, props: {} };
   a.sock.emit('interact', { seq: 1, only: 'drop' });
   await sleep(80);
   assert.equal(room.state.players.out.carrying, null, 'Q on an item does not pick it up');
   a.sock.emit('interact', { seq: 2 });
-  await until(() => room.state.players.out.carrying === 'rose', 'E to pick it up');
+  await until(() => room.state.players.out.carrying === 'parcel', 'E to pick it up');
   a.sock.emit('interact', { seq: 3, only: 'drop' });
   await until(() => room.state.players.out.carrying === null, 'Q to drop it');
 });

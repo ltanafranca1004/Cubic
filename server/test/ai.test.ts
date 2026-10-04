@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { after, test, type TestContext } from 'node:test';
-import { CORE_LINES, FACES, PUZZLE_SCRIPTS, defaultEnv, devTeleport, faceDistance, lineKeys, observe, visibleObjects, type FaceId, type Side } from '@cubic/shared';
-import { SimHuman, type HumanOptions } from '../../shared/test/partnerSim';
+import { CORE_LINES, FACES, PUZZLE_SCRIPTS, defaultEnv, devTeleport, faceDistance, lineKeys, observe, visibleObjects, type FaceId, type Say, type Side } from '@cubic/shared';
+import { HUMAN_SCRIPTS, SimHuman, type HumanOptions } from '../../shared/test/partnerSim';
 import { AiPlayer, parseReply, type AiOptions } from '../src/ai/aiPlayer';
 import type { Brain } from '../src/ai/gemini';
 import { MAX_SAY_CHARS, parsePersona, systemPrompt } from '../src/ai/prompt';
@@ -12,8 +12,9 @@ import { LIMITS, Rooms, type Room } from '../src/rooms';
 // a step every 200 ms, one Gemini call per 6 s, a 3 s deadline.
 //
 // Everything here except the two whole-game tests is independent of the puzzles: the bot is
-// only asked to find the human, talk and stay safe. The whole-game tests run only while the
-// game has exactly the puzzles the simulated human knows.
+// only asked to find the human, talk and stay safe. The whole-game tests run only once every
+// puzzle of the game has a script (PUZZLE_SCRIPTS) and a simulated human (HUMAN_SCRIPTS in
+// shared/test/partnerSim.ts): until then they are skipped.
 
 LIMITS.moveBurst = 1e9;
 const rooms = new Rooms();
@@ -60,20 +61,28 @@ function setup(human: Side, replies: Reply[] | null, opts: AiOptions & { humanOn
   };
   const logs: string[] = [];
   const { humanOn, bothOn, ...ai_ } = opts;
-  const ai = new AiPlayer(room, other(human), brain, { log: (l) => logs.push(l), ...ai_ });
+  /** The script's own lines as they were said: what a simulated human listens to. */
+  const lines: Say[] = [];
+  const ai = new AiPlayer(room, other(human), brain, {
+    log: (l) => logs.push(l),
+    ...ai_,
+    onSay: (msg, info) => {
+      if (info.line) lines.push(info.line);
+      ai_.onSay?.(msg, info);
+    },
+  });
   if (humanOn ?? bothOn) devTeleport(room.state, human, (humanOn ?? bothOn)!);
   if (bothOn) devTeleport(room.state, other(human), bothOn);
   const said = () => room.chat.filter((m) => m.isAI).map((m) => m.text);
   const bot = () => room.state.players[other(human)];
-  return { room, ai, prompts, logs, said, bot };
+  return { room, ai, prompts, logs, said, bot, lines };
 }
 
-/** A simulated human on a Room, typing at most one line a second like a person would. */
-function humanOn(room: Room, side: Side, opts: HumanOptions = {}) {
+/** A simulated human on a Room, typing at most one line a second like a person would. `lines` = setup().lines. */
+function humanOn(room: Room, side: Side, lines: Say[], opts: HumanOptions = {}) {
   const typing: string[] = [];
   let typedAt = 0;
   const human = new SimHuman(side, { state: () => room.state, move: (dx, dy) => void room.move(side, dx, dy), interact: () => void room.interact(side), say: (text) => void typing.push(text) }, opts);
-  let heard = 0;
   return {
     human,
     /** Hear what the AI said since last time, then act once. */
@@ -83,19 +92,13 @@ function humanOn(room: Room, side: Side, opts: HumanOptions = {}) {
         const text = typing.shift()!;
         assert.ok(room.say(side, text), `the human was rate limited saying "${text}"`);
       }
-      for (const m of room.chat) {
-        if (m.id <= heard) continue;
-        heard = m.id;
-        const key = m.isAI ? keyOfLine.get(m.text) : undefined;
-        if (key) human.hear(key);
-      }
+      for (const line of lines.splice(0)) human.hear(line.key, line.args);
       human.tick();
     },
   };
 }
-/** The simulated human knows exactly these puzzles: the whole-game tests need all of them and no others. */
-const SIM = ['plate-door', 'glyph-code', 'mirror-maze', 'skylight', 'rose-pot'];
-const wholeGame = defaultEnv.puzzles.length === SIM.length && SIM.every((id) => defaultEnv.puzzles.some((p) => p.id === id) && PUZZLE_SCRIPTS.some((s) => s.id === id));
+/** The whole-game tests need a script and a simulated human for every puzzle of the game. */
+const wholeGame = defaultEnv.puzzles.every((p) => PUZZLE_SCRIPTS.some((s) => s.id === p.id) && HUMAN_SCRIPTS.some((h) => h.id === p.id));
 
 // ---------- no key: the script alone ----------
 
@@ -119,8 +122,8 @@ test('no Gemini key: it plays from the script, silently: it greets, finds the hu
 for (const humanSide of ['out', 'in'] as const) {
   test(`no Gemini key: the scripted partner and a human ${humanSide}side finish the whole game on a real Room`, { skip: !wholeGame }, async (t) => {
     const pass = clock(t);
-    const { room, ai, said } = setup(humanSide, null);
-    const { tick } = humanOn(room, humanSide);
+    const { room, ai, said, lines } = setup(humanSide, null);
+    const { tick } = humanOn(room, humanSide, lines);
     for (let i = 0; i < 4500 && room.state.wonAt === null; i++) {
       await pass(200, 200);
       tick();
@@ -128,7 +131,7 @@ for (const humanSide of ['out', 'in'] as const) {
     assert.notEqual(room.state.wonAt, null, `solved ${room.state.solved.join()}; AI said: ${said().slice(-6).join(' | ')}`);
     assert.equal(room.state.strikes, 0);
     assert.equal(ai.calls, 0);
-    assert.ok(said().every((line) => line.length <= MAX_SAY_CHARS && keyOfLine.has(line))); // only its own lines
+    assert.ok(said().every((line) => line.length <= MAX_SAY_CHARS)); // only its own lines, each one short enough
     await pass(400);
     assert.equal(said().at(-1), L('win'));
   });
@@ -171,7 +174,7 @@ test('Gemini errors (503): the script answers that turn at once and the calls ba
   await pass(600);
   assert.equal(ai.calls, 2);
   assert.ok(logs.some((l) => l.includes('next call in 12s')));
-  assert.ok(bot().steps > 20);
+  assert.equal(bot().pose.face, FAR); // the body walked to the human all the while
 });
 
 test('rate limit (429): same as any error, and the game goes on', async (t) => {
@@ -207,8 +210,8 @@ test('a whole game with a Gemini that hangs, errors and hits the rate limit is s
   const pass = clock(t);
   const flaky: Reply[] = [];
   for (let i = 0; i < 40; i++) flaky.push('hang', new Error('503'), Object.assign(new Error('429'), { status: 429 }), 'not json at all');
-  const { room, ai } = setup('in', flaky);
-  const { tick } = humanOn(room, 'in', { chatty: true });
+  const { room, ai, lines } = setup('in', flaky);
+  const { tick } = humanOn(room, 'in', lines);
   for (let i = 0; i < 6000 && room.state.wonAt === null; i++) {
     await pass(200, 200);
     tick();
@@ -401,8 +404,12 @@ test('a throw inside the AI is contained: it is logged, and an AI that keeps fai
   assert.ok(think.logs.some((l) => l.includes('stopped')), 'an AI that keeps failing is stopped');
 });
 
-test('the AI leaves with the human', () => {
+test('the AI leaves with the human, once the human\'s seat is no longer held', async (t) => {
+  const pass = clock(t);
   const { room, logs } = setup('out', null);
   room.leave('out');
+  assert.ok(!logs.some((l) => l.includes('stopped')), 'the room is kept while the seat is held');
+  await pass(LIMITS.seatHoldMs + 1000, 1000);
   assert.ok(logs.some((l) => l.includes('stopped')));
+  assert.equal(rooms.get(room.code), undefined);
 });

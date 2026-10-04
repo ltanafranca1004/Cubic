@@ -2,6 +2,7 @@ import {
   CHAT_MAX_LEN,
   canonToScreen,
   decide,
+  hazardAvoid,
   newMind,
   nextStep,
   observe,
@@ -16,6 +17,7 @@ import {
   type GameState,
   type Heard,
   type PuzzleScript,
+  type Say,
   type Side,
 } from '@cubic/shared';
 import type { Room } from '../rooms';
@@ -49,8 +51,11 @@ export interface AiOptions {
   timeoutMs?: number;
   /** First back-off after a failed call; doubles per failure in a row, up to a minute. */
   backoffMs?: number;
-  /** Called with each line the AI says (for speech). `scripted` = one of the script's own lines, not a model's. */
-  onSay?: (msg: ChatMessage, info: { scripted: boolean }) => void;
+  /**
+   * Called with each line the AI says (for speech). `scripted` = one of the script's own
+   * lines, not a model's; `line` = which one (its key and relay args), when it is said as written.
+   */
+  onSay?: (msg: ChatMessage, info: { scripted: boolean; line?: Say }) => void;
   log?: (line: string) => void;
 }
 
@@ -113,7 +118,7 @@ export class AiPlayer {
   /** What the script hears on its next decision. */
   private heard: Heard[] = [];
   /** Lines waiting for the chat rate limit. */
-  private outbox: { text: string; scripted: boolean }[] = [];
+  private outbox: { text: string; scripted: boolean; line?: Say }[] = [];
   /** A human message waiting for the next free Gemini slot. Only the latest is kept. */
   private pending: Extract<Ask, { kind: 'chat' }> | null = null;
   /** Steps a model suggested, walked only while the script has nothing to do. */
@@ -207,16 +212,21 @@ export class AiPlayer {
     }
 
     // 1. Listen. Plain protocol words go straight to the script; anything else is for Gemini.
+    // Every line reaches the script in the end, with its raw text (a script reads digits and
+    // colours from Heard.text): only a line nobody could read gets "I did not get that".
     for (const m of room.chat) {
       if (m.id <= this.lastChatId) continue;
       this.lastChatId = m.id;
       if (m.from === side) continue;
       const read = parseHuman(m.text);
-      if (read.plain && read.tokens.length) this.heard.push(read);
+      if (read.plain) this.heard.push(read);
       else if (this.free(now)) this.consult({ kind: 'chat', text: m.text, read }, now);
       else if (read.tokens.length) this.heard.push(read);
       else if (this.advisor && this.failures === 0) this.pending = { kind: 'chat', text: m.text, read };
-      else this.huh(now);
+      else {
+        this.heard.push(read);
+        this.huh(now);
+      }
     }
     if (this.pending && this.free(now)) {
       const ask = this.pending;
@@ -230,9 +240,9 @@ export class AiPlayer {
 
     // 3. Talk. Protocol lines are said as written, now. Small talk may be reworded by Gemini.
     for (const s of d.say) {
-      const text = lineText(this.persona, s.key);
+      const text = lineText(this.persona, s.key, s.args);
       if (s.flavor && this.free(now)) this.consult({ kind: 'flavor', line: text }, now);
-      else this.queue(text, true);
+      else this.queue(text, true, s);
     }
     this.flush();
 
@@ -252,7 +262,7 @@ export class AiPlayer {
     const from = this.room.state.players[this.side].pose;
     const to = stepPose(from, step[0], step[1]).pose;
     const [col, row] = canonToScreen(this.side, to.face, to.up, to.x, to.y);
-    if (to.face !== from.face || d.avoid.some((c) => c.col === col && c.row === row)) {
+    if (to.face !== from.face || d.avoid.some((c) => c.col === col && c.row === row) || hazardAvoid(this.room.state, this.side)(to)) {
       this.advice = [];
       this.stats.refusedActions++;
       return null;
@@ -260,9 +270,9 @@ export class AiPlayer {
     return step;
   }
 
-  private queue(text: string, scripted: boolean): void {
+  private queue(text: string, scripted: boolean, line?: Say): void {
     if (this.outbox.some((l) => l.text === text)) return;
-    this.outbox.push({ text, scripted });
+    this.outbox.push(line ? { text, scripted, line } : { text, scripted });
     if (this.outbox.length > OUTBOX_MAX) this.outbox.shift();
   }
 
@@ -276,7 +286,7 @@ export class AiPlayer {
     this.outbox.shift();
     if (line.scripted) this.stats.scriptedLines++;
     else this.stats.modelLines++;
-    this.opts.onSay?.(msg, { scripted: line.scripted });
+    this.opts.onSay?.(msg, line.line ? { scripted: line.scripted, line: line.line } : { scripted: line.scripted });
   }
 
   private huh(now: number): void {
@@ -288,8 +298,8 @@ export class AiPlayer {
   /** The script's own answer to a turn Gemini did not take. */
   private scripted(ask: Ask): void {
     if (ask.kind === 'flavor') return this.queue(ask.line, true);
-    if (ask.read.tokens.length) this.heard.push(ask.read);
-    else this.huh(Date.now());
+    this.heard.push(ask.read);
+    if (!ask.read.tokens.length) this.huh(Date.now());
   }
 
   /** One Gemini call. The body keeps moving meanwhile; on any failure the script answers instead. */
@@ -358,8 +368,8 @@ export class AiPlayer {
       const heard = reply.heard ? parseHuman(reply.heard) : null;
       // The model read no protocol word into it: only keep what cannot be small talk (a sign, a face).
       const sure = ask.read.tokens.filter((t) => t.t === 'sign' || t.t === 'face');
-      if (heard?.tokens.length) this.heard.push(heard);
-      else if (sure.length) this.heard.push({ tokens: sure, plain: false });
+      // The script gets the line as typed, with the tokens the model (or nobody) read into it.
+      this.heard.push({ text: ask.text, tokens: heard?.tokens.length ? heard.tokens : sure, plain: false });
       if (reply.say) this.queue(reply.say, false);
       else if (!heard?.tokens.length && !sure.length) this.huh(Date.now());
     }
@@ -371,7 +381,7 @@ export class AiPlayer {
       return this.log(`suggested ${label}: refused, ${d?.hold ? 'the body is holding its place' : d?.action ? 'the script is busy' : 'not a move the model may suggest'}`);
     }
     const face = this.room.state.players[this.side].pose.face;
-    const plan = planAction(this.room.state, this.side, reply.action, undefined, (f) => f === face, d.avoid);
+    const plan = planAction(this.room.state, this.side, reply.action, undefined, (f) => f === face, d.avoid, hazardAvoid(this.room.state, this.side));
     if ('error' in plan) {
       this.stats.refusedActions++;
       return this.log(`suggested ${label}: refused, ${plan.error}`);

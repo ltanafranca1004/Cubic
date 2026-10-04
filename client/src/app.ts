@@ -7,6 +7,7 @@ import {
   defaultEnv,
   neighbours,
   objectiveFor,
+  portalFace,
   portalOpen,
   sameWall,
   signalBars,
@@ -45,7 +46,8 @@ export function hudOf(state: GameState, me: Side, now: number): HudState {
     solved: [...state.solved],
     puzzleTotal: defaultEnv.puzzles.length,
     puzzleFaces: defaultEnv.puzzles.map((p) => p.face).sort((a, b) => a - b),
-    portalOpen: portalOpen(state),
+    // only a world that has a portal can have one open (the shipped maps have none)
+    portalOpen: portalFace() !== null && portalOpen(state),
     strikes: state.strikes,
     elapsedMs: Math.max(0, (state.wonAt ?? now) - state.startedAt),
     won: state.wonAt !== null,
@@ -168,8 +170,9 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
   function uiState(): UIState {
     const room = net.room;
     const partner = net.role ? room?.members[net.role === 'host' ? 'guest' : 'host'] : undefined;
-    // In a game a partner who is still a member but not connected dropped (the server holds
-    // the seat for a refresh); one who pressed Leave is no longer a member at all.
+    // In a game a partner who is still a member but not connected dropped or pressed Leave:
+    // the server holds the seat (partnerAway says which, and until when). Once the window
+    // has passed they are no longer a member at all.
     const status: UIState['status'] = net.busy ? 'connecting' : !net.role ? 'idle' : partner?.connected ? 'partner-joined' : partner ? (playing() ? 'partner-away' : 'partner-left') : playing() ? 'partner-left' : 'waiting';
     const inGame = !!net.side && !!net.state && playing();
     return {
@@ -185,6 +188,7 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
       lobby: lobbyOf(),
       chat: net.chat,
       partnerTyping,
+      partnerAway: inGame ? net.partnerAway() : null,
       hud: inGame ? hudOf(net.state!, viewSide()!, Date.now()) : null,
       voice: voice.snapshot(signalBars(proximity())),
       signals: inGame ? signalsFor(net.state!, viewSide()!, quicks, Date.now()) : NO_SIGNALS,
@@ -203,6 +207,10 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
     if (next === callState) return;
     callState = next;
     if (next !== 'on') voice.hangUp(next !== 'held');
+    // The mic is never opened on the title screen or in an empty lobby. With a partner in
+    // the room it comes back by itself if this browser already allowed it; otherwise the
+    // player presses Enable mic (or TALK on a touch screen).
+    else if (!offlineSide) void voice.resumeMic();
   }
 
   function render(): void {
@@ -226,8 +234,9 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
   // Dev only: lets tests and the console inspect the client state.
   if (import.meta.env.DEV) Object.assign(window, { __cubic: net, __cubicVoice: voice, __cubicAudio: audio });
   Object.assign(devHooks, { net, render });
+  // iOS only lets sound start from a tap: every tap keeps the voice path allowed to play.
+  window.addEventListener('touchend', () => voice.prime(), true);
   net.start();
-  if (!offlineSide) void voice.resumeMic();
   render();
   setInterval(render, 500); // keeps the clock ticking
   setInterval(() => {

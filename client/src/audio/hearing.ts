@@ -5,6 +5,8 @@ import type { GameEvent, GameState, Side } from '@cubic/shared';
 //
 //  - The partner's footsteps are heard only while they are on the same face number as you
 //    (outside N and inside N are the two sides of one wall). Any other face: silent.
+//    The same goes for the small sounds of their hands: E on a puzzle tile (`use`) and a
+//    box being pushed (`push`).
 //  - The face-change ding is yours alone: the partner's never plays for you.
 //  - Everything else (your own sounds, puzzle and game events) is heard as before.
 
@@ -12,7 +14,7 @@ import type { GameEvent, GameState, Side } from '@cubic/shared';
 export function hears(event: GameEvent, me: Side, state: GameState): boolean {
   if (!('side' in event) || event.side === me) return true;
   if (event.type === 'flip') return false;
-  if (event.type === 'step') return state.players[event.side].pose.face === state.players[me].pose.face;
+  if (event.type === 'step' || event.type === 'use' || event.type === 'push') return state.players[event.side].pose.face === state.players[me].pose.face;
   return true;
 }
 

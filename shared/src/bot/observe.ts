@@ -1,8 +1,8 @@
 import { canonToScreen, compassDrift, neighbours, screenToCanon } from '../cube';
-import { defaultEnv, itemsOn, objectiveFor, portalOpen, visibleObjects, type GameEnv } from '../game';
-import { FACE_NAMES, objectsOn, tileAt } from '../maps';
+import { defaultEnv, itemsOn, objectiveFor, portalFace, portalOpen, visibleObjects, type GameEnv } from '../game';
+import { FACE_NAMES, tileAt } from '../maps';
 import type { TileKind } from '../maps/types';
-import { FACES, FACE_SIZE, type FaceId, type GameState, type Side } from '../types';
+import { FACE_SIZE, type FaceId, type GameState, type Side } from '../types';
 import { signalBars, voiceMix } from '../voice';
 
 // What one side can perceive, as plain data for the AI partner. Built ONLY from that
@@ -33,11 +33,12 @@ export interface Observation {
   puzzleHere: boolean;
   /** The id of the puzzle on this face, solved or not. null = this face has none. */
   puzzleId: string | null;
-  /** The rules both players are told: which faces hold a puzzle (and which one), and where the portal is. */
+  /** The rules both players are told: which faces hold a puzzle (and which one). */
   puzzleList: { id: string; face: FaceId }[];
-  portalFace: FaceId | null;
   solvedFaces: FaceId[];
   portalOpen: boolean;
+  /** The face the portal is on (the rules tell both players), or null: this world has none. */
+  portalFace: FaceId | null;
   strikes: number;
   /** How well you hear your partner: 3 same wall, 1 the next face over, 0 opposite side (silent). */
   voiceSignal: number;
@@ -85,9 +86,9 @@ export function observe(state: GameState, side: Side, env: GameEnv = defaultEnv)
     puzzleHere: env.puzzles.some((p) => p.face === face) && !state.solved.includes(face),
     puzzleId: env.puzzles.find((p) => p.face === face)?.id ?? null,
     puzzleList: env.puzzles.map((p) => ({ id: p.id, face: p.face })),
-    portalFace: FACES.find((f) => objectsOn(env.world, side, f, 'portal').length > 0) ?? null,
     solvedFaces: [...state.solved],
     portalOpen: portalOpen(state, env),
+    portalFace: portalFace(env),
     strikes: state.strikes,
     voiceSignal: signalBars(voiceMix(state).gain),
     won: state.wonAt !== null,

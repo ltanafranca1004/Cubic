@@ -1,0 +1,178 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { dpadDir, PAD_DEADZONE } from '../src/input/dpad';
+import { DESKTOP, TOUCH, compactLayout, fitsFull, hudScaleFor, isPortrait, layoutMode, snap, uiScaleFor, viewZoomFor, wholeDown, wideLayout, type Device } from '../src/style/fit';
+import { VIEW } from '../src/style/tokens';
+
+// The pure parts of the touch layer: which way the d-pad points, which layout and zoom a
+// screen gets, and when the device is upright. tools/screens/mobile.ts plays the real game
+// with fingers on emulated devices.
+
+const IPHONE: Device = { touch: true, dpr: 3 };
+const PIXEL: Device = { touch: true, dpr: 2.625 };
+const IPAD: Device = { touch: true, dpr: 2 };
+const whole = (v: number) => Math.abs(v - Math.round(v)) < 1e-6;
+
+// ---------- the d-pad ----------
+
+test('d-pad: the stronger axis decides the direction', () => {
+  assert.equal(dpadDir(0, -40, 66), 'up');
+  assert.equal(dpadDir(0, 40, 66), 'down');
+  assert.equal(dpadDir(-40, 0, 66), 'left');
+  assert.equal(dpadDir(40, 0, 66), 'right');
+  assert.equal(dpadDir(30, -40, 66), 'up');
+  assert.equal(dpadDir(-41, 40, 66), 'left');
+});
+
+test('d-pad: the middle presses nothing, and a thumb past the rim still counts', () => {
+  assert.equal(dpadDir(0, 0, 66), null);
+  assert.equal(dpadDir(66 * PAD_DEADZONE * 0.6, 66 * PAD_DEADZONE * 0.6, 66), null);
+  assert.equal(dpadDir(66 * PAD_DEADZONE + 1, 0, 66), 'right');
+  assert.equal(dpadDir(-300, 20, 66), 'left', 'slid off the pad');
+  assert.equal(dpadDir(10, 10, 0), null, 'a pad with no size');
+});
+
+test('d-pad: sliding changes direction, but a held direction does not flicker on the diagonal', () => {
+  assert.equal(dpadDir(40, -42, 66, 'right'), 'right', 'just past the diagonal: still right');
+  assert.equal(dpadDir(40, -60, 66, 'right'), 'up', 'clearly up now');
+  assert.equal(dpadDir(42, -40, 66, 'up'), 'up');
+  assert.equal(dpadDir(60, -40, 66, 'up'), 'right');
+  assert.equal(dpadDir(0, 0, 66, 'up'), null, 'back in the middle: let go');
+});
+
+// ---------- upright or sideways ----------
+
+test('portrait is taller than wide', () => {
+  assert.equal(isPortrait(390, 664), true);
+  assert.equal(isPortrait(750, 340), false);
+  assert.equal(isPortrait(810, 1080), true);
+  assert.equal(isPortrait(600, 600), false);
+});
+
+// ---------- which layout ----------
+
+test('layout: full wherever the column fits beside the view, compact wherever it does not', () => {
+  for (const [w, h] of [[844, 390], [1280, 720], [1920, 1080], [3440, 1440], [424, 310]] as const) assert.equal(layoutMode(w, h, DESKTOP), 'desktop');
+  // a window too narrow or too short for the column: the column becomes a panel, with a mouse too
+  for (const [w, h] of [[390, 664], [800, 300], [1280, 250], [423, 800]] as const) assert.equal(layoutMode(w, h, DESKTOP), 'compact');
+  assert.equal(layoutMode(750, 340, IPHONE), 'compact');
+  assert.equal(layoutMode(844, 390, IPHONE), 'compact');
+  assert.equal(layoutMode(863, 360, PIXEL), 'compact');
+  assert.equal(layoutMode(932, 430, IPHONE), 'compact', 'the largest phone');
+  assert.equal(layoutMode(1136, 432, IPAD), 'compact', 'a folded foldable');
+  assert.equal(layoutMode(1080, 810, IPAD), 'wide');
+  assert.equal(layoutMode(1024, 768, IPAD), 'wide');
+  assert.equal(layoutMode(1194, 834, IPAD), 'wide');
+  assert.equal(layoutMode(1180, 746, IPAD), 'wide', 'an iPad in Safari with its toolbars');
+  assert.equal(layoutMode(1040, 932, IPAD), 'wide', 'an unfolded foldable');
+  assert.equal(layoutMode(944, 656, { touch: true, dpr: 2.5 }), 'wide', 'a small tablet');
+});
+
+test('layout: whatever the size, the full layout is only chosen when it really fits', () => {
+  for (const d of [DESKTOP, IPAD, IPHONE, PIXEL, { touch: true, dpr: 4.5 }, { touch: true, dpr: 1 }]) {
+    for (let w = 200; w <= 3600; w += 97) {
+      for (let h = 150; h <= 1700; h += 61) {
+        assert.equal(layoutMode(w, h, d) !== 'compact', fitsFull(w, h, d));
+        if (layoutMode(w, h, d) === 'compact') continue;
+        const u = hudScaleFor(w, h, d);
+        const z = viewZoomFor(w, h, d);
+        assert.ok(VIEW.px * z + (VIEW.chromeX + VIEW.columnMin) * u <= w + 0.5, `${w}x${h}@${d.dpr}: the column fits beside the view`);
+        assert.ok(VIEW.hudHeight * u + (d.touch ? TOUCH.strip : 0) <= h + 0.5, `${w}x${h}@${d.dpr}: the column fits the height`);
+      }
+    }
+  }
+});
+
+test('touch: a screen too narrow for rails stacks the controls under the view', () => {
+  for (const [w, h, d] of [[322, 308, IPAD], [360, 298, IPAD], [472, 422, IPAD]] as const) {
+    const l = compactLayout(w, h, d);
+    assert.ok(l.stacked);
+    assert.equal(l.view.y, 0);
+    assert.ok(l.view.size + l.pad + TOUCH.margin <= h + 0.5, `${w}x${h}: the d-pad is under the view`);
+    assert.ok(l.view.size + 2 * TOUCH.buttonMin + TOUCH.gap + TOUCH.margin <= h + 0.5, `${w}x${h}: the buttons are under the view`);
+    assert.ok(l.pad + 3 * l.button + 2 * TOUCH.gap + 3 * TOUCH.margin <= w + 0.5, `${w}x${h}: the d-pad and the buttons are side by side`);
+  }
+  assert.equal(compactLayout(568, 320, IPAD).stacked, false);
+});
+
+test('touch: the controls never cover the view', () => {
+  for (const [w, h, d] of [[568, 320, IPAD], [667, 375, IPAD], [750, 340, IPHONE], [838, 390, IPHONE], [658, 320, { touch: true, dpr: 4.5 }], [788, 308, IPHONE], [1136, 432, IPAD]] as const) {
+    const l = compactLayout(w, h, d);
+    // the d-pad and the buttons are in the rails, which end where the view starts
+    assert.ok(l.pad + l.band + TOUCH.margin <= l.view.x + 0.5, `${w}x${h}: the d-pad is left of the view`);
+    assert.ok(3 * l.button + 2 * TOUCH.gap + l.band + TOUCH.margin <= w - l.view.x - l.view.size + 0.5, `${w}x${h}: the buttons are right of the view`);
+  }
+  for (const [w, h, d] of [[1180, 746, IPAD], [1024, 768, IPAD], [1366, 1024, IPAD], [1040, 932, IPAD], [960, 600, IPAD]] as const) {
+    const l = wideLayout(w, h, d);
+    assert.ok(l.mid + TOUCH.strip <= h + 0.5, `${w}x${h}: the strip is under the view`);
+  }
+});
+
+// ---------- the desktop is what it was ----------
+
+test('desktop: the scales are the whole numbers they always were', () => {
+  assert.equal(uiScaleFor(1920, 1080, DESKTOP), 4);
+  assert.equal(uiScaleFor(1280, 720, DESKTOP), 2);
+  assert.equal(uiScaleFor(844, 390, DESKTOP), 1);
+  assert.equal(uiScaleFor(300, 200, DESKTOP), 1);
+  assert.equal(hudScaleFor(1920, 1080, DESKTOP), 3);
+  assert.equal(viewZoomFor(1920, 1080, DESKTOP), 5);
+  assert.equal(viewZoomFor(1280, 720, DESKTOP), 3);
+  assert.equal(viewZoomFor(844, 390, DESKTOP), 1);
+  // a high-density desktop screen changes nothing: the grid there is the CSS pixel
+  assert.equal(viewZoomFor(1280, 720, { touch: false, dpr: 2 }), 3);
+});
+
+// ---------- touch: the grid is the device pixel ----------
+
+test('touch: every scale is a whole number of device pixels', () => {
+  const screens: [number, number, Device][] = [[750, 340, IPHONE], [844, 390, IPHONE], [667, 331, IPAD], [863, 360, PIXEL], [1080, 810, IPAD], [1024, 768, IPAD], [1024, 690, IPAD], [1194, 834, IPAD]];
+  for (const [w, h, d] of screens) {
+    for (const scale of [uiScaleFor(w, h, d), hudScaleFor(w, h, d), viewZoomFor(w, h, d)]) {
+      assert.ok(whole(scale * d.dpr), `${w}x${h}@${d.dpr}: ${scale}`);
+      assert.ok(scale >= 1);
+    }
+  }
+  assert.ok(Math.abs(wholeDown(1.9, IPHONE) - 5 / 3) < 1e-9);
+  assert.equal(wholeDown(1.9, DESKTOP), 1);
+  assert.ok(Math.abs(snap(10.4, IPHONE) - 31 / 3) < 1e-9);
+});
+
+test('phone: the view takes the height, at x5 device pixels on an iPhone 14', () => {
+  // Safari with its bar: 750x340. The view is 320 of 340 pixels, not the 192 of a whole CSS zoom.
+  assert.ok(Math.abs(viewZoomFor(750, 340, IPHONE) - 5 / 3) < 1e-9);
+  // added to the home screen: 844x390, x6 device pixels = x2, 384 of 390
+  assert.ok(Math.abs(viewZoomFor(844, 390, IPHONE) - 2) < 1e-9);
+  assert.ok(Math.abs(viewZoomFor(863, 360, PIXEL) - 4 / 2.625) < 1e-9);
+  for (const [w, h, d] of [[750, 340, IPHONE], [844, 390, IPHONE], [863, 360, PIXEL], [667, 331, IPAD]] as const) {
+    const l = compactLayout(w, h, d);
+    assert.ok(l.view.size <= h && l.view.size >= h * 0.8, `${w}x${h}: the view is ${l.view.size}`);
+    assert.ok(l.rail >= TOUCH.rail, `${w}x${h}: rails of ${l.rail}`);
+    assert.ok(Math.abs(l.view.x * 2 + l.view.size - w) < 1, 'the view is in the middle');
+    assert.ok(whole(l.view.x * d.dpr) && whole(l.view.y * d.dpr), 'the view starts on a device pixel');
+    // the controls fit their rail, beside the label of the neighbouring face, at thumb size
+    assert.ok(l.pad >= TOUCH.padMin && l.pad <= TOUCH.padMax && l.pad + l.band + 2 * TOUCH.margin <= l.rail + 0.5);
+    assert.ok(l.button >= TOUCH.buttonMin && 3 * l.button + 2 * TOUCH.gap + l.band + 2 * TOUCH.margin <= l.rail + 0.5);
+  }
+});
+
+test('phone: a screen too square for the rails gives up zoom, never the controls', () => {
+  const l = compactLayout(640, 480, IPAD);
+  assert.ok(l.rail >= TOUCH.rail);
+  assert.equal(l.z, 1);
+});
+
+test('tablet: the desktop layout with a strip for the controls under it', () => {
+  for (const [w, h] of [[1080, 810], [1024, 768], [1194, 834], [1024, 690]] as const) {
+    const l = wideLayout(w, h, IPAD);
+    assert.ok(l.strip >= TOUCH.strip, `${w}x${h}: a strip of ${l.strip}`);
+    assert.ok(l.pad <= l.strip && l.pad >= TOUCH.padMin);
+    assert.ok(l.mid + l.strip <= h + 0.5);
+    // the column still has its minimum width beside the view
+    assert.ok(VIEW.px * l.z + (VIEW.chromeX + VIEW.columnMin) * l.u <= w);
+  }
+  assert.equal(viewZoomFor(1080, 810, IPAD), 3, 'the zoom of a desktop window of that size');
+  // the width decides here: x2 in a desktop window, x2.5 (five device pixels) on the iPad
+  assert.equal(viewZoomFor(1024, 768, IPAD), 2.5);
+  assert.equal(viewZoomFor(1024, 768, DESKTOP), 2);
+});

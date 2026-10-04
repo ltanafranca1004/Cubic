@@ -1,25 +1,35 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
+  CANON_UP,
   CORE_LINES,
   FACES,
   FACE_SIZE,
   PUZZLE_SCRIPTS,
+  applyInteract,
   applyMove,
   canonToScreen,
   createGame,
   decide,
   defaultEnv,
+  devSolve,
   devTeleport,
   faceDistance,
   findPath,
+  hazardAvoid,
+  hazardTiles,
   isPuzzleLine,
   lineKeys,
   newMind,
   nextStep,
+  objectsOn,
   observe,
+  parseAction,
   parseHuman,
   parseStringMap,
+  planAction,
+  seedOf,
+  visibleObjects,
   type FaceId,
   type GameEnv,
   type GameState,
@@ -30,16 +40,19 @@ import {
   type Side,
   type World,
 } from '../src/index';
+import { readCode } from '../src/puzzles/hiddenCode';
+import { safePath } from '../src/puzzles/laserPath';
+import { play, type HumanScript } from './partnerSim';
 
-// THE PARTNER CORE, on a cube of its own: blank faces, a portal, and made-up puzzles. Nothing
-// here knows the real puzzles, how many there are, or which faces they are on: that is the
-// point. The real puzzle scripts are tested in partnerScripts.test.ts.
+// THE PARTNER CORE, on a cube of its own: blank faces and made-up puzzles. Nothing in the
+// first part knows the real puzzles, how many there are, or which faces they are on: that is
+// the point. The last part is the body on the real cube: pressing E ("use") and hot lava.
+// A real puzzle script gets its own test file, driven by play() in ./partnerSim.ts.
 
 const T0 = 1_700_000_000_000;
 const STEP = 200;
 const other = (s: Side): Side => (s === 'out' ? 'in' : 'out');
 const BLANK = Array<string>(FACE_SIZE).fill('.'.repeat(FACE_SIZE));
-const withRow = (row: number, text: string) => BLANK.map((r, i) => (i === row ? text.padEnd(FACE_SIZE, '.') : r));
 
 /** A made-up puzzle: a widget both sides can see at 6,6. Solved when the OUTSIDE player stands on 3,3 of its face. */
 const mystery = (id: string, face: FaceId): PuzzleModule<{ done: boolean }> => ({
@@ -53,10 +66,10 @@ const mystery = (id: string, face: FaceId): PuzzleModule<{ done: boolean }> => (
   visible: () => [{ type: 'widget', x: 6, y: 6, state: 'idle' }],
 });
 
-/** A cube with a portal on `portalFace` and the given puzzles. */
-function world(portalFace: FaceId, puzzles: PuzzleModule<{ done: boolean }>[]): GameEnv {
+/** A blank cube with the given puzzles. No portal: the last solve wins. */
+function world(puzzles: PuzzleModule<{ done: boolean }>[]): GameEnv {
   const w = { out: {}, in: {} } as World;
-  for (const side of ['out', 'in'] as const) for (const f of FACES) w[side][f] = parseStringMap(side, f, f === portalFace ? withRow(5, '.....OO') : BLANK);
+  for (const side of ['out', 'in'] as const) for (const f of FACES) w[side][f] = parseStringMap(side, f, BLANK);
   return { world: w, puzzles };
 }
 
@@ -109,7 +122,7 @@ function walk(state: GameState, env: GameEnv, side: Side, goal: FaceId | { face:
 // ---------- finding the human ----------
 
 test('it finds the human on any face by voice alone, and stays on their wall', () => {
-  const env = world(6, [mystery('a', 2)]);
+  const env = world([mystery('a', 2)]);
   for (const ai of ['out', 'in'] as const) {
     for (const face of FACES) {
       const r = start(env, ai);
@@ -124,7 +137,7 @@ test('it finds the human on any face by voice alone, and stays on their wall', (
 });
 
 test('"face N" sends it straight there; a face the voice rules out is not believed', () => {
-  const env = world(6, [mystery('a', 2)]);
+  const env = world([mystery('a', 2)]);
   const state = createGame(T0, env);
   const far = FACES.find((f) => faceDistance(1, f) === 2)!;
   const near = FACES.filter((f) => faceDistance(1, f) === 1);
@@ -139,7 +152,7 @@ test('"face N" sends it straight there; a face the voice rules out is not believ
 });
 
 test('it says who it is once, and where the human went when it loses them', () => {
-  const env = world(6, [mystery('a', 2)]);
+  const env = world([mystery('a', 2)]);
   const r = start(env, 'in');
   r.go(3);
   assert.deepEqual(r.lines, ['hello.in', 'next']); // and that there is more to solve somewhere
@@ -149,38 +162,27 @@ test('it says who it is once, and where the human went when it loses them', () =
   assert.deepEqual(out.lines, ['hello.out', 'follow.far']);
 });
 
-// ---------- the portal ----------
+// ---------- the end of the game ----------
 
-test('with every puzzle solved it walks into the portal and waits there: the game is won', () => {
-  for (const portalFace of [6, 3] as FaceId[]) {
-    const env = world(portalFace, []); // no puzzles at all: the portal is awake from the start
-    for (const ai of ['out', 'in'] as const) {
-      const r = start(env, ai);
-      r.go(600, (s) => walk(s, env, other(ai), { face: portalFace, x: 5, y: 5 }));
-      assert.notEqual(r.state.wonAt, null, `ai=${ai} portal on face ${portalFace}`);
-      assert.ok(r.lines.includes('portal.in') && r.lines.includes('win'));
-    }
-  }
-});
-
-test('solving the last puzzle wakes the portal: "solved" for each one before, then the portal', () => {
-  const env = world(6, [mystery('a', 2), mystery('b', 4)]);
+test('the last solve wins the game: "solved" for each one before it, then "win", and nowhere left to walk', () => {
+  const env = world([mystery('a', 2), mystery('b', 4)]);
   const r = start(env, 'in');
   const goals: FaceId[] = [2, 4];
   r.go(1500, (s) => {
     const next = goals.find((f) => !s.solved.includes(f));
     if (next !== undefined) walk(s, env, 'out', { face: next, x: 3, y: 3 });
-    else walk(s, env, 'out', { face: 6, x: 5, y: 5 });
   });
   assert.notEqual(r.state.wonAt, null);
-  assert.equal(r.lines.filter((l) => l === 'solved').length, 1); // the last solve is the portal's moment
-  assert.ok(r.lines.indexOf('solved') < r.lines.indexOf('portal.go'));
+  assert.equal(r.lines.filter((l) => l === 'solved').length, 1); // the last solve is the win
+  assert.ok(r.lines.indexOf('solved') < r.lines.indexOf('win'));
+  const after = decide(r.mind, observe(r.state, 'in', env), [], T0 + 1e7);
+  assert.deepEqual([after.action, after.say], [null, []]);
 });
 
 // ---------- a puzzle it has no script for ----------
 
 test('a puzzle with no script: it says so, keeps off everything it can see there, and does not stall', () => {
-  const env = world(6, [mystery('never-heard-of-it', 2)]);
+  const env = world([mystery('never-heard-of-it', 2)]);
   for (const ai of ['out', 'in'] as const) {
     const r = start(env, ai, PUZZLE_SCRIPTS as never); // the real registry: it has no such id
     devTeleport(r.state, other(ai), 2, T0, env);
@@ -197,8 +199,8 @@ test('a puzzle with no script: it says so, keeps off everything it can see there
     r.go(600, (s) => walk(s, env, other(ai), far));
     assert.equal(r.state.players[ai].pose.face, far);
     assert.ok(!r.trodden.includes('2:6,6'), 'it stepped on the thing it does not understand');
-    // It can still finish the game once the human solves that puzzle alone.
-    r.go(1500, (s) => walk(s, env, 'out', s.solved.length ? { face: 6, x: 5, y: 5 } : { face: 2, x: 3, y: 3 }));
+    // The game still ends once the human solves that puzzle alone.
+    r.go(1500, (s) => walk(s, env, 'out', { face: 2, x: 3, y: 3 }));
     if (ai === 'in') assert.notEqual(r.state.wonAt, null);
   }
 });
@@ -206,7 +208,7 @@ test('a puzzle with no script: it says so, keeps off everything it can see there
 // ---------- the registry ----------
 
 test('a script for a puzzle that is not in the game is never asked; a script for one that is, is', () => {
-  const env = world(6, [mystery('here', 2)]);
+  const env = world([mystery('here', 2)]);
   const asked: string[] = [];
   const script = (id: string): PuzzleScript<{ n: number }> => ({
     id,
@@ -232,7 +234,7 @@ test('a script for a puzzle that is not in the game is never asked; a script for
   assert.ok(asked.includes('here'));
   assert.ok(r.lines.includes('here.hi') && !r.lines.includes('some.other.line') && !r.lines.includes('unknown'));
   const d = decide(r.mind, observe(r.state, 'in', env), [], T0 + 1e6, scripts);
-  assert.deepEqual([d.hold, d.action, d.avoid], [true, null, [{ col: 2, row: 2 }]]); // its hazards, minus what it allowed
+  assert.deepEqual([d.hold, d.action, d.avoid, d.soft], [true, null, [{ col: 2, row: 2 }], false]); // its hazards, minus what it allowed
   assert.match(d.status, /^here \d+$/);
   // Its memory lasts while the bot stays on the face, and starts over when it comes back.
   const n = (r.mind.scripts.here as { n: number }).n;
@@ -270,7 +272,7 @@ test('the real registry: one script per id, every line named after its puzzle, n
 // ---------- the words ----------
 
 test('"wait" stops it where it is, "go" releases it', () => {
-  const env = world(6, [mystery('a', 2)]);
+  const env = world([mystery('a', 2)]);
   const s = createGame(T0, env);
   devTeleport(s, 'out', FACES.find((f) => faceDistance(1, f) === 1)!, T0, env); // the human is one face away
   const mind = newMind();
@@ -304,4 +306,168 @@ test('parseHuman: the protocol words, counts, quick chat, and what is plain', ()
   for (const plain of ['moon', 'the moon stone', 'it is a moon', 'up 2', 'yes', 'ok go', 'I am across']) assert.equal(parseHuman(plain).plain, true, plain);
   for (const free of ['I think it shows a moon', 'hello there', 'what do you see?', '']) assert.equal(parseHuman(free).plain, false, free);
   assert.deepEqual(tokens('hello there'), []);
+});
+
+// ---------- the body on the real cube: pressing E, and hot lava ----------
+
+/** Walk a decision to its end with real moves. Returns the steps taken. */
+function carryOut(state: GameState, side: Side, decision: Parameters<typeof nextStep>[2], max = 400): number {
+  for (let n = 0; n < max; n++) {
+    const step = nextStep(state, side, decision);
+    if (!step) return n;
+    if (step === 'interact') {
+      applyInteract(state, side, T0);
+      return n + 1;
+    }
+    applyMove(state, side, step[0], step[1], T0);
+  }
+  return max;
+}
+
+test('"use": the body walks to a keypad key on face 1 inside and presses it; the right code solves the face', () => {
+  const s = createGame(T0);
+  const code = readCode(visibleObjects(s, 'out', 1))!;
+  assert.match(code, /^\d{3}$/);
+  const display = () => observe(s, 'in').objects.filter((o) => o.type === 'display').sort((a, b) => a.col - b.col).map((o) => o.state);
+  // by object + state, by tile, and where it stands
+  const first = planAction(s, 'in', { type: 'use', object: 'key', state: code[0]! });
+  assert.ok('steps' in first && first.steps.at(-1) === 'interact' && first.steps.slice(0, -1).every((x) => x !== 'interact'));
+  carryOut(s, 'in', { action: { type: 'use', object: 'key', state: code[0]! }, avoid: [] });
+  assert.deepEqual(display(), [code[0], 'empty', 'empty']);
+  const key = observe(s, 'in').objects.find((o) => o.type === 'key' && o.state === code[1])!;
+  carryOut(s, 'in', { action: { type: 'use', col: key.col, row: key.row }, avoid: [] });
+  const last = observe(s, 'in').objects.find((o) => o.type === 'key' && o.state === code[2])!;
+  carryOut(s, 'in', { action: { type: 'goto', col: last.col, row: last.row }, avoid: [] });
+  carryOut(s, 'in', { action: { type: 'use' }, avoid: [] });
+  assert.deepEqual(display(), [...code]);
+  carryOut(s, 'in', { action: { type: 'use', object: 'key', state: 'enter' }, avoid: [] });
+  assert.deepEqual([s.solved, s.strikes], [[1], 0]);
+
+  // what it refuses: nothing of that kind in sight, full hands, an item underfoot
+  assert.match((planAction(s, 'in', { type: 'use', object: 'unicorn' }) as { error: string }).error, /cannot see any "unicorn"/);
+  const { face, x, y } = s.players.in.pose;
+  s.items.parcel = { id: 'parcel', kind: 'parcel', side: 'in', face, x, y, carriedBy: null, placedOn: null, props: {} };
+  assert.match((planAction(s, 'in', { type: 'use' }) as { error: string }).error, /pick it up/);
+  applyInteract(s, 'in', T0);
+  assert.match((planAction(s, 'in', { type: 'use' }) as { error: string }).error, /hands are full/);
+  // a model may ask for it too
+  assert.deepEqual(parseAction({ type: 'use', object: 'Key', state: '7' }), { type: 'use', object: 'key', state: '7' });
+  assert.deepEqual(parseAction({ type: 'use', args: { col: 3, row: 4 } }), { type: 'use', col: 3, row: 4 });
+  assert.deepEqual(parseAction({ type: 'use' }), { type: 'use' });
+  assert.equal(parseAction({ type: 'use', col: 12, row: 0 }), null);
+});
+
+/** A game with the laser on (face 5 solved) and the inside player on face 6's outer ring, at 0,5. */
+function lavaGame(): GameState {
+  const s = createGame(T0);
+  devSolve(s, 5, T0);
+  s.players.in.pose = { ...s.players.in.pose, face: 6, up: CANON_UP[6], x: 0, y: 5 };
+  return s;
+}
+const ringOf6 = (p: { face: FaceId; x: number; y: number }) => p.face !== 6 || p.x === 0 || p.y === 0 || p.x === FACE_SIZE - 1 || p.y === FACE_SIZE - 1;
+
+test('hot lava: with face 5 solved the inside body routes around the inside of face 6', () => {
+  const s = lavaGame();
+  const across = (p: { face: FaceId; x: number; y: number }) => p.face === 6 && p.x === FACE_SIZE - 1 && p.y === 5;
+  assert.equal(hazardTiles(s, 'in', 6).length, 100); // the whole inside of the face, button included
+  assert.equal(hazardTiles(createGame(T0), 'in', 6).length, 0); // cold before the laser: plain floor
+  assert.equal(hazardTiles(s, 'out', 6).length, 0); // the cave above it is not lava
+  // the blind path walks straight through; the careful one is longer and never leaves the ring
+  const blind = findPath(s, 'in', across)!;
+  const careful = findPath(s, 'in', across, undefined, undefined, hazardAvoid(s, 'in'))!;
+  assert.equal(blind.length, FACE_SIZE - 1);
+  assert.ok(careful.length > blind.length);
+
+  // the partner's body: nextStep keeps off it on its own, on a goto and on the way to another face
+  const [col, row] = canonToScreen('in', 6, s.players.in.pose.up, FACE_SIZE - 1, 5);
+  for (let n = 0; n < 200 && !across(s.players.in.pose); n++) {
+    const step = nextStep(s, 'in', { action: { type: 'goto', col, row }, avoid: [] });
+    assert.ok(step && step !== 'interact');
+    applyMove(s, 'in', step[0], step[1], T0);
+    assert.ok(ringOf6(s.players.in.pose), `stepped into the lava at ${s.players.in.pose.x},${s.players.in.pose.y}`);
+  }
+  assert.ok(across(s.players.in.pose));
+  assert.equal(s.strikes, 0);
+  // a tile in the lava is not walked to, the button is not pressed, a straight line through is refused
+  const button = observe(s, 'in').objects.find((o) => o.type === 'button')!;
+  assert.equal(nextStep(s, 'in', { action: { type: 'goto', col: button.col, row: button.row }, avoid: [] }), null);
+  assert.equal(nextStep(s, 'in', { action: { type: 'use', object: 'button' }, avoid: [] }), null);
+  assert.equal(nextStep(s, 'in', { action: { type: 'move', dir: 'left', steps: 3 }, avoid: [] }) === null || ringOf6(s.players.in.pose), true);
+});
+
+test('hot lava: the brain with no script follows the human to face 6 and stays on the ring; a told path is walked', () => {
+  // the core alone (no scripts): the human stands on face 6, the bot comes and waits on the ring
+  const s = createGame(T0);
+  devSolve(s, 5, T0);
+  devTeleport(s, 'out', 6, T0);
+  const mind = newMind();
+  for (let n = 0; n < 400; n++) {
+    const d = decide(mind, observe(s, 'in'), [], T0 + n * STEP, []);
+    const step = nextStep(s, 'in', d);
+    if (step && step !== 'interact') applyMove(s, 'in', step[0], step[1], T0);
+    assert.ok(ringOf6(s.players.in.pose));
+  }
+  assert.deepEqual([s.players.in.pose.face, s.strikes], [6, 0]);
+
+  // a script that was told the path lists it in `allow`: the body walks exactly those lava tiles and presses the button
+  const g = lavaGame();
+  (g.puzzles['laser-path'] as { burnt: boolean }).burnt = true; // the crate is burnt: the path exists
+  const path = safePath({ world: defaultEnv.world, seed: seedOf(g), objects: (side, face, type) => objectsOn(defaultEnv.world, side, face, type) });
+  const allow = () =>
+    path.map((t) => {
+      const [col, row] = canonToScreen('in', 6, g.players.in.pose.up, t.x, t.y);
+      return { col, row };
+    });
+  const onPath = (p: { x: number; y: number }) => path.some((t) => t.x === p.x && t.y === p.y);
+  for (let n = 0; n < 200 && !g.solved.includes(6); n++) {
+    const step = nextStep(g, 'in', { action: { type: 'use', object: 'button' }, avoid: [], allow: allow() });
+    assert.ok(step, 'no way along the told path');
+    if (step === 'interact') applyInteract(g, 'in', T0);
+    else applyMove(g, 'in', step[0], step[1], T0);
+    assert.ok(ringOf6(g.players.in.pose) || onPath(g.players.in.pose));
+  }
+  assert.deepEqual([g.solved.includes(6), g.strikes], [true, 0]);
+});
+
+// ---------- the script interface, end to end: relay lines, the raw chat line, "use", the sim ----------
+
+test('a script and a simulated human solve the real face 1 through chat: ask, relay, type, ENTER', () => {
+  interface Mem {
+    code: string | null;
+  }
+  /** Test only: the inside half of hidden-code. A real script lives in src/bot/scripts. */
+  const typist: PuzzleScript<Mem> = {
+    id: 'hidden-code',
+    lines: ['hidden-code.ask', 'hidden-code.typing'],
+    init: () => ({ code: null }),
+    play({ o, mem, heard, objs, say }) {
+      if (o.you !== 'in') return null;
+      for (const h of heard) mem.code = /^\D*(\d)\D*(\d)\D*(\d)\D*$/.exec(h.text)?.slice(1).join('') ?? mem.code; // the raw line: digits are not protocol words
+      if (!mem.code) {
+        say('hidden-code.ask', { every: 20_000 });
+        return null;
+      }
+      say('hidden-code.typing', { args: { code: [...mem.code].join(' ') } }); // a relay line
+      const typed = objs('display').filter((d) => d.state !== 'empty').length;
+      // re-asked before every step: the display says how far it is, so each key is pressed once
+      return { action: { type: 'use', object: 'key', state: typed < 3 ? mem.code[typed]! : 'enter' }, status: `typing ${mem.code}, ${typed} in` };
+    },
+  };
+  const reader: HumanScript<null> = {
+    id: 'hidden-code',
+    init: () => null,
+    play({ next, seen, say }) {
+      if (next()?.key === 'hidden-code.ask') say(`it says ${[...readCode(seen('code-mark'))!].join(' ')}`);
+    },
+  };
+  const r = play('in', { scripts: [typist], humans: [reader], maxMs: 120_000, until: (s) => s.solved.includes(1) });
+  assert.deepEqual([r.state.solved, r.state.strikes], [[1], 0]);
+  assert.match(r.human.said[0]!, /^it says \d \d \d$/);
+  const relay = r.decisions.flatMap((d) => d.say).find((x) => x.key === 'hidden-code.typing')!;
+  assert.equal(relay.args!.code, r.human.said[0]!.slice(8));
+  assert.ok(!r.lines.includes('unknown'));
+  // with the registry as it is (no script) the same game does not stall: the bot greets, says so, and waits
+  const none = play('in', { humans: [reader], maxMs: 20_000 });
+  assert.deepEqual(none.lines.slice(0, 2), ['hello.in', 'unknown']);
+  assert.equal(none.state.solved.length, 0);
 });

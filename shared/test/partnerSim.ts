@@ -1,39 +1,43 @@
 import {
-  FACE_SIZE,
   applyInteract,
   applyMove,
   createGame,
   decide,
   defaultEnv,
   findPath,
-  isSolidTile,
+  hazardAvoid,
   newMind,
   nextStep,
-  objectsOn,
   observe,
   parseHuman,
-  pathTo,
-  stepPose,
+  tick,
   visibleObjects,
   type Decision,
   type FaceId,
   type GameEnv,
   type GameState,
   type Heard,
+  type LineArgs,
   type LineKey,
   type Mind,
+  type Observation,
   type Pose,
+  type PuzzleScript,
   type Side,
   type TileRef,
+  type VisibleObject,
 } from '../src/index';
-import { around, flood } from '../src/puzzles/util';
 
 // A SIMULATED HUMAN for the AI partner tests (not a test file itself). It plays one side
 // the way a person would: it looks at its own screen (observe / visibleObjects for ITS
 // side only), walks with real moves, and does what the AI partner's lines ask for, typing
 // the short words those lines suggest. It never reads the other side or the puzzle state.
 //
-// The same class drives the pure scripted partner (shared/test/partner.test.ts) and the
+// The core here knows no puzzle, like the partner core: it walks to the next unsolved face
+// of its `order`, waits for the AI to arrive, and then hands each tick to that puzzle's
+// HumanScript (`humans`, by puzzle id). A puzzle with no HumanScript is skipped.
+//
+// The same class drives the pure scripted partner (play() below, shared tests) and the
 // real AiPlayer on a Room (server/test/ai.test.ts): only `Hands` differs.
 
 /** How the simulated human touches the game. */
@@ -44,31 +48,73 @@ export interface Hands {
   say(text: string): void;
 }
 
+/** One line the AI said, as the human hears it. */
+export interface HeardLine {
+  key: LineKey;
+  args?: LineArgs;
+}
+
+/** What a HumanScript gets each tick it is asked. */
+export interface HumanCtx<M> {
+  side: Side;
+  /** What the human sees right now (its own side only). */
+  o: Observation;
+  /** The script's own memory. Starts as init() and is reset when the human enters the face. */
+  mem: M;
+  /** AI lines not yet acted on, oldest first. Take one with next(). */
+  inbox: readonly HeardLine[];
+  /** Take the oldest AI line off the inbox (undefined if there is none). */
+  next(): HeardLine | undefined;
+  /** Canonical tiles of what the human sees on its face, by object type. */
+  seen(type: string): VisibleObject[];
+  /** Is the human standing on this canonical tile of its face? */
+  at(t: { x: number; y: number }): boolean;
+  /** One careful step towards a tile of this face (or a tile anywhere). True when already there. */
+  walk(to: { x: number; y: number; face?: FaceId }): boolean;
+  /** One raw step in the human's own screen space (also into a hazard: a mistake). */
+  move(dx: number, dy: number): void;
+  /** Press E. */
+  interact(): void;
+  /** Type a chat line. */
+  say(text: string): void;
+  /** Walk to a tile over the coming ticks, then run `then`. The script is not asked meanwhile. */
+  errand(to: TileRef, then?: () => void): void;
+}
+
+/** How the simulated human plays one puzzle. The mirror image of a PuzzleScript. */
+export interface HumanScript<M = unknown> {
+  /** The puzzle module's id. */
+  id: string;
+  init(): M;
+  /** Asked once per tick while the human is on the puzzle's face, it is unsolved and the AI is on the same wall. */
+  play(ctx: HumanCtx<M>): void;
+  /** Asked on every tick on any face, before anything else, while the puzzle is unsolved: work across the cube (carrying). Return true if it acted. */
+  errand?(ctx: HumanCtx<M>): boolean;
+}
+
+/**
+ * How the simulated human plays each puzzle: one HumanScript per puzzle id, next to the
+ * PuzzleScript it is the partner of. Add yours here. (Empty: no V2 script yet.)
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const HUMAN_SCRIPTS: HumanScript<any>[] = [];
+
 export interface HumanOptions {
-  /** The faces in the order this human wants to solve them. */
+  /** The faces in the order this human wants to solve them (default: the env's puzzles in list order). */
   order?: FaceId[];
   /** Say "face N" on arriving somewhere, instead of letting the AI search by voice. */
   announce?: boolean;
-  /** Make this many mistakes in the maze (a wrong step, or a wrong direction to the AI). */
-  mazeMistakes?: number;
-  /** Type like a person: "I think it shows a moon" instead of "moon". */
-  chatty?: boolean;
-  /** Outside on face 5: stand on the pane for the far bridge first. */
-  wrongPaneFirst?: boolean;
+  /** How this human plays each puzzle (default: HUMAN_SCRIPTS). */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  humans?: readonly HumanScript<any>[];
 }
-
-const DIR_OF: Record<string, string> = { '0,-1': 'up', '0,1': 'down', '-1,0': 'left', '1,0': 'right' };
-const VEC: Record<string, [number, number]> = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
 
 export class SimHuman {
   /** AI lines not yet acted on. */
-  private inbox: LineKey[] = [];
+  private inbox: HeardLine[] = [];
   private order: FaceId[];
   private announced: FaceId | null = null;
-  private mistakes: number;
-  /** Maze, guiding the AI: the stone the AI stands on. */
-  private stone = 0;
-  private pane = 0;
+  private mems: Record<string, unknown> = {};
   /** What the human is walking to, and what to do on arrival. */
   private errand: { to: TileRef; then?: () => void } | null = null;
   readonly said: string[] = [];
@@ -79,13 +125,12 @@ export class SimHuman {
     private opts: HumanOptions = {},
     private env: GameEnv = defaultEnv,
   ) {
-    this.order = opts.order ?? [1, 6, 3, 4, 5];
-    this.mistakes = opts.mazeMistakes ?? 0;
+    this.order = opts.order ?? env.puzzles.map((p) => p.face);
   }
 
   /** The AI said a line. */
-  hear(key: LineKey): void {
-    this.inbox.push(key);
+  hear(key: LineKey, args?: LineArgs): void {
+    this.inbox.push(args ? { key, args } : { key });
   }
 
   private get s(): GameState {
@@ -94,50 +139,37 @@ export class SimHuman {
   private get pose(): Pose {
     return this.s.players[this.side].pose;
   }
-  private say(text: string): void {
-    this.said.push(text);
-    this.hands.say(text);
-  }
-  private sees(type: string) {
-    return observe(this.s, this.side, this.env).objects.filter((o) => o.type === type);
-  }
-  /** Canonical tiles of what I see on my face. */
-  private seen(type: string) {
-    return visibleObjects(this.s, this.side, this.pose.face, this.env).filter((o) => o.type === type);
-  }
-  private tile(o: { x: number; y: number }): TileRef {
-    return { face: this.pose.face, x: o.x, y: o.y };
-  }
-  private at(t: { x: number; y: number }): boolean {
-    return this.pose.x === t.x && this.pose.y === t.y;
-  }
 
-  /** Tiles a careful player does not cross by accident: sign stones, panes, the trap floor. */
-  private careful(target?: TileRef) {
-    return (p: Pose): boolean => {
-      if (target && p.face === target.face && p.x === target.x && p.y === target.y) return false;
-      if (this.s.solved.includes(p.face)) return false;
-      if (this.side === 'out') return objectsOn(this.env.world, 'out', p.face).some((o) => (o.type === 'glyph' || o.type === 'skylight') && o.x === p.x && o.y === p.y);
-      const entry = objectsOn(this.env.world, 'in', p.face, 'entry')[0];
-      const crystal = objectsOn(this.env.world, 'in', p.face, 'crystal')[0];
-      if (!entry || !crystal) return false;
-      return flood(this.env.world.in[p.face].tiles, crystal, [entry]).some((t) => t.x === p.x && t.y === p.y);
-    };
-  }
-
-  /** One step towards a tile (or a face). True when already there. */
+  /** One step towards a tile (or a face), never through a deadly tile. True when already there. */
   private walk(goal: TileRef | FaceId): boolean {
     const target = typeof goal === 'number' ? undefined : goal;
-    const path = findPath(this.s, this.side, (p) => (target ? p.face === target.face && p.x === target.x && p.y === target.y : p.face === goal), this.env, undefined, this.careful(target));
+    const careful = hazardAvoid(this.s, this.side, this.env, target ? [target] : []);
+    const path = findPath(this.s, this.side, (p) => (target ? p.face === target.face && p.x === target.x && p.y === target.y : p.face === goal), this.env, undefined, careful);
     if (!path) return false;
     if (path.length === 0) return true;
     this.hands.move(path[0]![0], path[0]![1]);
     return false;
   }
 
-  /** Where `to` is from `from` on my screen, as two words ("up left"). */
-  private landmark(from: { col: number; row: number }, to: { col: number; row: number }): string {
-    return `${to.row < from.row ? 'up' : 'down'} ${to.col < from.col ? 'left' : 'right'}`;
+  private ctx<M>(script: HumanScript<M>, o: Observation): HumanCtx<M> {
+    const face = this.pose.face;
+    return {
+      side: this.side,
+      o,
+      mem: (this.mems[script.id] ??= script.init()) as M,
+      inbox: this.inbox,
+      next: () => this.inbox.shift(),
+      seen: (type) => visibleObjects(this.s, this.side, this.pose.face, this.env).filter((x) => x.type === type),
+      at: (t) => this.pose.x === t.x && this.pose.y === t.y,
+      walk: (to) => this.walk({ face: to.face ?? face, x: to.x, y: to.y }),
+      move: (dx, dy) => this.hands.move(dx, dy),
+      interact: () => this.hands.interact(),
+      say: (text) => {
+        this.said.push(text);
+        this.hands.say(text);
+      },
+      errand: (to, then) => void (this.errand = then ? { to, then } : { to }),
+    };
   }
 
   /** Called once per step of game time. */
@@ -146,6 +178,7 @@ export class SimHuman {
     if (s.wonAt !== null) return;
     const o = observe(s, this.side, this.env);
     const face = this.pose.face;
+    const humans = this.opts.humans ?? HUMAN_SCRIPTS;
 
     if (this.errand) {
       const { to, then } = this.errand;
@@ -154,26 +187,15 @@ export class SimHuman {
       then?.();
       return;
     }
-
-    if (o.portalOpen) {
-      const portal = objectsOn(this.env.world, this.side, 6, 'portal')[0]!;
-      this.walk({ face: 6, x: portal.x, y: portal.y });
-      return;
+    for (const h of humans) {
+      const puzzle = this.env.puzzles.find((p) => p.id === h.id);
+      if (puzzle && !s.solved.includes(puzzle.face) && h.errand?.(this.ctx(h, o))) return;
     }
 
-    // The rose is the outside player's job.
-    const goalFace = this.order.find((f) => !s.solved.includes(f) && !(f === 6 && this.side === 'in'));
+    // The next face of my order that I know how to play.
+    const goalFace = this.order.find((f) => !s.solved.includes(f) && humans.some((h) => h.id === this.env.puzzles.find((p) => p.face === f)?.id));
     if (goalFace === undefined) return;
-    if (goalFace === 6) {
-      if (!s.players.out.carrying) {
-        const rose = s.items.rose!;
-        this.errand = { to: { face: rose.face, x: rose.x, y: rose.y }, then: () => this.hands.interact() };
-      } else {
-        const pot = objectsOn(this.env.world, 'out', 6, 'target')[0]!;
-        this.errand = { to: { face: 6, x: pot.x, y: pot.y }, then: () => this.hands.interact() };
-      }
-      return;
-    }
+    const script = humans.find((h) => h.id === this.env.puzzles.find((p) => p.face === goalFace)!.id)!;
     if (face !== goalFace) {
       this.inbox = [];
       this.walk(goalFace);
@@ -181,151 +203,14 @@ export class SimHuman {
     }
     if (this.announced !== face) {
       this.announced = face;
-      this.stone = 0;
-      this.pane = this.opts.wrongPaneFirst ? 1 : 0;
-      if (this.opts.announce) this.say(`face ${face}`);
-    }
-    if (o.voiceSignal < 3 && !(face === 1 && this.side === 'in')) return; // wait for the partner to come
-
-    const key = this.inbox[0];
-    const handled = () => void this.inbox.shift();
-
-    // ---- face 1 ----
-    if (face === 1) {
-      this.inbox = [];
-      if (this.side === 'in') return void this.walk(this.tile(this.seen('plate')[0]!));
-      if (this.seen('door')[0]!.state === 'open') this.walk(this.tile(this.seen('crystal')[0]!));
-      return;
-    }
-
-    // ---- face 3 ----
-    if (face === 3 && this.side === 'in') {
-      if (!this.walk(this.tile(this.seen('plate')[0]!))) return;
-      if (key === 'glyph-code.ready' || key === 'glyph-code.next' || key === 'glyph-code.oops') {
-        const sign = this.seen('tablet')[0]!.state!;
-        this.say(this.opts.chatty ? `I think it shows a ${sign} now` : sign);
-      }
-      if (key) handled();
-      return;
-    }
-    if (face === 3) {
-      const named = /^glyph-code\.sign\.(\w+)$/.exec(key ?? '');
-      if (named) {
-        const stone = this.seen('glyph').find((g) => g.state === named[1]);
-        if (stone) {
-          // Standing on it already (a new code): off and on again.
-          if (this.at(stone)) {
-            const off = around(stone).find((n) => !isSolidTile(this.env.world, 'out', 3, n.x, n.y))!;
-            this.errand = { to: this.tile(off), then: () => (this.errand = { to: this.tile(stone) }) };
-          } else this.errand = { to: this.tile(stone) };
-        }
-      }
-      if (key) handled();
-      return;
-    }
-
-    // ---- face 4 ----
-    if (face === 4 && this.side === 'in') {
-      const entry = this.seen('entry')[0]!;
-      const inRoom = this.careful()(this.pose);
-      if (!inRoom && !this.at(entry)) return void this.walk(this.tile(entry));
-      if (!key) return;
-      handled();
-      const me = o.position;
-      if (key === 'mirror-maze.calib') return this.say(this.landmark(me, this.sees('crystal')[0]!));
-      if (key === 'mirror-maze.stepin' || key === 'mirror-maze.fell') {
-        if (!this.at(entry)) return; // already in
-        // the one way in: the tile of the room next to the doorway
-        const step = pathTo(s, 'in', this.tile(around(entry).find((n) => this.careful()({ ...this.pose, x: n.x, y: n.y }))!), this.env)!;
-        this.hands.move(step[0]![0], step[0]![1]);
-        return this.say(this.opts.chatty ? 'ok I am in' : 'yes');
-      }
-      const called = /^mirror-maze\.go\.(\w+)$/.exec(key);
-      if (called) {
-        let dir = called[1]!;
-        if (this.mistakes > 0) {
-          // an honest slip: any other way that is not a wall
-          const other = Object.keys(VEC).find((d) => d !== dir && this.careful()(stepPose(this.pose, VEC[d]![0], VEC[d]![1]).pose));
-          if (other) {
-            this.mistakes--;
-            dir = other;
-          }
-        }
-        this.hands.move(VEC[dir]![0], VEC[dir]![1]);
-        if (this.at(entry)) return; // fell: the AI will notice the stones moved
-        return this.say('yes');
-      }
-      return;
-    }
-    if (face === 4) {
-      if (!key) return;
-      handled();
-      const trail = this.sees('trail');
-      if (key === 'mirror-maze.askCalib') return this.say(this.landmark(trail[0]!, trail.at(-1)!));
-      if (key === 'mirror-maze.guide' || key === 'mirror-maze.fellIn') this.stone = 0;
-      else if (key === 'mirror-maze.ok') this.stone++;
-      else if (key !== 'mirror-maze.wall') return;
-      const a = trail[this.stone]!;
-      const b = trail[this.stone + 1];
-      if (!b) return;
-      let dir = DIR_OF[`${b.col - a.col},${b.row - a.row}`]!;
-      if (this.mistakes > 0 && this.stone === 1) {
-        // a slip: a direction that is not the line's, and not back where the AI came from
-        const back = trail[this.stone - 1]!;
-        const wrong = Object.keys(VEC).find((d) => d !== dir && !(a.col + VEC[d]![0] === back.col && a.row + VEC[d]![1] === back.row) && a.col + VEC[d]![0] > 0 && a.col + VEC[d]![0] < FACE_SIZE - 1);
-        if (wrong) {
-          this.mistakes--;
-          dir = wrong;
-        }
-      }
-      return this.say(this.opts.chatty ? `go ${dir} one step` : dir);
-    }
-
-    // ---- face 5 ----
-    if (face === 5 && this.side === 'in') {
-      const bridges = this.seen('bridge');
-      const isBridge = (t: { x: number; y: number }) => bridges.find((b) => b.x === t.x && b.y === t.y);
-      // My way to the crystal as the room is drawn, and the first bridge on it that is still dark.
-      const way = this.terrainRoute(this.seen('crystal')[0]!);
-      const dark = way.findIndex((t, i) => i > 0 && isBridge(t)?.state === 'dark');
-      const stand = dark < 0 ? way.at(-1)! : way[dark - 1]!;
-      if (!this.at(stand)) return void this.walk(this.tile(stand));
-      if (!key) return;
-      handled();
-      if (key !== 'skylight.on') return;
-      const crossedOne = way.filter((t) => isBridge(t)).length < bridges.length;
-      return this.say(crossedOne ? (this.opts.chatty ? 'I am across, go to the next one' : 'go') : 'no');
-    }
-    if (face === 5) {
-      if (!key) return;
-      handled();
-      const panes = this.seen('skylight');
-      if (key === 'skylight.other' || key === 'skylight.across1') this.pane = (this.pane + 1) % panes.length;
-      else if (key !== 'skylight.need') return;
-      this.errand = { to: this.tile(panes[this.pane]!) };
-    }
-  }
-
-  /** Shortest way over my own map's terrain (bridges count as floor), from where I stand. */
-  private terrainRoute(to: { x: number; y: number }): { x: number; y: number }[] {
-    const k = (t: { x: number; y: number }) => `${t.x},${t.y}`;
-    const from = { x: this.pose.x, y: this.pose.y };
-    const prev = new Map<string, { x: number; y: number } | null>([[k(from), null]]);
-    const queue = [from];
-    for (let i = 0; i < queue.length; i++) {
-      const cur = queue[i]!;
-      if (cur.x === to.x && cur.y === to.y) {
-        const path = [];
-        for (let t: { x: number; y: number } | null = cur; t; t = prev.get(k(t)) ?? null) path.unshift(t);
-        return path;
-      }
-      for (const n of around(cur)) {
-        if (prev.has(k(n)) || isSolidTile(this.env.world, this.side, this.pose.face, n.x, n.y)) continue;
-        prev.set(k(n), cur);
-        queue.push(n);
+      this.mems[script.id] = script.init();
+      if (this.opts.announce) {
+        this.said.push(`face ${face}`);
+        this.hands.say(`face ${face}`);
       }
     }
-    return [from];
+    if (o.voiceSignal < 3) return; // wait for the partner to come
+    script.play(this.ctx(script, o));
   }
 }
 
@@ -346,8 +231,24 @@ export interface Played {
   decisions: Decision[];
 }
 
-/** Play until the game is won, `until` says so, or the time is up. */
-export function play(aiSide: Side, opts: HumanOptions & { maxMs?: number; until?: (s: GameState) => boolean; state?: GameState; startAt?: number } = {}, env: GameEnv = defaultEnv): Played {
+export interface PlayOptions extends HumanOptions {
+  /** The puzzle scripts the AI plays with (default: the registry). */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  scripts?: readonly PuzzleScript<any>[];
+  /** Give up after this much game time (default 30 minutes). */
+  maxMs?: number;
+  until?: (s: GameState) => boolean;
+  /** Start from this state instead of a new game (e.g. with faces already solved by devSolve). */
+  state?: GameState;
+  startAt?: number;
+}
+
+/**
+ * Play until the game is won, `until` says so, or the time is up. Each 200 ms step: the AI
+ * decides (decide) and takes one step (nextStep), then the human ticks once. What the human
+ * types reaches the AI's next decide() as Heard; what the AI says reaches human.hear().
+ */
+export function play(aiSide: Side, opts: PlayOptions = {}, env: GameEnv = defaultEnv): Played {
   const state = opts.state ?? createGame(opts.startAt ?? 1_700_000_000_000, env);
   const mind = newMind();
   const lines: LineKey[] = [];
@@ -370,11 +271,11 @@ export function play(aiSide: Side, opts: HumanOptions & { maxMs?: number; until?
   const end = now + (opts.maxMs ?? 30 * 60_000);
   while (state.wonAt === null && now < end && !opts.until?.(state)) {
     now += STEP_MS;
-    const d = decide(mind, observe(state, aiSide, env), chat.splice(0), now);
+    const d = decide(mind, observe(state, aiSide, env), chat.splice(0), now, opts.scripts);
     decisions.push(d);
     for (const say of d.say) {
       lines.push(say.key);
-      human.hear(say.key);
+      human.hear(say.key, say.args);
     }
     const step = nextStep(state, aiSide, d, env);
     if (step === 'interact') applyInteract(state, aiSide, now, env);
@@ -382,8 +283,9 @@ export function play(aiSide: Side, opts: HumanOptions & { maxMs?: number; until?
     const p = state.players[aiSide].pose;
     trodden.add(`${p.face}:${p.x},${p.y}`);
     human.tick();
+    tick(state, STEP_MS, now, env);
   }
   // The partner's last word, once the game is over.
-  if (state.wonAt !== null) lines.push(...decide(mind, observe(state, aiSide, env), [], now + STEP_MS).say.map((x) => x.key));
+  if (state.wonAt !== null) lines.push(...decide(mind, observe(state, aiSide, env), [], now + STEP_MS, opts.scripts).say.map((x) => x.key));
   return { state, mind, lines, human, ms: now - state.startedAt, trodden, decisions };
 }

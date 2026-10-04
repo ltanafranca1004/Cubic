@@ -3,7 +3,8 @@ import { rendererType } from '../style/renderer';
 import type { GameEvent, GameState, Side } from '@cubic/shared';
 import { EXTRA_SCENES } from '../scenes';
 import { SheetArt } from '../style/art';
-import { viewZoom } from '../style/scale';
+import { sizeCanvas } from '../style/canvas';
+import { onFit, viewZoom } from '../style/scale';
 import { CodeArt } from './art';
 import { GameScene, VIEW_PX, type GameInput } from './GameScene';
 
@@ -37,9 +38,10 @@ export function createGameView(parent: HTMLElement, input: GameInput): GameHandl
     scene: [scene, ...EXTRA_SCENES],
   });
   scene.bind(input);
-  const onResize = () => game.scale.setZoom(fitZoom());
-  window.addEventListener('resize', onResize);
+  const fit = () => sizeCanvas(game, VIEW_PX, VIEW_PX, fitZoom());
+  const fitOff = onFit(fit);
   game.events.once(Phaser.Core.Events.READY, () => {
+    fit();
     for (const extra of EXTRA_SCENES) game.scene.run(extra);
   });
 
@@ -53,7 +55,7 @@ export function createGameView(parent: HTMLElement, input: GameInput): GameHandl
       for (const e of events) game.events.emit('cubic:event', e);
     },
     destroy() {
-      window.removeEventListener('resize', onResize);
+      fitOff();
       game.destroy(true);
     },
   };

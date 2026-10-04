@@ -4,9 +4,11 @@ import type { FaceId } from '../types';
 // pass what they see through the wall. The AI's own lines tell the human which words to
 // type. Quick chat (keys 1 to 4: Here! / Wait / Yes / No) is part of it.
 //
-//   sign   sun | moon | star | drop | bolt | ring      the code relay (face 3)
-//   dir    up | down | left | right (+ a count)        the mirror maze (face 4)
-//   go     go | across | next | switch | other         "I am across, move on" (face 5)
+//   sign   sun | moon | star | drop | bolt | ring      a symbol
+//   dir    up | down | left | right (+ a count)        "up 2", or a landmark: "up left"
+//   go     go | across | next | switch | other         "move on"
+//
+// Anything else a puzzle needs (digits, colours) its script reads from Heard.text.
 //   yes    yes | ok | done | here                      "I took that step"
 //   no     no | wrong                                  "that did not work"
 //   wait   wait | stop | hold
@@ -76,6 +78,8 @@ const FILLER = new Set(
 );
 
 export interface Heard {
+  /** The line as typed (trimmed). A puzzle script reads its own words (digits, colours) from this. */
+  text: string;
   tokens: Token[];
   /** Every word was a protocol word, a number or a filler: nothing left for a model to interpret. */
   plain: boolean;
@@ -119,5 +123,5 @@ export function parseHuman(text: string): Heard {
       plain = false;
     }
   }
-  return { tokens, plain };
+  return { text: text.trim(), tokens, plain };
 }

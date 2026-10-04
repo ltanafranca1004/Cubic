@@ -210,7 +210,9 @@ export class CubeBackdropScene extends Phaser.Scene {
     // it hangs in the air: two pixels up and down, landing on whole pixels
     const bob = settings().reduceMotion || cubeStats.hold !== null ? 0 : Math.round(Math.sin(this.clock / 1100) * 2);
     const { x, y, alpha, scale } = this.at;
-    this.cube.setPosition(Math.round(x), Math.round(y) + bob).setAlpha(alpha).setScale(scale);
+    // Hide the cube in the side selection scene (lobby) but keep background
+    const finalAlpha = this.mode === 'side' ? 0 : alpha;
+    this.cube.setPosition(Math.round(x), Math.round(y) + bob).setAlpha(finalAlpha).setScale(scale);
     this.shadow.setPosition(Math.round(x), Math.round(y + this.half * 2.05 * scale)).setAlpha(alpha).setScale(scale);
   }
 

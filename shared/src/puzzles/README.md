@@ -7,36 +7,61 @@ so a module must be deterministic and must never touch sockets, the DOM, timers,
 
 ## Start here
 
-1. Copy `_template.ts` to `myPuzzle.ts`. `plateDoor.ts` is a complete working example.
-2. Pick the `face` (1-6) the puzzle owns and a unique `id`.
-3. Put the things it needs on the map (see `/maps/README.md`): objects such as `plate`,
-   `door`, `crystal`, `item`, `target`, or new types of your own.
-4. Register it in `index.ts` (`PUZZLES`). The portal on face 6 opens when every registered
-   puzzle is solved.
-5. Add a solution script for it in `shared/test/solutions.ts`: a few lines that solve it
-   with real moves. `npm test` fails until it exists. How: [docs/puzzle-tests.md](../../../docs/puzzle-tests.md).
+The six puzzles are registered in `index.ts` with fixed ids, faces and export names. To
+rebuild one, replace its file, keeping `id`, `face` and the export name; do not edit
+`index.ts`. `_template.ts` shows every hook, and every module's header comment says what it
+does, which map objects it uses and why nobody can get stuck in it.
+
+1. Put what it needs on the map: your two banner sections in `shared/src/maps/default.ts`
+   (outside and inside of your face) and your legend characters in your section of
+   `shared/src/maps/strings.ts`. Same canonical tile on both sides, never a mirrored copy.
+2. Replace your block in `shared/test/solutions.ts`: a few lines that solve it with real
+   moves. Add `shared/test/<id>.test.ts` for the rest (wrong answer = strike, what each
+   side sees, two seeds differ).
 
 ## The puzzles in the game
 
-| Face | File | id | In one line |
-| --- | --- | --- | --- |
-| 1 | `plateDoor.ts` | `plate-door` | Inside holds a plate, outside walks through the door it opens. |
-| 3 | `glyphCode.ts` | `glyph-code` | Inside reads one sign at a time from a tablet, outside steps on the stone with that sign. |
-| 4 | `mirrorMaze.ts` | `mirror-maze` | Outside sees the safe tiles of a trap floor, inside walks them, mirrored. |
-| 5 | `skylight.ts` | `skylight` | Outside stands on glass panes to light bridges, inside crosses them. |
-| 6 | `rosePot.ts` | `rose-pot` | Outside carries the rose from face 1 to the pot. |
+| Face | File | id | Outside | Inside | Needs | Gives |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | `hiddenCode.ts` | `hidden-code` | reads the 3-digit number laid out in the grass (right only at compass drift 0) | types it on the floor keypad, ENTER | nothing | nothing |
+| 2 | `equationSafe.ts` | `equation-safe` | counts bushes, rocks and hopping birds (1 to 4 each) | types 3 x bushes x 2 x birds x rocks, ENTER | nothing | the battery (inside) |
+| 3 | `mirroredGlyph.ts` | `mirrored-glyph` | describes the symbol in the snow | flips tiles with E to copy it (mirrored); CLEAR in the corner | nothing | nothing |
+| 4 | `botanicalMirror.ts` | `botanical-mirror` | plants the flower in the pot the partner names | sees which of five pots holds that colour | face 6 (the flower) | the end of the chain |
+| 5 | `sequenceLaser.ts` | `sequence-laser` | calls the order seven symbols light up in; E on REPLAY | battery into the emitter, then E on the symbols in that order | face 2 (the battery) | the laser on face 6 |
+| 6 | `laserPath.ts` | `laser-path` | pushes two mirrors until the beam burns the crate, then calls the path it reveals | walks that path over the lava to the button, E | face 5 | the flower (outside) |
 
-What each player does, why each one needs both players and the exact solve steps:
-[docs/puzzle-tests.md](../../../docs/puzzle-tests.md).
+Chain: 2 -> 5 -> 6 -> 4. Faces 1 and 3 stand alone. The game is won the moment all six are
+solved (the world has no portal). Strikes: a wrong code (1, 2), a wrong press (5), a wrong
+pot (4), a lava tile off the path (6). Face 3 has none.
 
-**Variation without randomness.** A module may not call `Math.random` or `Date.now`, and
-`init` gets no seed. Use `ctx.state.startedAt` instead: it is different every game and the
-same on the server and on both clients. `mix(...)` in `util.ts` turns it (plus an attempt
-counter, a tile, ...) into a number; the code of `glyph-code` and the safe line of
-`mirror-maze` are made that way. `util.ts` also has `at`, `around` and `flood`.
+**The lava of face 6** is deadly only while face 5 is solved and face 6 is not. Before the
+laser is on and after the button is pressed it is cold: anyone walks straight across.
+That is deliberate, so the pathfinding (the bot, the test scripts) never has to know about
+lava on a face nobody has a reason to be on yet.
+
+`chain.ts` holds what one face hands to the next (the battery, the flower, the flower's
+colour), so the modules agree without reading each other's state.
+
+**Randomness.** A module may not call `Math.random` or `Date.now`. Everything random comes
+from the game's seed: `ctx.rand(...keys)` in a hook (`mix(ctx.seed, ...keys)`), `ctx.seed`
+in `init`. Same keys, same number, on the server and on both clients. Derive content from
+the seed when you need it instead of storing it, and test that two seeds differ.
+
+**Edge rule.** The outer ring of every face (`onRing(x, y)` from `shared/src/maps`) is never
+solid terrain, and your `isBlocked` must never block a ring tile, for either side: a
+player crossing in from a neighbouring face can always step in. Keep boxes, doors and
+hazards off the ring, and test it.
 
 **A puzzle that can trap or block someone** says in its header comment how the player gets
-out again, and has a test for it in `shared/test/coop.test.ts`.
+out again, and has a test for it.
+
+## Building blocks (`lib/`)
+
+Pure helpers, each with a usage example in its header comment: `keypad.ts` (digit keys,
+ENTER, display), `flip.ts` (a set of flipped tiles), `sequence.ts` (a light sequence on the
+tick, and checking the presses), `push.ts` (sokoban boxes), `hazard.ts` (lava: back to the
+start with a strike), `path.ts` (`safeLine`, a seeded winding path), `deps.ts`
+(`lockedUntil(ctx, face)`). `util.ts` has `at`, `keyOf`, `around`, `flood`, `mix`.
 
 ## The hooks
 
@@ -46,16 +71,25 @@ out again, and has a test for it in `shared/test/coop.test.ts`.
 | `isBlocked(s, ctx, side, tile)` | before a step onto your face | doors, crates, one-way tiles |
 | `onEnter(s, ctx, side, tile)` | after a step onto a tile of your face | plates, triggers, hazards |
 | `onLeave(s, ctx, side, tile)` | after stepping off a tile of your face | releasing plates |
+| `onUse(s, ctx, side, tile)` | E on a tile of your face, hands empty, no item to pick up | keys, buttons, flip tiles |
+| `onPush(s, ctx, side, tile, dx, dy)` | before the block check of a step within your face | move a box, return `true` if it moved |
 | `onItem(s, ctx, ev)` | an item was picked / dropped / placed, on ANY face | carry puzzles |
 | `onTick(s, ctx, dtMs)` | every 250 ms on the server | timers, moving things |
 | `isSolved(s, ctx)` | after every move and tick | first `true` latches the face solved |
 | `visible(s, ctx, side)` | when drawing / describing the face | what each side can see |
 | `objective(s, ctx, side)` | HUD text | one line per side |
+| `lines(s, ctx, side)` | when drawing the face | beams: `{ from: [x, y], to: [x, y], colour }` between tile centres |
+| `bright` (a flag) | | the inside of your face is drawn without darkness |
+
+E does, in this order: drop the carried item, pick up the item on the tile, else `onUse`.
 
 `ctx` gives you: `objects(side, face, type?)`, `player(side)`, `isOn(side, tile)`,
-`item(id)`, `state` (read only), `solved`, `now`, and the only ways to affect the rest of
-the game: `emit(name, data?)` (custom event for sound/effects), `strike(side)`,
-`teleport(side, x, y)`.
+`item(id)`, `state` (read only), `solved`, `now`, `seed`, `rand(...keys)`,
+`faceSolved(face)`, and the only ways to affect the rest of the game: `emit(name, data?)`
+(custom event for sound/effects; the way a tick tells the clients something), `strike(side)`,
+`teleport(side, x, y)`, `spawnItem({ id, kind, side, face, x, y, props? })` (throws on a
+used id), `giveItem(side, id)` (into that player's hands, even right after it was placed)
+and `removeItem(id)`.
 
 ## Coordinates
 
@@ -74,14 +108,15 @@ from the AI partner.
 
 ## Items
 
-A map object of type `item` is carryable (E to pick up / drop, one at a time, it travels
+No map has an item today: the battery and the flower are spawned by their puzzles. A map
+object of type `item` is carryable (E to pick up / drop, one at a time, it travels
 across faces with the player). A map object of type `target` receives items: dropping an
 accepted item on it fires `onItem` with `kind: 'placed'` and the item stays there.
-`target` prop `accepts` = an item id or kind (empty = anything). Example: a rose on face 1
-and a pot on face 6.
+`target` prop `accepts` = an item id or kind (empty = anything). A puzzle can also make an item
+(`ctx.spawnItem`), hand one back (`ctx.giveItem`) or delete one (`ctx.removeItem`).
 
 ```ts
 onItem(s, _ctx, ev) {
-  if (ev.kind === 'placed' && ev.item.kind === 'rose' && ev.target?.name === 'pot') s.done = true;
+  if (ev.kind === 'placed' && ev.item.kind === BATTERY_KIND && ev.target?.name === 'f5-emitter') s.powered = true;
 }
 ```

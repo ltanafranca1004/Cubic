@@ -1,6 +1,7 @@
 import type Phaser from 'phaser';
-import { TILE_PX, type FaceId, type Side, type TileKind } from '@cubic/shared';
-import { drawPuzzleObject } from './puzzleArt';
+import { TILE_PX, type FaceId, type Side, type TileKind, type Vec } from '@cubic/shared';
+import { drawPuzzleItem, drawPuzzleObject } from './puzzleArt';
+import type { Facing } from './turtle';
 
 // ART. The scene asks an ArtProvider for texture keys and never draws pixels itself, so a
 // provider backed by real tilesets (assets/manifest.json) can replace CodeArt later
@@ -12,9 +13,20 @@ export interface ArtProvider {
   /** Map / puzzle object by type and state. */
   object(side: Side, type: string, state: string | undefined, frame: number): string;
   item(kind: string): string;
-  player(side: Side, step: number): string;
-  /** One frame of the side's character sheet by index (row * columns + column), or null if there is no sheet. */
-  playerFrame?(side: Side, index: number): string | null;
+  /**
+   * The character, walking or standing. `facing` is the way it faces on screen: art with a
+   * row per direction shows it, art with one look ignores it.
+   */
+  player(side: Side, step: number, facing?: Facing): string;
+  /** One frame (`tick` counts them) of the walk towards `facing`, or null if the art has no walk by direction. */
+  playerWalk?(side: Side, facing: Facing, tick: number): string | null;
+  /** Does the character art have a look per direction? Then the scene mirrors it only to face left. */
+  playerFacing?(side: Side): boolean;
+  /**
+   * The biome layer of a face (water banks, trees, tall grass...), drawn over the terrain
+   * tiles and under the objects. `up` is the face's screen-up: props are drawn upright.
+   */
+  dress?(g: CanvasRenderingContext2D, side: Side, face: FaceId, up: Vec, frame: number): void;
 }
 
 type G = CanvasRenderingContext2D;
@@ -73,7 +85,7 @@ function terrain(g: G, side: Side, face: FaceId, kind: TileKind, variant: number
 }
 
 function object(g: G, side: Side, type: string, state: string | undefined, frame: number) {
-  // the co-op puzzle objects (signs, skylight, bridge, stepping stones): ./puzzleArt.ts
+  // the co-op puzzle objects (keypad, buttons, each face's own things): ./puzzleArt
   if (drawPuzzleObject((x, y, w, h, c) => px(g, x, y, w, h, c), type, state)) return;
   switch (type) {
     case 'plate':
@@ -136,6 +148,8 @@ function object(g: G, side: Side, type: string, state: string | undefined, frame
 }
 
 function item(g: G, kind: string) {
+  // the battery and the flowers: ./puzzleArt/items.ts
+  if (drawPuzzleItem((x, y, w, h, c) => px(g, x, y, w, h, c), kind)) return;
   if (kind === 'rose') {
     px(g, 7, 8, 1, 6, '#2F7D45');
     px(g, 8, 10, 2, 1, '#3E9A56');

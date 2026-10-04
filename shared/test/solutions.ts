@@ -1,6 +1,10 @@
-import { around, type XY } from '../src/puzzles/util';
-import { isSolidTile, pathTo, visibleObjects, type FaceId, type Side } from '../src/index';
-import type { SolutionScript, Solver } from './harness';
+import assert from 'node:assert/strict';
+import { visibleObjects } from '../src/index';
+import { readCode } from '../src/puzzles/hiddenCode';
+import type { SolutionScript } from './harness';
+// face 4: botanical-mirror
+import { FLOWER_ID } from '../src/puzzles/chain';
+import { solveLaserPath, solveSequenceLaser } from './laser-solutions'; // faces 5 and 6
 
 // ONE SOLUTION SCRIPT PER PUZZLE, keyed by the module's `id`.
 // A script plays the puzzle the way two players would: it walks (t.go / t.move), presses E
@@ -14,57 +18,79 @@ import type { SolutionScript, Solver } from './harness';
 //  - A script must work from a fresh game AND after the other scripts have run (the
 //    end-to-end test runs all of them on one game), so do not assume where anyone stands.
 
-//  - A script may only use what a player on that side can SEE: `sees` is visibleObjects, the
-//    same list the screen is drawn from. Reading the puzzle state would be cheating.
-
-/** What `side` sees of one type on `face`, right now. */
-const sees = (t: Solver, side: Side, face: FaceId, type: string) => visibleObjects(t.state, side, face, t.env).filter((o) => o.type === type);
-const tile = (face: FaceId, o: XY) => ({ face, x: o.x, y: o.y });
+//  - A script may only use what a player on that side can SEE: visibleObjects(t.state, side,
+//    face, t.env) is the same list the screen is drawn from. Reading the puzzle state would
+//    be cheating.
+//  - One delimited block per puzzle. Edit only yours.
 
 export const SOLUTIONS: Record<string, SolutionScript> = {
-  // Face 6. Outside carries the rose (face 1) to the pot (face 6).
-  'rose-pot': (t) => {
-    t.go('out', t.item('rose'));
-    t.interact('out'); // pick up
-    t.go('out', t.find('out', 6, 'target'));
-    t.interact('out'); // place
-  },
-
-  // Face 1. Inside holds the plate down, outside walks through the door to the crystal.
-  'plate-door': (t) => {
-    t.go('in', t.find('in', 1, 'plate'));
-    t.go('out', t.find('out', 1, 'crystal'));
-  },
-
-  // Face 3. Inside stands on the plate and reads the tablet one sign at a time; outside
-  // steps on the stone with that sign. Four signs.
-  'glyph-code': (t) => {
-    t.go('in', t.find('in', 3, 'plate'));
-    for (let i = 0; i < 4 && !t.state.solved.includes(3); i++) {
-      const sign = sees(t, 'in', 3, 'tablet')[0]!.state; // inside: "it shows a moon"
-      const stone = sees(t, 'out', 3, 'glyph').find((g) => g.state === sign)!; // outside: finds the moon stone
-      t.go('out', tile(3, stone));
+  // ---------- face 1: hidden-code ----------
+  // Outside reads the number in the grass and says it; inside types it and presses ENTER.
+  'hidden-code': (t) => {
+    const code = readCode(visibleObjects(t.state, 'out', 1, t.env));
+    assert.ok(code, 'the outside player sees no number on face 1');
+    for (const name of [...code, 'enter']) {
+      t.go('in', t.find('in', 1, 'key', name));
+      t.interact('in');
     }
   },
+  // ---------- end face 1 ----------
 
-  // Face 4. Outside reads the pale stones in order, inside walks exactly those tiles.
-  'mirror-maze': (t) => {
-    t.go('out', { face: 4, x: 0, y: 0 }); // has to be on the forest face to see them
-    t.go('in', t.find('in', 4, 'entry'));
-    for (const stone of sees(t, 'out', 4, 'trail')) t.go('in', tile(4, stone));
+  // ---------- face 2: equation-safe ----------
+  // The outside player counts what they see, the inside player types 3 x bushes x 2 x birds x
+  // rocks on the keys they see and ENTER. The battery is left LYING in front of the safe.
+  'equation-safe': (t) => {
+    const seen = (type: string) => visibleObjects(t.state, 'out', 2, t.env).filter((o) => o.type === type).length;
+    const answer = 3 * seen('f2-bush') * 2 * seen('f2-bird') * seen('f2-rock');
+    const key = (name: string) => visibleObjects(t.state, 'in', 2, t.env).find((o) => o.type === 'key' && o.state === name)!;
+    for (const name of [...String(answer), 'enter']) {
+      const k = key(name);
+      t.go('in', { face: 2, x: k.x, y: k.y });
+      t.interact('in');
+    }
   },
+  // ---------- end face 2 ----------
 
-  // Face 5. Outside holds pane a while inside crosses the first bridge onto the dry ring,
-  // then moves to pane b while inside crosses the second bridge to the crystal.
-  skylight: (t) => {
-    const second = t.find('in', 5, 'bridge', 'b');
-    t.go('out', t.find('out', 5, 'skylight', 'a'));
-    // The dry tile next to the second bridge that the first bridge leads to.
-    const ring = around(second)
-      .map((n) => tile(5, n))
-      .find((n) => !isSolidTile(t.env.world, 'in', 5, n.x, n.y) && pathTo(t.state, 'in', n, t.env));
-    t.go('in', ring!);
-    t.go('out', t.find('out', 5, 'skylight', 'b'));
-    t.go('in', t.find('in', 5, 'crystal'));
+  // ---------- face 3: mirrored-glyph ----------
+  // Outside reads the symbol off the snow; inside flips every tile that is not yet as the
+  // symbol says, row by row in a snake so the walk stays short.
+  'mirrored-glyph': (t) => {
+    const symbol = new Set(visibleObjects(t.state, 'out', 3, t.env).filter((o) => o.type === 'f3-glyph').map((o) => `${o.x},${o.y}`));
+    const wrong = visibleObjects(t.state, 'in', 3, t.env).filter((o) => o.type === 'f3-tile' && (o.state !== 'off') !== symbol.has(`${o.x},${o.y}`));
+    wrong.sort((a, b) => a.y - b.y || (a.y % 2 ? b.x - a.x : a.x - b.x));
+    for (const o of wrong) {
+      t.go('in', { face: 3, x: o.x, y: o.y });
+      t.interact('in');
+    }
   },
+  // ---------- end face 3 ----------
+
+  // ---------- face 4: botanical-mirror ----------
+  'botanical-mirror': (t) => {
+    // The flower comes from face 6: play that first when it is still to do.
+    if (!t.state.solved.includes(6)) SOLUTIONS['laser-path']!(t);
+    const flower = t.state.items[FLOWER_ID];
+    assert.ok(flower, 'face 6 is solved but left no flower');
+    if (flower.carriedBy !== 'out') {
+      t.go('out', t.item(FLOWER_ID));
+      t.interact('out');
+    }
+    // Outside says the colour they carry; inside finds the pot with that flower and names it.
+    const colour = flower.kind.replace('flower-', '');
+    const pot = visibleObjects(t.state, 'in', 4, t.env).find((o) => o.type === 'f4-flowerpot' && o.state === colour);
+    assert.ok(pot, `the inside player sees no ${colour} flower on face 4`);
+    t.go('out', { face: 4, x: pot.x, y: pot.y });
+    t.interact('out');
+  },
+  // ---------- end face 4 ----------
+
+  // ---------- face 5: sequence-laser ----------
+  // Needs the battery: plays face 2 first on a fresh game. Scripts: ./laser-solutions.ts.
+  'sequence-laser': (t) => t.state.solved.includes(5) || solveSequenceLaser(SOLUTIONS['equation-safe']!)(t),
+  // ---------- end face 5 ----------
+
+  // ---------- face 6: laser-path ----------
+  // Needs the laser: plays face 5 (and so face 2) first on a fresh game.
+  'laser-path': (t) => t.state.solved.includes(6) || solveLaserPath(SOLUTIONS['sequence-laser']!)(t),
+  // ---------- end face 6 ----------
 };

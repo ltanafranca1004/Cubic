@@ -22,6 +22,13 @@ export function loadWorld(): World {
   return world;
 }
 
+/**
+ * Is this tile on the outer ring of a face (row 0, the last row, column 0, the last column)?
+ * EDGE RULE: ring tiles are never solid terrain and a puzzle's isBlocked never blocks one,
+ * so a player crossing in from a neighbouring face can always step in.
+ */
+export const onRing = (x: number, y: number): boolean => x === 0 || y === 0 || x === FACE_SIZE - 1 || y === FACE_SIZE - 1;
+
 export const inBounds = (x: number, y: number) => x >= 0 && x < FACE_SIZE && y >= 0 && y < FACE_SIZE;
 
 export function faceMap(world: World, side: Side, face: FaceId): FaceMap {
@@ -48,5 +55,5 @@ export function objectsOn(world: World, side: Side, face: FaceId, type?: string)
  */
 export const FACE_NAMES: Record<Side, Record<FaceId, string>> = {
   out: { 1: 'Grass', 2: 'Desert', 3: 'Snow', 4: 'Forest', 5: 'Rooftop', 6: 'Cave' },
-  in: { 1: 'Plate room', 2: 'Crate room', 3: 'Frost room', 4: 'Echo room', 5: 'Pillars', 6: 'Core' },
+  in: { 1: 'Keypad room', 2: 'Vault', 3: 'Tile room', 4: 'Greenhouse', 5: 'Laser room', 6: 'Lava room' },
 };
