@@ -193,7 +193,9 @@ export class Net {
     this.room = res.room;
     this.chat = res.chat;
     this.server = res.state;
+    // a new seat, or the same one after a reconnect: the server counts our moves from 0
     this.pending = [];
+    this.seq = 0;
     this.side = null;
     this.state = null;
     this.sync();

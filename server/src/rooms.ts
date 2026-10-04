@@ -275,6 +275,9 @@ export class Room {
     if (m.dropTimer) clearTimeout(m.dropTimer);
     m.dropTimer = null;
     m.connected = true;
+    // The page that comes back numbers its moves from 1 again. Keeping the old ack would
+    // make it throw away every prediction until its count passed the old one.
+    m.ack = 0;
     this.seatPlayer(m);
     this.emitRoom();
     this.emitState([]);
