@@ -7,6 +7,7 @@ import {
   defaultEnv,
   neighbours,
   objectiveFor,
+  portalFace,
   portalOpen,
   sameWall,
   signalBars,
@@ -45,7 +46,8 @@ export function hudOf(state: GameState, me: Side, now: number): HudState {
     solved: [...state.solved],
     puzzleTotal: defaultEnv.puzzles.length,
     puzzleFaces: defaultEnv.puzzles.map((p) => p.face).sort((a, b) => a - b),
-    portalOpen: portalOpen(state),
+    // only a world that has a portal can have one open (the shipped maps have none)
+    portalOpen: portalFace() !== null && portalOpen(state),
     strikes: state.strikes,
     elapsedMs: Math.max(0, (state.wonAt ?? now) - state.startedAt),
     won: state.wonAt !== null,
