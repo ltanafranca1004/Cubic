@@ -945,7 +945,7 @@ async function walk(run: Run): Promise<void> {
     for (const face of FACES) {
       await step(run, `${side}: face ${face}: walk there, cross all 4 edges and come back over each`, async () => {
         await goTo(page, side, `face ${face}`, (p) => p.face === face);
-        await until(`the HUD says "Face ${face}"`, async () => (await text(page, '#cu-faceno')) === `Face ${face}`);
+        await until(`the HUD says "Face ${face}"`, async () => (await text(page, '#cu-faceno')) === String(face));
         await page.waitForTimeout(FLIP_MS);
         await page.screenshot({ path: `${OUT}${tag}-${side}-${face}.png` });
         const around = [...new Set(Object.values(neighbours(await poseOf(page, side))))];
@@ -954,13 +954,14 @@ async function walk(run: Run): Promise<void> {
           const only = (f: FaceId) => f === face || f === next;
           const out = await goTo(page, side, `face ${next} over the shared edge`, (p) => p.face === next, only);
           crossed[side].add(keyOf(out.at(-1)!));
-          check((await text(page, '#cu-faceno')) === `Face ${next}`, `the HUD says ${await text(page, '#cu-faceno')} on face ${next}`);
+          check((await text(page, '#cu-faceno')) === String(next), `the HUD says face ${await text(page, '#cu-faceno')} on face ${next}`);
           const back = await goTo(page, side, `face ${face} back over the same edge`, (p) => p.face === face, only);
           crossed[side].add(keyOf(back.at(-1)!));
           await synced([page], `${side} after face ${face} <-> ${next}`);
         }
-        const drift = compassDrift(await poseOf(page, side));
-        check((await text(page, '#cu-drift')) === String(drift), `the HUD drift is ${await text(page, '#cu-drift')}, the pose says ${drift}`);
+        // the edge labels follow the player's own up: the top one names the face over the top edge
+        const up = neighbours(await poseOf(page, side)).up;
+        await until(`the top edge label names face ${up}`, async () => (await text(page, '#cu-et .cu-chip')) === String(up));
         return `neighbours ${around.join(', ')}`;
       });
     }
@@ -972,7 +973,7 @@ async function walk(run: Run): Promise<void> {
     await synced([a, b], 'after the tour');
   });
   for (const [page, side] of [[a, 'out'], [b, 'in']] as const) {
-    await step(run, `${side}: three edges around one corner bring you home turned 90 degrees (HUD drift)`, async () => {
+    await step(run, `${side}: three edges around one corner bring you home turned 90 degrees (the edge labels turn)`, async () => {
       await goTo(page, side, 'face 1', (p) => p.face === 1);
       const start = compassDrift(await poseOf(page, side));
       const n = neighbours(await poseOf(page, side));
@@ -981,7 +982,10 @@ async function walk(run: Run): Promise<void> {
       await goTo(page, side, 'face 1 again', (p) => p.face === 1, (f) => f === n.right || f === 1);
       const drift = compassDrift(await poseOf(page, side));
       check(Math.abs(drift - start) === 90 || Math.abs(drift - start) === 270, `drift went from ${start} to ${drift}`);
-      await until('the HUD shows the new drift', async () => (await text(page, '#cu-drift')) === String(drift));
+      // home, but turned: the edge labels of face 1 have moved round with the player's up
+      const up = neighbours(await poseOf(page, side)).up;
+      check(up !== n.up, `the face over the top edge is still ${up}`);
+      await until(`the top edge label names face ${up} now (it was ${n.up})`, async () => (await text(page, '#cu-et .cu-chip')) === String(up));
       await page.waitForTimeout(FLIP_MS);
       await page.screenshot({ path: `${OUT}${tag}-${side}-corner-drift.png` });
       return `drift ${start} -> ${drift}`;
@@ -1016,7 +1020,7 @@ async function items(run: Run): Promise<void> {
     await press(a, 'e');
     await until('carrying', async () => (await carrying(a, 'out')) === id);
     await until('the partner sees it carried', async () => (await item(b, id)).carriedBy === 'out');
-    check(/Q to drop/.test((await text(a, '#cu-carry')) ?? ''), `the HUD carry line says "${await text(a, '#cu-carry')}"`);
+    check(/Q drop/.test((await text(a, '#cu-carry')) ?? ''), `the HUD carry line says "${await text(a, '#cu-carry')}"`);
     await shots(run, `${tag}-01-carrying`);
   });
   await step(run, 'outside: the item crosses a face edge with the player; Q drops it where they stand', async () => {
@@ -1116,7 +1120,7 @@ async function rejoin(run: Run): Promise<void> {
       check(s.state!.players[side].carrying === before.players[side].carrying, `${who} came back carrying ${s.state!.players[side].carrying}`);
       check(same(s.state!.solved, before.solved) && s.state!.startedAt === before.startedAt, 'the game was reset by the refresh');
       await page.waitForTimeout(1200);
-      await until('the HUD shows the face', async () => (await text(page, '#cu-faceno')) === `Face ${before.players[side].pose.face}`);
+      await until('the HUD shows the face', async () => (await text(page, '#cu-faceno')) === String(before.players[side].pose.face));
       check(await canWalk(page, side), `${who} cannot walk after the refresh`);
       await synced([a, b], `after ${who} refreshed`);
       await shots(run, `${tag}-refresh-${who}`);
@@ -1286,11 +1290,12 @@ async function puzzles(run: Run): Promise<void> {
       await goTo(b, 'in', 'the portal', onPortal('in'));
       await until('the game is won on both clients', async () => (await stateOf(a)).wonAt !== null && (await stateOf(b)).wonAt !== null);
       await until('the win screen on both', async () => (await snap(a)).modal === 'cu-win' && (await snap(b)).modal === 'cu-win');
-      check(/Escaped in \d+:\d\d/.test((await text(a, '#cu-wintxt')) ?? ''), `the win text is "${await text(a, '#cu-wintxt')}"`);
+      const shown = (await text(a, '#cu-wintime')) ?? '';
+      check(/^\d+:\d\d$/.test(shown) && (await text(b, '#cu-wintime')) === shown, `the win screens show "${shown}" and "${await text(b, '#cu-wintime')}"`);
       await a.waitForTimeout(400);
       await shots(run, `${tag}-win`);
       finale.completed = true;
-      return (await text(a, '#cu-wintxt')) ?? '';
+      return `Escaped in ${shown}; ${(await text(a, '#cu-wintxt')) ?? ''}`;
     } catch (e) {
       finale.stuck = e instanceof Error ? e.message : String(e);
       throw e;
@@ -1487,9 +1492,9 @@ async function breakIt(run: Run): Promise<void> {
       for (const [page, side, who] of players) {
         const view = await js<{ w: number; h: number; left: number; top: number; right: number; bottom: number }>(page(), `(() => { const r = document.querySelector('#game canvas').getBoundingClientRect(); return { w: r.width, h: r.height, left: r.left, top: r.top, right: r.right, bottom: r.bottom }; })()`);
         check(view.w > 0 && view.h > 0, `${who}: the game view has no size at ${size.width}x${size.height}`);
-        if (view.left < 0 || view.top < 0 || view.right > size.width || view.bottom > size.height) note(`[${run.renderer}] at ${size.width}x${size.height} the game view is partly off screen (${Math.round(view.left)},${Math.round(view.top)} to ${Math.round(view.right)},${Math.round(view.bottom)}). The HUD layout is being reworked.`);
+        if (view.left < 0 || view.top < 0 || view.right > size.width || view.bottom > size.height) note(`[${run.renderer}] at ${size.width}x${size.height} the game view is partly off screen (${Math.round(view.left)},${Math.round(view.top)} to ${Math.round(view.right)},${Math.round(view.bottom)}).`);
         const cut = await js<number>(page(), `[...document.querySelectorAll('.cu-hud .cu-panel')].filter((p) => { const r = p.getBoundingClientRect(); return r.left < 0 || r.right > innerWidth || r.bottom > innerHeight; }).length`);
-        if (cut) note(`[${run.renderer}] at ${size.width}x${size.height} ${cut} HUD panel(s) are cut off by the window edge. The HUD layout is being reworked.`);
+        if (cut) note(`[${run.renderer}] at ${size.width}x${size.height} ${cut} HUD panel(s) are cut off by the window edge.`);
         check(await canWalk(page(), side), `${who} cannot walk at ${size.width}x${size.height}`);
       }
       await synced([a, b], `at ${size.width}x${size.height}`);
