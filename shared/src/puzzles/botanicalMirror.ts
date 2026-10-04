@@ -88,7 +88,7 @@ export const botanicalMirror: PuzzleModule<State> = {
 
   objective(s, ctx, side) {
     if (s.bloom !== null) return 'The flower is in bloom.';
-    if (side === 'in') return "Five flowers. Tell your partner which pot matches their flower's colour (you see the room mirrored).";
-    return lockedUntil(ctx, 6) ? 'Five empty pots. They are waiting for a flower.' : 'Plant the flower in the pot your partner names.';
+    if (side === 'in') return 'Five flowers bloom. Find the matching pair.';
+    return lockedUntil(ctx, 6) ? 'Five empty pots wait. Life comes from beyond.' : 'Five empty pots wait. One holds the color your partner sees.';
   },
 };

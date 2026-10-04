@@ -183,10 +183,10 @@ test('botanical-mirror: never blocks: the ring is free and the pots are walked o
 
 test('botanical-mirror: the objective says what each side has to do', () => {
   const locked = game(5, false).state;
-  assert.equal(objective(locked, 'out'), 'Five empty pots. They are waiting for a flower.');
+  assert.equal(objective(locked, 'out'), 'Five empty pots wait. Life comes from beyond.');
   const { state, t } = game(5);
-  assert.equal(objective(state, 'out'), 'Plant the flower in the pot your partner names.');
-  assert.match(objective(state, 'in'), /^Five flowers\. Tell your partner .* mirrored\)\.$/);
+  assert.equal(objective(state, 'out'), 'Five empty pots wait. One holds the color your partner sees.');
+  assert.match(objective(state, 'in'), /^Five flowers bloom\. Find the matching pair\.$/);
   assert.equal(objective(locked, 'in'), objective(state, 'in'));
   const right = rightPot(state);
   t.go('out', { face: FACE, x: right.x, y: right.y });
