@@ -1,0 +1,40 @@
+side select, http://localhost:5522, Chromium, canvas renderer unless said otherwise
+PASS  1920x1080 idle                     out state=idle alpha=1 texture=player-out:idle x2 face=[52,121 88x40] turtle=[80,125 32x32] inside=true centre offset=(0, 0) whole=true
+PASS  1920x1080 idle                     in  state=idle alpha=1 texture=player-in:idle x2 face=[350,155 68x44] turtle=[368,161 32x32] inside=true centre offset=(0, 0) whole=true
+PASS  1920x1080 status line              18 status lines, none touches the panel, LEAVE or the main button; panel bottom 234, status top 243 (9 px clear); the longest starts 43 px right of LEAVE
+PASS  1920x1080 hover outside            out state=hover alpha=1 texture=player-out x2 face=[52,121 88x40] turtle=[80,125 32x32] inside=true centre offset=(0, 0) whole=true
+PASS  1920x1080 hover inside             in  state=hover alpha=1 texture=player-in x2 face=[350,155 68x44] turtle=[368,161 32x32] inside=true centre offset=(0, 0) whole=true
+PASS  1920x1080 selected outside         out state=selected alpha=1 texture=player-out x2 face=[52,121 88x40] turtle=[80,125 32x32] inside=true centre offset=(0, 0) whole=true
+PASS  1920x1080 selected outside (B's screen) out state=selected alpha=1 texture=player-out x2 face=[52,121 88x40] turtle=[80,125 32x32] inside=true centre offset=(0, 0) whole=true
+PASS  1920x1080 selected inside          in  state=selected alpha=1 texture=player-in x2 face=[350,155 68x44] turtle=[368,161 32x32] inside=true centre offset=(0, 0) whole=true
+PASS  1920x1080 selected inside (B's screen) in  state=selected alpha=1 texture=player-in x2 face=[350,155 68x44] turtle=[368,161 32x32] inside=true centre offset=(0, 0) whole=true
+PASS  1280x720 idle                      out state=idle alpha=1 texture=player-out:idle x3 face=[62,151 132x60] turtle=[104,157 48x48] inside=true centre offset=(0, 0) whole=true
+PASS  1280x720 idle                      in  state=idle alpha=1 texture=player-in:idle x3 face=[461,202 102x66] turtle=[488,211 48x48] inside=true centre offset=(0, 0) whole=true
+PASS  1280x720 status line               18 status lines, none touches the panel, LEAVE or the main button; panel bottom 274, status top 333 (59 px clear); the longest starts 143 px right of LEAVE
+PASS  1280x720 hover outside             out state=hover alpha=1 texture=player-out x3 face=[62,151 132x60] turtle=[104,157 48x48] inside=true centre offset=(0, 0) whole=true
+PASS  1280x720 hover inside              in  state=hover alpha=1 texture=player-in x3 face=[461,202 102x66] turtle=[488,211 48x48] inside=true centre offset=(0, 0) whole=true
+PASS  1280x720 selected outside          out state=selected alpha=1 texture=player-out x3 face=[62,151 132x60] turtle=[104,157 48x48] inside=true centre offset=(0, 0) whole=true
+PASS  1280x720 selected outside (B's screen) out state=selected alpha=1 texture=player-out x3 face=[62,151 132x60] turtle=[104,157 48x48] inside=true centre offset=(0, 0) whole=true
+PASS  1280x720 selected inside           in  state=selected alpha=1 texture=player-in x3 face=[461,202 102x66] turtle=[488,211 48x48] inside=true centre offset=(0, 0) whole=true
+PASS  1280x720 selected inside (B's screen) in  state=selected alpha=1 texture=player-in x3 face=[461,202 102x66] turtle=[488,211 48x48] inside=true centre offset=(0, 0) whole=true
+PASS  1280x720 hover outside (before)    out state=hover alpha=1 texture=player-out x3 face=[62,151 132x60] turtle=[104,157 48x48] inside=true centre offset=(0, 0) whole=true
+PASS  resize -> 1000x640 hover outside   out state=hover alpha=1 texture=player-out x2 face=[56,149 88x40] turtle=[84,153 32x32] inside=true centre offset=(0, 0) whole=true
+PASS  resize -> 1000x640 (inside, idle)  in  state=idle alpha=1 texture=player-in:idle x2 face=[366,183 68x44] turtle=[384,189 32x32] inside=true centre offset=(0, 0) whole=true
+PASS  1000x640 status line               18 status lines, none touches the panel, LEAVE or the main button; panel bottom 273, status top 293 (20 px clear); the longest starts 16 px right of LEAVE
+PASS  resize -> 1000x640 hover inside    in  state=hover alpha=1 texture=player-in x2 face=[366,183 68x44] turtle=[384,189 32x32] inside=true centre offset=(0, 0) whole=true
+PASS  webgl 1280x720 idle                out state=idle alpha=1 texture=player-out:idle x3 face=[62,151 132x60] turtle=[104,157 48x48] inside=true centre offset=(0, 0) whole=true
+PASS  webgl 1280x720 idle                in  state=idle alpha=1 texture=player-in:idle x3 face=[461,202 102x66] turtle=[488,211 48x48] inside=true centre offset=(0, 0) whole=true
+PASS  webgl 1280x720 status line         18 status lines, none touches the panel, LEAVE or the main button; panel bottom 274, status top 333 (59 px clear); the longest starts 143 px right of LEAVE
+PASS  webgl 1280x720 hover outside       out state=hover alpha=1 texture=player-out x3 face=[62,151 132x60] turtle=[104,157 48x48] inside=true centre offset=(0, 0) whole=true
+PASS  webgl 1280x720 hover inside        in  state=hover alpha=1 texture=player-in x3 face=[461,202 102x66] turtle=[488,211 48x48] inside=true centre offset=(0, 0) whole=true
+PASS  webgl 1280x720 selected outside    out state=selected alpha=1 texture=player-out x3 face=[62,151 132x60] turtle=[104,157 48x48] inside=true centre offset=(0, 0) whole=true
+PASS  webgl 1280x720 selected outside (B's screen) out state=selected alpha=1 texture=player-out x3 face=[62,151 132x60] turtle=[104,157 48x48] inside=true centre offset=(0, 0) whole=true
+PASS  webgl 1280x720 selected inside     in  state=selected alpha=1 texture=player-in x3 face=[461,202 102x66] turtle=[488,211 48x48] inside=true centre offset=(0, 0) whole=true
+PASS  webgl 1280x720 selected inside (B's screen) in  state=selected alpha=1 texture=player-in x3 face=[461,202 102x66] turtle=[488,211 48x48] inside=true centre offset=(0, 0) whole=true
+      (that run's stage renderer: webgl)
+      (touch=true, logical 844x390)
+PASS  touch 844x390 pointer over outside out state=idle alpha=1 texture=player-out:idle x3 face=[103,167 132x60] turtle=[145,173 48x48] inside=true centre offset=(0, 0) whole=true
+PASS  touch 844x390 pointer over inside  in  state=idle alpha=1 texture=player-in:idle x3 face=[624,218 102x66] turtle=[651,227 48x48] inside=true centre offset=(0, 0) whole=true
+PASS  touch 844x390 status line          18 status lines, none touches the panel, LEAVE or the main button; panel bottom 290, status top 363 (73 px clear); the longest starts 347 px right of LEAVE
+PASS  touch 844x390 selected outside     out state=selected alpha=1 texture=player-out x3 face=[103,167 132x60] turtle=[145,173 48x48] inside=true centre offset=(0, 0) whole=true
+ALL PASS
