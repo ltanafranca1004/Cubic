@@ -116,6 +116,10 @@ export function mountOnboarding(root: HTMLElement, source: OnboardingSource): ()
     if (view.card) place(card, { anchor: 'view', place: 'center' });
     if (view.controls) place(keys, { anchor: 'keys', place: 'over' });
     if (view.hint) place(hint, HINT_AT[view.hint]);
+    // The captions (narrator, AI) sit at the bottom, where the controls hint is: while it
+    // is up they stack on top of it instead of covering it.
+    const lift = view.controls ? window.innerHeight - keys.getBoundingClientRect().top : 0;
+    host!.style.setProperty('--subs-lift', `${Math.round(lift)}px`);
   }
 
   function tick(): void {
@@ -160,6 +164,7 @@ export function mountOnboarding(root: HTMLElement, source: OnboardingSource): ()
     window.removeEventListener('resize', layout);
     window.removeEventListener('keydown', onKey, true);
     showCaption(null);
+    host.style.removeProperty('--subs-lift');
     layer.remove();
     style.remove();
   };
