@@ -76,3 +76,38 @@ pause, accessibility settings, captions, Leave), E / Q on an item, and a faked g
 Menus run in WebGL and in Canvas. Pictures go to `docs/screens/a11y/`. Needs a server and
 a client (ports at the top of the file); `npx tsx screens/a11y.ts game` runs one part
 (`menus`, `game`, `items`, `gamepad`).
+
+## `npx tsx screens/playtest.ts`: the two-player playtest (regression pass)
+
+Two real players in one room (one browser context each), real keyboard and mouse only, no
+`?dev`, no `?mock`, no `DEV_COMMANDS`. Every step prints PASS or FAIL, a failed step saves a
+picture of every player, and the exit code is 1 if anything failed. Runs in WebGL and again
+in Canvas.
+
+```
+PORT=3310 npm run dev -w server
+VITE_SERVER_URL=http://localhost:3310 npm run dev -w client -- --port 5410
+cd tools && npx tsx screens/playtest.ts            # everything, both renderers (about 14 min)
+cd tools && npx tsx screens/playtest.ts puzzles    # one section (comma separated for more)
+cd tools && RENDERER=canvas npx tsx screens/playtest.ts break,menus
+```
+
+| Section | Plays |
+| --- | --- |
+| `lobby` | title, create, wrong code, join, side select (switching, same side, the race), ready, leave / refresh in the lobby, start |
+| `hud` | quick chat 1 to 4, chat, pause, settings (gear and from pause), the Tab map, M |
+| `walk` | every face on both sides, every edge of every face out and back, the corner loop and its drift |
+| `items` | E and Q, carrying over an edge, the other side cannot take your item |
+| `rejoin` | refresh mid-game on each player, leave and rejoin on each |
+| `puzzles` | every puzzle of the table, the portal, the win screen, Play again (`puzzles:rose-pot` runs one) |
+| `break` | key spam, held keys, overlays opened mid-transition, both crossing at once, resizes, a third player |
+| `menus` | double clicks on every menu button, key mashing, resizes, Done over a menu button |
+
+Env: `BASE` (client URL), `RENDERER` (`webgl` or `canvas`), `OUT` (default
+`docs/status/playtest/` under `REPO`, which defaults to this checkout), `GIF=0` (skip the
+puzzle GIFs, which need ffmpeg). Results also go to `OUT/results.json`.
+
+**New puzzle?** Add one entry to `PUZZLE_SCRIPTS` at the top of the file: a list of steps
+per player (`goto` a map object, an item or a tile; `keys`; `wait`; `expect`). The walk is
+planned on the live state with the game's own pathfinding and pressed as W A S D. The run
+fails if a puzzle registered in `shared/src/puzzles/index.ts` has no entry.
