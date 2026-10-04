@@ -61,8 +61,11 @@ export function playerFrames(entry: PlayerFrames, facing: Facing, walking: boole
   const side = facing === 'left' || facing === 'right';
   const walk = some(facing === 'up' ? entry.walkUp : side ? entry.walkRight : entry.walkDown) ?? entry.walk;
   if (walking) return walk;
-  // Standing keeps the facing when the sheet has an idle for it; else the one idle there is.
-  return some(facing === 'up' ? entry.idleUp : side ? entry.idleRight : undefined) ?? some(entry.idle) ?? walk;
+  // Standing keeps the facing: the idle for it when the sheet has one, else the first frame
+  // of that direction's walk row. Facing down (or a sheet with one look) breathes with `idle`.
+  const own = some(facing === 'up' ? entry.idleUp : side ? entry.idleRight : undefined);
+  const row = some(facing === 'up' ? entry.walkUp : side ? entry.walkRight : undefined);
+  return own ?? (row ? [row[0]!] : undefined) ?? some(entry.idle) ?? walk;
 }
 
 /** Mirror the sprite? By facing when the sheet has directions, else by the pose's own `dir`. */
