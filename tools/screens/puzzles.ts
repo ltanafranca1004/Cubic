@@ -139,7 +139,6 @@ interface Cubic {
   room: { phase: string; members: Record<'host' | 'guest', { side: string | null; ready: boolean } | null> } | null;
   state: GameState | null;
 }
-declare const window: { __cubic: Cubic };
 declare const document: {
   querySelector(s: string): { dataset: Record<string, string>; classList: { contains(c: string): boolean }; textContent: string | null } | null;
   querySelectorAll(s: string): Iterable<{ getContext(kind: string): unknown }>;
