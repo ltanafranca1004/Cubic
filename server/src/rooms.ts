@@ -431,8 +431,8 @@ export class Room {
     return events;
   }
 
-  /** Chat line. Returns the stored message, or null if it was empty or rate limited. */
-  say(side: Side, text: string): ChatMessage | null {
+  /** Chat line. Returns the stored message, or null if it was empty or rate limited. `key`: the AI's line key. */
+  say(side: Side, text: string, key?: string): ChatMessage | null {
     const seat = this.playing(side);
     if (!seat || typeof text !== 'string') return null;
     const clean = text.replace(/\s+/g, ' ').trim().slice(0, CHAT_MAX_LEN);
@@ -441,7 +441,7 @@ export class Room {
     seat.chatTimes = seat.chatTimes.filter((t) => now - t < CHAT_WINDOW_MS);
     if (seat.chatTimes.length >= CHAT_PER_WINDOW) return null;
     seat.chatTimes.push(now);
-    const msg: ChatMessage = { id: ++this.chatId, from: side, isAI: seat.isAI, text: clean, at: now };
+    const msg: ChatMessage = { id: ++this.chatId, from: side, isAI: seat.isAI, text: clean, at: now, ...(key && seat.isAI ? { key } : {}) };
     this.chat.push(msg);
     if (this.chat.length > CHAT_HISTORY) this.chat.shift();
     for (const l of this.listeners) l.onChat?.(msg);

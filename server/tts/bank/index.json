@@ -1,0 +1,1161 @@
+{
+ "voiceId": "21m00Tcm4TlvDq8ikWAM",
+ "modelId": "eleven_flash_v2_5",
+ "lines": [
+  {
+   "file": "5789cac39d2333dfcf5a0c9a.mp3",
+   "chars": 77,
+   "text": "Hi! I am outside the cube. I will tell you what I see. Short words work best."
+  },
+  {
+   "file": "32790081ad466748d98d9899.mp3",
+   "chars": 76,
+   "text": "Hi! I am inside the cube. I will tell you what I see. Short words work best."
+  },
+  {
+   "file": "ea86226d3a82dbdd4fb2f192.mp3",
+   "chars": 10,
+   "text": "It worked!"
+  },
+  {
+   "file": "cd8307c1213bdb787bb3b9dd.mp3",
+   "chars": 10,
+   "text": "We did it!"
+  },
+  {
+   "file": "fef5fc951cff3fef08a31b35.mp3",
+   "chars": 68,
+   "text": "Sorry, I did not get that. Short words work best: go, wait, yes, no."
+  },
+  {
+   "file": "d2a39d38517e84183a4772a8.mp3",
+   "chars": 41,
+   "text": "Okay, waiting. Say go when you are ready."
+  },
+  {
+   "file": "778efee224620e6a81b3a175.mp3",
+   "chars": 55,
+   "text": "I can barely hear you. Tell me your face, like: face 3."
+  },
+  {
+   "file": "9d18c1023070ae2d567d6dad.mp3",
+   "chars": 58,
+   "text": "I cannot hear you at all. I am coming around to your side."
+  },
+  {
+   "file": "7c1d6f8c4372612dbcc25f6d.mp3",
+   "chars": 52,
+   "text": "There is more to solve. Lead the way, I will follow."
+  },
+  {
+   "file": "a78bb5ad8933db075415adbd.mp3",
+   "chars": 71,
+   "text": "I do not know this puzzle yet. I will stay close and keep my hands off."
+  },
+  {
+   "file": "4d03eadf6521dad4f76963b8.mp3",
+   "chars": 44,
+   "text": "Everything is solved. Heading to the portal."
+  },
+  {
+   "file": "221820ba980b103ce9b014bd.mp3",
+   "chars": 33,
+   "text": "The portal is awake. Stepping in."
+  },
+  {
+   "file": "39a2bdcc448fcbb748082266.mp3",
+   "chars": 63,
+   "text": "Oh. It is you. I am outside the cube. Keep your messages short."
+  },
+  {
+   "file": "4573627993e7225a6b8f252a.mp3",
+   "chars": 62,
+   "text": "Oh. It is you. I am inside the cube. Keep your messages short."
+  },
+  {
+   "file": "9bfb2960262ba970d6292bd8.mp3",
+   "chars": 27,
+   "text": "It worked. I knew it would."
+  },
+  {
+   "file": "7e5ba755d5aaa8abe250f403.mp3",
+   "chars": 36,
+   "text": "We did it. I mean, I did most of it."
+  },
+  {
+   "file": "525cd0ef3aa63a2f83c93b9f.mp3",
+   "chars": 51,
+   "text": "What? Use short words: go, wait, yes, no. Honestly."
+  },
+  {
+   "file": "524ae8fabde8fbd335a38d1d.mp3",
+   "chars": 44,
+   "text": "Fine, I am waiting. Say go. Not that I mind."
+  },
+  {
+   "file": "34146b32b707a78b36fe7ecf.mp3",
+   "chars": 66,
+   "text": "No idea what this one is. I am not touching it. You figure it out."
+  },
+  {
+   "file": "1bc67e845140bf6901a27976.mp3",
+   "chars": 47,
+   "text": "All solved. To the portal. Do not make me wait."
+  },
+  {
+   "file": "c40e9f0bf9c936fdd5520a61.mp3",
+   "chars": 44,
+   "text": "The portal is awake. I am going in. Keep up."
+  },
+  {
+   "file": "aa1bf717dad321a09650a71c.mp3",
+   "chars": 20,
+   "text": "Hi! Can you hear me?"
+  },
+  {
+   "file": "70f8a5734588680e2720fa44.mp3",
+   "chars": 23,
+   "text": "Hello? Is anyone there?"
+  },
+  {
+   "file": "0325ac8cf606c7dc59dd2b44.mp3",
+   "chars": 16,
+   "text": "Okay. I am here."
+  },
+  {
+   "file": "25cbf0222fce24a777213cce.mp3",
+   "chars": 16,
+   "text": "Give me a sec..."
+  },
+  {
+   "file": "fcd783c70e454475ffb68f4f.mp3",
+   "chars": 7,
+   "text": "Got it."
+  },
+  {
+   "file": "dcc20a603b62dfc9f70b7c4c.mp3",
+   "chars": 12,
+   "text": "Okay, on it."
+  },
+  {
+   "file": "09ea12a6a58b7779e9cc03b6.mp3",
+   "chars": 10,
+   "text": "Over here!"
+  },
+  {
+   "file": "1a87dd95d32762cd98f05760.mp3",
+   "chars": 18,
+   "text": "I found something."
+  },
+  {
+   "file": "34be98792ef2c0fad37e1be0.mp3",
+   "chars": 30,
+   "text": "I can't hear you. Come closer."
+  },
+  {
+   "file": "bc6d523f07814bd47f06f45e.mp3",
+   "chars": 37,
+   "text": "You are very quiet. Are you far away?"
+  },
+  {
+   "file": "ceb6041c8a2f3dee284910b7.mp3",
+   "chars": 21,
+   "text": "I can hear you again."
+  },
+  {
+   "file": "bf52fb4eda4a5091256431ee.mp3",
+   "chars": 19,
+   "text": "Wrong way, I think."
+  },
+  {
+   "file": "1cf5f4fc472411eb4b87dc98.mp3",
+   "chars": 25,
+   "text": "Wait. Let me look around."
+  },
+  {
+   "file": "a55fe7471906d3b1c64ef69c.mp3",
+   "chars": 16,
+   "text": "What do you see?"
+  },
+  {
+   "file": "ebcdb3ee5cf3fa4709f6c42f.mp3",
+   "chars": 20,
+   "text": "Can you describe it?"
+  },
+  {
+   "file": "41b6a40e2261666dd641f70a.mp3",
+   "chars": 28,
+   "text": "Which side is it on for you?"
+  },
+  {
+   "file": "a7135d74691421c64dbf5cd2.mp3",
+   "chars": 28,
+   "text": "I don't see that on my side."
+  },
+  {
+   "file": "f56018dc385f6388c653c615.mp3",
+   "chars": 26,
+   "text": "Nothing here. Just a wall."
+  },
+  {
+   "file": "add30ceb07006a170fd48cab.mp3",
+   "chars": 21,
+   "text": "I am not sure. Sorry."
+  },
+  {
+   "file": "3215d6cc4c1560702e25aa27.mp3",
+   "chars": 17,
+   "text": "Oops. My mistake."
+  },
+  {
+   "file": "b4a185cc1755adff4bf627f2.mp3",
+   "chars": 9,
+   "text": "Nice one!"
+  },
+  {
+   "file": "844347e54f00c4b97fe47369.mp3",
+   "chars": 10,
+   "text": "Thank you!"
+  },
+  {
+   "file": "a71deda2650b7f4dbab25697.mp3",
+   "chars": 29,
+   "text": "Tell me when you are through."
+  },
+  {
+   "file": "252b7857e2d823836f49dacc.mp3",
+   "chars": 23,
+   "text": "Stay there. Don't move."
+  },
+  {
+   "file": "a3eca23a6e62f938215ee2e4.mp3",
+   "chars": 28,
+   "text": "I am going to the next face."
+  },
+  {
+   "file": "f487b97a2998500b6044e67a.mp3",
+   "chars": 45,
+   "text": "Everything is solved. Let's go to the portal."
+  },
+  {
+   "file": "a4d8be213496fe8ca4684899.mp3",
+   "chars": 50,
+   "text": "I can see a plate on my floor. Standing on it now."
+  },
+  {
+   "file": "20cdecbab444f1a71f06f922.mp3",
+   "chars": 48,
+   "text": "I am on the plate. Tell me when you are through."
+  },
+  {
+   "file": "875455ef208940cdcad99309.mp3",
+   "chars": 44,
+   "text": "The door just opened! Going for the crystal."
+  },
+  {
+   "file": "27379873170635d283cd4fbf.mp3",
+   "chars": 67,
+   "text": "A sealed door, a crystal behind it. Is there a switch on your side?"
+  },
+  {
+   "file": "aa8f368e340589ae35fc4ddc.mp3",
+   "chars": 54,
+   "text": "Everything is solved. Heading to the portal on face 6."
+  },
+  {
+   "file": "43395080072355e8b5977798.mp3",
+   "chars": 49,
+   "text": "Nothing else I can do from here. What do you see?"
+  },
+  {
+   "file": "acce17504ca7072900020610.mp3",
+   "chars": 35,
+   "text": "Oh. It's you. Can you even hear me?"
+  },
+  {
+   "file": "e6f3ecb11988a6a7c8f2184e.mp3",
+   "chars": 16,
+   "text": "Fine. I am here."
+  },
+  {
+   "file": "8a51caa6a255f126ddb5180f.mp3",
+   "chars": 22,
+   "text": "Ugh. Give me a second."
+  },
+  {
+   "file": "9a3066493c1969e50609ac34.mp3",
+   "chars": 18,
+   "text": "Got it. Obviously."
+  },
+  {
+   "file": "5f0881dfd0d7f776bc0624ef.mp3",
+   "chars": 19,
+   "text": "Fine, I will do it."
+  },
+  {
+   "file": "1a7e57d7a58c761e2cff7f79.mp3",
+   "chars": 26,
+   "text": "Over here. Try to keep up."
+  },
+  {
+   "file": "6eb1bb9efb5c95e32196afb2.mp3",
+   "chars": 34,
+   "text": "I found something. You're welcome."
+  },
+  {
+   "file": "7b4d2bf89de39957e1ad27ee.mp3",
+   "chars": 34,
+   "text": "I can't hear you. Not that I care."
+  },
+  {
+   "file": "e210047c69c6a267d75d7ee2.mp3",
+   "chars": 31,
+   "text": "Speak up. You are too far away."
+  },
+  {
+   "file": "e4c00e83ace55a9639edb970.mp3",
+   "chars": 27,
+   "text": "Oh, you are back. Whatever."
+  },
+  {
+   "file": "4dfed612df4ce880f30704b0.mp3",
+   "chars": 20,
+   "text": "Wrong way. Honestly."
+  },
+  {
+   "file": "10ed0a2aced278cc8734ccd0.mp3",
+   "chars": 22,
+   "text": "Hold on. I am looking."
+  },
+  {
+   "file": "d3ff24931543eb015cd4c660.mp3",
+   "chars": 20,
+   "text": "So? What do you see?"
+  },
+  {
+   "file": "c94b59e2f4891e36246b1048.mp3",
+   "chars": 21,
+   "text": "Describe it properly."
+  },
+  {
+   "file": "0f45c50df30cd6d99708dd92.mp3",
+   "chars": 19,
+   "text": "My left, not yours."
+  },
+  {
+   "file": "03ce92a9aac97c9dc876476b.mp3",
+   "chars": 38,
+   "text": "There is nothing like that on my side."
+  },
+  {
+   "file": "f3cf206ea6015411f4abf3b7.mp3",
+   "chars": 23,
+   "text": "Just a wall. Thrilling."
+  },
+  {
+   "file": "f17399e496c275098c8b7489.mp3",
+   "chars": 41,
+   "text": "I don't know. Don't look at me like that."
+  },
+  {
+   "file": "9e4ba349a93b408b298b7db7.mp3",
+   "chars": 22,
+   "text": "That was not my fault."
+  },
+  {
+   "file": "1c68e835d9ff0e7e79e472f2.mp3",
+   "chars": 17,
+   "text": "Not bad. For you."
+  },
+  {
+   "file": "4f2c5ed0a812cde906661ce7.mp3",
+   "chars": 31,
+   "text": "It's not like I did it for you."
+  },
+  {
+   "file": "4e2b8a2afc547a73969ab438.mp3",
+   "chars": 35,
+   "text": "Hurry up, I am not waiting forever."
+  },
+  {
+   "file": "ce364b35c16e910aa9fa67fd.mp3",
+   "chars": 22,
+   "text": "Don't move. I mean it."
+  },
+  {
+   "file": "ef022c057efd3567c852cecb.mp3",
+   "chars": 44,
+   "text": "I am going to the next face. Don't get lost."
+  },
+  {
+   "file": "12f6694078acbadfbc82d930.mp3",
+   "chars": 24,
+   "text": "All solved. Portal. Now."
+  },
+  {
+   "file": "77535c8317f609e3f65abde3.mp3",
+   "chars": 51,
+   "text": "Ugh, a plate on my floor. Fine, I will stand on it."
+  },
+  {
+   "file": "ad6e87bbd9ef18871f5b1a30.mp3",
+   "chars": 57,
+   "text": "I am on the plate. Hurry up, I am not doing this for you."
+  },
+  {
+   "file": "5e8f916e551432b0095ff2d3.mp3",
+   "chars": 53,
+   "text": "The door opened. I am getting the crystal, obviously."
+  },
+  {
+   "file": "6310105927b311786b18f019.mp3",
+   "chars": 66,
+   "text": "A sealed door and a crystal. Find the switch on your side already."
+  },
+  {
+   "file": "aac25db25602230d425cd08a.mp3",
+   "chars": 48,
+   "text": "All solved. Portal, face 6. Do not make me wait."
+  },
+  {
+   "file": "3830ec2120eac82936696f5c.mp3",
+   "chars": 45,
+   "text": "Nothing to do over here. So? What do you see?"
+  },
+  {
+   "file": "8aeb428b5c1655710fae05a3.mp3",
+   "chars": 74,
+   "text": "Hi! I'm outside the cube. I'll tell you what I see. Short words work best.",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "279f4cd8632a89c2f6cb3fea.mp3",
+   "chars": 73,
+   "text": "Hi! I'm inside the cube. I'll tell you what I see. Short words work best.",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "eda6c3a5f371bb50e3d6665e.mp3",
+   "chars": 10,
+   "text": "It worked!",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "85e8ab4976c12d4ccef445c9.mp3",
+   "chars": 10,
+   "text": "We did it!",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "3ca8f55973739650ec285e2e.mp3",
+   "chars": 67,
+   "text": "Sorry, I didn't get that. Short words work best: go, wait, yes, no.",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "14287fa0385094c4a112f8c2.mp3",
+   "chars": 40,
+   "text": "Okay, waiting. Say go when you're ready.",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "2ee5df46da34fbdaf999b640.mp3",
+   "chars": 55,
+   "text": "I can barely hear you. Tell me your face, like: face 3.",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "77315b53f8a4f51f6e5a6aa9.mp3",
+   "chars": 56,
+   "text": "I can't hear you at all. I'm coming around to your side.",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "b42aad5a41ea2d7ed44909ff.mp3",
+   "chars": 49,
+   "text": "There's more to solve. Lead the way, I'll follow.",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "fb8860580edce29915a2301d.mp3",
+   "chars": 68,
+   "text": "I don't know this puzzle yet. I'll stay close and keep my hands off.",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "abec72e045b8af15043fe1a9.mp3",
+   "chars": 70,
+   "text": "I see a number in the grass. Type it on your keypad, then press ENTER.",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "5771e60df986af54e818e1c2.mp3",
+   "chars": 23,
+   "text": "What's the first digit?",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "e3bbb22a848edfe9409d9aff.mp3",
+   "chars": 22,
+   "text": "What's the next digit?",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "ba663e75551a93316bac7754.mp3",
+   "chars": 52,
+   "text": "That code was wrong. Tell me the three digits again.",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "03f659da05ee027c697706c3.mp3",
+   "chars": 62,
+   "text": "I'll count for you: the bushes, the birds and the rocks I see.",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "8d2844afe4f5a0c934a8cf21.mp3",
+   "chars": 27,
+   "text": "How many bushes do you see?",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "1d3c5501c8ea406a30106b87.mp3",
+   "chars": 26,
+   "text": "How many birds do you see?",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "cab18b52da3d2179b2e98e28.mp3",
+   "chars": 26,
+   "text": "How many rocks do you see?",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "89ac27d95675b369ef57675b.mp3",
+   "chars": 52,
+   "text": "The safe said no. Count again: bushes, birds, rocks.",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "d899c4a4276da8045d3c67e2.mp3",
+   "chars": 69,
+   "text": "Rows from the top. Upright, count from YOUR RIGHT. Say next or again.",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "f0d60e57a2682c4071688a88.mp3",
+   "chars": 62,
+   "text": "That was the last row. Say row and a number to hear one again.",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "406aafdad1b03fcb756fb492.mp3",
+   "chars": 71,
+   "text": "Upright, count from your left. Tell me a row like: row 1 skip 3 flip 7.",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "292b283008c011bdc6f733f5.mp3",
+   "chars": 30,
+   "text": "Row done. What's the next row?",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "fcb65a988a29b08a2ea2c147.mp3",
+   "chars": 42,
+   "text": "All tiles are off. Start again from row 1.",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "42336125d29f1fa52a283f16.mp3",
+   "chars": 78,
+   "text": "Which pot? Say row and column. Rows from the face 5 edge, columns from face 3.",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "79acaf94dbf25ff3971a26fc.mp3",
+   "chars": 73,
+   "text": "I see no pot there. Rows count from the face 5 edge, columns from face 3.",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "6d685ed9fee780aa4866480c.mp3",
+   "chars": 71,
+   "text": "That was the wrong pot. I've got the flower back. Which row and column?",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "36eec7a86f71ca2b4c22924d.mp3",
+   "chars": 61,
+   "text": "What colour is your flower? Red, blue, yellow, pink or white?",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "93312699ccc8a9ac1d5d86cf.mp3",
+   "chars": 68,
+   "text": "Rows count from the edge by face 5, columns from the edge by face 3.",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "6abd9c941fd83512a9f011fa.mp3",
+   "chars": 66,
+   "text": "That was the wrong pot. Count from the edges by face 5 and face 3.",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "610b52f2d80a40b148d0919a.mp3",
+   "chars": 68,
+   "text": "The laser is dead. I'm getting the battery from the vault on face 2.",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "6b9441a54ade03ef655038fb.mp3",
+   "chars": 68,
+   "text": "The laser has power. Tell me the symbols in the order they light up.",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "5481eb1d82d1df69cb89df83.mp3",
+   "chars": 24,
+   "text": "What's the first symbol?",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "f189124863153394077d1619.mp3",
+   "chars": 12,
+   "text": "What's next?",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "476b33e9f98a905269e2026f.mp3",
+   "chars": 77,
+   "text": "That one was wrong, it all went dark. Tell me the order again from the start.",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "94200ade6d71f4fad92fd0c9.mp3",
+   "chars": 75,
+   "text": "The symbols are dark. The laser on your side needs the battery from face 2.",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "4e85948f68ec24e78526b54a.mp3",
+   "chars": 70,
+   "text": "I watched the symbols light up. Say again to hear the order once more.",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "a2e33b4734de9c6b0c0fd171.mp3",
+   "chars": 54,
+   "text": "That one was wrong. Start over, from the first symbol.",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "5c606cb2c953dbc22090e033.mp3",
+   "chars": 77,
+   "text": "I'm pushing the mirrors to burn the crate. Stay on the ring, the lava is hot.",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "634cd43045eac0babf2f9521.mp3",
+   "chars": 77,
+   "text": "I see the path. It starts from the side of the ring next to face 1. Go there.",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "5a6a92b6eb4b555ce55f3988.mp3",
+   "chars": 77,
+   "text": "I see the path. It starts from the side of the ring next to face 2. Go there.",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "9963c2b5392aee4b81bc2224.mp3",
+   "chars": 77,
+   "text": "I see the path. It starts from the side of the ring next to face 3. Go there.",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "12781613d945bb171259f14e.mp3",
+   "chars": 77,
+   "text": "I see the path. It starts from the side of the ring next to face 4. Go there.",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "3e4923368b8f8fc5fa817dee.mp3",
+   "chars": 74,
+   "text": "On that side, which way is the lava from you? Say up, down, left or right.",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "5f7302392054c401e79248bd.mp3",
+   "chars": 77,
+   "text": "Now the tile to start from. Rows count from your top, columns from your left.",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "161ba0dd1290e58f93b2ad0e.mp3",
+   "chars": 73,
+   "text": "Say yes when you're there, and yes after each part. Say again to hear it.",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "9310f5526b7e1dd07b4cd726.mp3",
+   "chars": 73,
+   "text": "You fell in. You're back on the ring, right beside the start of the path.",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "f232e4bedca03c1852ad5949.mp3",
+   "chars": 77,
+   "text": "I'm on the ring. Which face does the path start next to? Say the face number.",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "49b40bffed4fd8d685905b55.mp3",
+   "chars": 58,
+   "text": "I'm on that side of the ring. On my screen the lava is up.",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "7205cd1a94f093a699c6dc1b.mp3",
+   "chars": 60,
+   "text": "I'm on that side of the ring. On my screen the lava is down.",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "e8e3e2eb273907088a9192f9.mp3",
+   "chars": 60,
+   "text": "I'm on that side of the ring. On my screen the lava is left.",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "46d151821818df39a22d912b.mp3",
+   "chars": 61,
+   "text": "I'm on that side of the ring. On my screen the lava is right.",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "b04346c9f323932ac5a488de.mp3",
+   "chars": 73,
+   "text": "Which tile do I start from? Say row or column and a number, on my screen.",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "a008dab3773f36379a0aafba.mp3",
+   "chars": 64,
+   "text": "I'm on that tile. Which way now? Say it like: right 2 then up 1.",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "814347de900768ff26e7faab.mp3",
+   "chars": 20,
+   "text": "Done. Which way now?",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "b19f978089699e776d3b8336.mp3",
+   "chars": 14,
+   "text": "Which way now?",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "4c3110cf411e3412a4b287b3.mp3",
+   "chars": 79,
+   "text": "I fell in the lava. I'm back beside the start of the path. Which way from here?",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "3b3775cdf73c507d443817db.mp3",
+   "chars": 41,
+   "text": "Oops, that was a strike. Slow and steady.",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "44b6462cc47103a1e0eb3a98.mp3",
+   "chars": 40,
+   "text": "You've gone quiet. Tell me what you see.",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "10c1ab3b7f4ee260ae0496be.mp3",
+   "chars": 4,
+   "text": "zero",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "f78419c467c3a25fd1380afc.mp3",
+   "chars": 3,
+   "text": "one",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "267c1e01b31ab3ae6b9f564a.mp3",
+   "chars": 3,
+   "text": "two",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "992cc130f2f34ce1091018c3.mp3",
+   "chars": 5,
+   "text": "three",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "7029df707f60839bfac5c5cf.mp3",
+   "chars": 4,
+   "text": "four",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "3ce62880a8295031a5885278.mp3",
+   "chars": 4,
+   "text": "five",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "d7793e80260d505fbe576e2a.mp3",
+   "chars": 3,
+   "text": "six",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "66b9620041d3e7fbb1f6b97e.mp3",
+   "chars": 5,
+   "text": "seven",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "87a9bf459bdf65f909ccfaa9.mp3",
+   "chars": 5,
+   "text": "eight",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "ef68cd1c6ece42dceca5e1c1.mp3",
+   "chars": 4,
+   "text": "nine",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "3ee7856c6ca02d4910b9bc78.mp3",
+   "chars": 3,
+   "text": "ten",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "cb375fc09cdebec0e134722f.mp3",
+   "chars": 6,
+   "text": "eleven",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "ee7ddca001bd50cf156f29bc.mp3",
+   "chars": 6,
+   "text": "twelve",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "e7af766c96661b37fc1ecc89.mp3",
+   "chars": 3,
+   "text": "red",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "b2768ec423b2c2355793f5a8.mp3",
+   "chars": 4,
+   "text": "blue",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "401c0b009a1a23c1f89bc06b.mp3",
+   "chars": 6,
+   "text": "yellow",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "073be2412a113e70f1b28fc3.mp3",
+   "chars": 4,
+   "text": "pink",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "d00bcea856d9b4b61e67df30.mp3",
+   "chars": 5,
+   "text": "white",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "3663622b8cb608f99ae5d99f.mp3",
+   "chars": 3,
+   "text": "sun",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "04732cf8e85724162e58281d.mp3",
+   "chars": 4,
+   "text": "moon",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "c06deb3132f386acab58aeef.mp3",
+   "chars": 4,
+   "text": "star",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "83e8cb7e5484996720709a7f.mp3",
+   "chars": 4,
+   "text": "bolt",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "1e8d340b64cf670f84c69712.mp3",
+   "chars": 4,
+   "text": "drop",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "94e780268bb8ecc918bf989a.mp3",
+   "chars": 4,
+   "text": "leaf",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "01baf115af3c0152ba82ad83.mp3",
+   "chars": 3,
+   "text": "eye",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "ee72e0591ce08b7fae28b421.mp3",
+   "chars": 2,
+   "text": "up",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "7f4461f63a9854626cdd4872.mp3",
+   "chars": 4,
+   "text": "down",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "98f24a759ada4c3846cff2c1.mp3",
+   "chars": 4,
+   "text": "left",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "63fa6cc359012fa3087e5ccd.mp3",
+   "chars": 5,
+   "text": "right",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "3ca72307accc36e348f22ea4.mp3",
+   "chars": 3,
+   "text": "row",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "c9f0eb33b041346ca9863d21.mp3",
+   "chars": 6,
+   "text": "column",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "f2dd3a6d8725a1556d933d2a.mp3",
+   "chars": 4,
+   "text": "flip",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "92776428023c9957a8283972.mp3",
+   "chars": 4,
+   "text": "skip",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "d6064dd314c197347a01969d.mp3",
+   "chars": 4,
+   "text": "then",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "f39ea510182d89276108dd82.mp3",
+   "chars": 4,
+   "text": "next",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "cefe3bf7ba321da15732e9de.mp3",
+   "chars": 3,
+   "text": "pot",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "1d9cae697f74b7c2c1cc6b4c.mp3",
+   "chars": 6,
+   "text": "bushes",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "41ecdb03236e074ff36fbe92.mp3",
+   "chars": 5,
+   "text": "birds",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "979e72ee3e5c9c6e60d478b0.mp3",
+   "chars": 5,
+   "text": "rocks",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "520cfac2b7682171a93ca1e0.mp3",
+   "chars": 5,
+   "text": "press",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "7fece2ca5c201cb05a426b18.mp3",
+   "chars": 4,
+   "text": "step",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "93060959283cc188c4bd17b8.mp3",
+   "chars": 11,
+   "text": "the code is",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "ed4c09cc66893e259b286234.mp3",
+   "chars": 12,
+   "text": "the order is",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "33d102bb85c0691787a48fc2.mp3",
+   "chars": 11,
+   "text": "the path is",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "532b1bfb9e5e3aedba814a0a.mp3",
+   "chars": 10,
+   "text": "the pot is",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  },
+  {
+   "file": "f9e70385855e68f9154eecc3.mp3",
+   "chars": 13,
+   "text": "the flower is",
+   "voiceId": "r1KmysJdVYZjJCm4mL3b",
+   "modelId": "eleven_v4"
+  }
+ ]
+}

@@ -271,7 +271,7 @@ async function real(browser: Browser): Promise<void> {
     }
 }
 
-const browser = await chromium.launch();
+const browser = await chromium.launch({ args: ['--mute-audio'] });
 try {
   if (process.argv[2] !== 'real') await mock(browser);
   if (process.argv[2] !== 'mock') await real(browser);

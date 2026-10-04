@@ -3,7 +3,6 @@ import { after, before, test } from 'node:test';
 import { io, type Socket } from 'socket.io-client';
 import { QUICK_CHATS, type ChatMessage, type ClientToServer, type QuickChat, type Seat, type ServerToClient, type Side } from '@cubic/shared';
 import { AiPlayer } from '../src/ai/aiPlayer';
-import { scriptedBrain } from '../src/ai/scripted';
 import { createApp, type App } from '../src/app';
 import { Room, Rooms } from '../src/rooms';
 
@@ -78,7 +77,7 @@ test('an AI partner is not broken by quick chat; it hears the line as chat', asy
   const rooms = new Rooms();
   const room = rooms.create('ai');
   room.sit('out');
-  const ai = new AiPlayer(room, 'in', scriptedBrain(), { minThinkMs: 20, idleMs: 1e9, stepMs: 5, timeoutMs: 200, log: () => {} });
+  const ai = new AiPlayer(room, 'in', null, { stepMs: 5, log: () => {} });
   assert.ok(room.quick('out', 0));
   assert.equal(room.chat.at(-1)!.text, 'Here!');
   // the AI goes on playing through the same Room methods, and could quick-chat itself

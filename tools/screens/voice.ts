@@ -63,7 +63,7 @@ const hungUp = async (page: Page, micToo: boolean) => {
   return p.link === 'none' && p.pc === null && (!micToo || p.track === null);
 };
 
-const browser = await chromium.launch({ args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] });
+const browser = await chromium.launch({ args: ['--mute-audio', '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] });
 try {
   const context = await browser.newContext({ viewport: SIZE, permissions: ['microphone'] });
   const open = async (who: string) => {

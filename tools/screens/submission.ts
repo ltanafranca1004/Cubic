@@ -30,7 +30,7 @@ const SIZE = { width: 1920, height: 1080 };
 /** The narrator's line and the face name caption are gone after this. */
 const CAPTION_MS = 6000;
 
-const browser = await chromium.launch();
+const browser = await chromium.launch({ args: ['--mute-audio'] });
 try {
   // title: the cube turns, so hold it at four points; the thumb is the same frame cut to 3:2
   const [a, b] = await Promise.all([openTitle(browser, BASE, SIZE), openTitle(browser, BASE, SIZE)]);

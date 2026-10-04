@@ -533,7 +533,9 @@ export const cubicUI: UIHost = {
               : next.status === 'partner-away'
                 ? 'Partner disconnected. Holding their seat...'
                 : next.status === 'partner-left'
-                  ? 'Partner left. Anyone with the room code can join.'
+                  ? next.mode === 'ai'
+                    ? 'The AI partner stopped. Leave and start a new game.' // a solo room has no code to share
+                    : 'Partner left. Anyone with the room code can join.'
                   : '';
         $('cu-banner').hidden = !banner;
         $('cu-banner').firstElementChild!.textContent = banner;

@@ -37,7 +37,7 @@ server and Vite on the client both consume `/shared` as TS source).
   src/puzzles/        PuzzleModule interface + one file per puzzle, lib/ (shared building
                       blocks), chain.ts (the items the chain hands from face to face)
   src/voice.ts        voiceMix(state): how loud the partner is, from cube distance
-  src/bot/            the AI's body: observe(), pathTo()
+  src/bot/            the AI partner: observe(), pathTo(), decide(), scripts/ (one per puzzle)
 /server   Node + Socket.io (tsx). Rooms, validation, chat, voice signaling, AI partner.
 /client   Phaser 4 + Vite.
   src/game/           the playable scene, rendering, input, sound (core)
@@ -285,24 +285,42 @@ speech (`tts`), goes through one Web Audio gain driven by `voiceMix`.
 
 ## AI partner
 
-`/shared/src/bot` is the body: `observe(state, side)` (only what that side can see, in its
-own screen orientation), `pathTo` / `findPath` (BFS across faces with the real blockers)
-and `planAction` (goto, go_face, step_on, move, pick_up, drop, wait). `/server/src/ai` is
-the brain: `AiPlayer` sits in the empty seat, sends Gemini the rules + observation + chat,
-validates the JSON reply `{ say, action }` and walks the action one step per 200 ms
-through the same `Room` methods a human's socket uses. Max one Gemini call per 6 s per
-room (no backlog), 12 s timeout; on errors it backs off and the scripted partner
-(`scripted.ts`, also `AI_FAKE=1`) plays that turn. Lines are capped at 80 characters.
-`AI_PERSONA` (default | tsundere) changes tone only. Speech: `TTS_MODE` browser |
-elevenlabs, disk cache + voice bank in `server/src/ai/tts.ts`. Token and TTS character
-usage are logged. New puzzle objects
-are visible to the AI automatically through `visible()`; describe new mechanics in
-`server/src/ai/prompt.ts` if the AI needs to know a rule.
+Solo play: PLAY WITH AI on the mode screen (`client/src/scenes/AiPopup.ts` picks the side,
+`ENABLE_AI` in `client/src/config.ts`). Always available: no key is needed.
 
-The AI has not been taught the six current puzzles yet: the puzzle block in `prompt.ts`
-is still a placeholder (between the `PUZZLES V2 PLACEHOLDER` markers). Its body also has
-no "use" action: `pick_up` and `drop` are refused without an item, so it cannot press E on
-a key, a button, a flip tile, REPLAY or RESET.
+- **The script drives** (`shared/src/bot`, pure). `observe(state, side)` is what that side
+  can see, in its own screen orientation. `decide(mind, observation, heard, now)` in
+  `partner.ts` is the core: greet, find the human by voice or "face N", stay on their
+  wall, "wait" / "go", and which tiles no walk may enter (hot lava on any face included:
+  `hazardAvoid` in `path.ts`). `talk.ts` is the
+  chat protocol (sign, direction, go, yes, no, wait, again, face N; quick chat counts).
+  `findPath` / `planAction` walk with the real blockers plus those tiles to avoid.
+- **The core knows no puzzle**: not how many, their ids or faces. Each puzzle is a
+  `PuzzleScript` in `shared/src/bot/scripts/<id>.ts`, registered in `scripts/index.ts`
+  (interface and how to add one: `shared/src/bot/scripts/README.md`). A puzzle with no
+  script: the bot says so, keeps off everything it sees on that face, follows the human.
+- **`server/src/ai/aiPlayer.ts`** runs it on a Room: one decision and one step per 200 ms
+  through the same `Room` methods a human's socket uses. Its lines are a beat apart.
+- **Gemini is advisory** (`gemini.ts`, `prompt.ts`): it rewords small talk, answers
+  free-form chat, returns `heard` (the human's message in protocol words) and may suggest
+  a move on the current face, walked only if it avoids the script's unsafe tiles and the
+  body is not holding a place. Max one call per 6 s per room, no backlog, 3 s deadline; on
+  timeout, error or 429 the script's own line is said and calls back off (6 s doubling to
+  60 s). No `GEMINI_API_KEY` (or `AI_FAKE=1`) = script alone, silently.
+- **Words** of every line: `server/src/ai/scripted.ts` (core lines per persona, puzzle
+  lines by key). Lines are capped at 80 characters. `AI_PERSONA` (default | tsundere)
+  changes tone only.
+- **Voice** (`server/src/ai/tts.ts`): the committed bank `server/tts/bank` is looked up
+  first (by normalized text; built by `npm run tts:bank -w server`, incremental), then the
+  disk cache, then ElevenLabs for Gemini's lines only, at most `TTS_SESSION_LINES` (15)
+  per room, else the browser voice. `TTS_MODE` browser | elevenlabs. The script's own
+  lines are never bought at runtime. Every spoken line is also a caption
+  (`client/src/ui/captions.ts`). Token and TTS character usage are logged.
+
+The AI has not been taught the six current puzzles yet: `PUZZLE_SCRIPTS` is empty (it
+greets, follows, talks, stays off hot lava and says it does not know the puzzle) and the
+puzzle block in `prompt.ts` is still a placeholder (between the `PUZZLES V2 PLACEHOLDER`
+markers). Its body can press E (`use` action). The interfaces, exactly: `docs/ai-partner.md`.
 
 ## Git workflow
 

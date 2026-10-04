@@ -150,8 +150,12 @@ vite.config.ts.timestamp-*
 
 cube.html
 
-# ElevenLabs audio cache (regenerate with: npm run tts:bank -w server)
+# ElevenLabs cache of generated (non-bank) lines. The voice bank itself, server/tts/bank,
+# is committed on purpose: production serves it from the repo.
 server/.tts-cache/
+
+# Daily usage counters of the AI partner's two APIs (server/src/ai/budget.ts)
+server/.data/
 
 # Output of tools/screens/check.ts (regenerated on every run)
 docs/screens/check/

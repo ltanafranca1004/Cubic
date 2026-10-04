@@ -31,6 +31,10 @@ export interface Observation {
   objective: string;
   /** This face still has something to solve (the objective line above says the same). */
   puzzleHere: boolean;
+  /** The id of the puzzle on this face, solved or not. null = this face has none. */
+  puzzleId: string | null;
+  /** The rules both players are told: which faces hold a puzzle (and which one). */
+  puzzleList: { id: string; face: FaceId }[];
   solvedFaces: FaceId[];
   portalOpen: boolean;
   /** The face the portal is on (the rules tell both players), or null: this world has none. */
@@ -80,6 +84,8 @@ export function observe(state: GameState, side: Side, env: GameEnv = defaultEnv)
     edges: { up: edge(n.up), down: edge(n.down), left: edge(n.left), right: edge(n.right) },
     objective: objectiveFor(state, side, env),
     puzzleHere: env.puzzles.some((p) => p.face === face) && !state.solved.includes(face),
+    puzzleId: env.puzzles.find((p) => p.face === face)?.id ?? null,
+    puzzleList: env.puzzles.map((p) => ({ id: p.id, face: p.face })),
     solvedFaces: [...state.solved],
     portalOpen: portalOpen(state, env),
     portalFace: portalFace(env),

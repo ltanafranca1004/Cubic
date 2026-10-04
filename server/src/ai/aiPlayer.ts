@@ -1,65 +1,97 @@
 import {
   CHAT_MAX_LEN,
-  chooseGoal,
-  leashAllows,
-  leashBroken,
-  newMemory,
+  PUZZLE_SCRIPTS,
+  decide,
+  isPuzzleLine,
+  newMind,
+  nextStep,
   observe,
-  parseAction,
-  planAction,
-  remember,
-  stepPose,
-  type BotAction,
-  type BotStep,
+  parseHuman,
   type ChatMessage,
-  type GameEvent,
+  type Decision,
   type GameState,
-  type Observation,
+  type Heard,
+  type PuzzleScript,
+  type Say,
   type Side,
 } from '@cubic/shared';
 import type { Room } from '../rooms';
-import type { Brain } from './gemini';
-import { MAX_SAY_CHARS, idleHint, turnPrompt } from './prompt';
+import type { Budget, GeminiReason } from './budget';
+import { isQuotaError, type Brain } from './gemini';
+import { MAX_SAY_CHARS, turnPrompt, type Persona } from './prompt';
+import { eventLine, humanSays, lineText } from './scripted';
 
-// The AI partner. Gemini is the brain, this is the nervous system: it shows the brain what
-// its own side can see, validates the reply, and walks the chosen action one step at a
-// time through the same Room methods a human's socket uses. It also keeps the body on a
-// leash: whatever the brain asks for, it never walks more than one face from the human.
+// The AI partner. Two parts:
+//
+//  - THE SCRIPT (shared/src/bot/partner.ts) drives. Every step (200 ms) it looks at what
+//    its own side can see and what the human typed, and decides what to say and where the
+//    body walks, through the same Room methods a human's socket uses. It needs no API.
+//  - GEMINI only talks, when there is a key and the budget (budget.ts) allows it. It is
+//    asked on four EVENTS and nothing else, never on a timer and never per move:
+//      chat    the human typed something that is not plain protocol words: it answers, and
+//              turns it into the protocol words the script understands ("heard");
+//      solved  a puzzle was solved (or the game won): it rewords the script's line;
+//      strike  the strike counter went up: one calm line;
+//      stuck   no solve, no strike and no human chat for 60 s while the human is connected
+//              and the game is running: one gentle question, once per quiet period.
+//    It never moves the body and never presses anything: a reply has no action.
+//
+// The body never waits for Gemini. A call that takes longer than 3 s, fails, or is refused
+// (one call at a time and per 6 s per room; the server-wide and per-game caps in budget.ts)
+// is dropped, never queued or retried, and the script's own line is said instead.
 
 export interface AiOptions {
+  persona?: Persona;
+  /** The puzzle scripts it plays with (default: the registry in shared/src/bot/scripts). */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  scripts?: readonly PuzzleScript<any>[];
+  /** Walking speed: one decision and one step per this many ms. */
+  stepMs?: number;
   /** Minimum time between Gemini calls for this room. */
   minThinkMs?: number;
-  /** Think this often when something might have changed. */
-  idleMs?: number;
-  /** Walking speed: one step per this many ms. */
-  stepMs?: number;
-  /** Give up on a Gemini call after this long. */
+  /** Give up on a Gemini call after this long: the script's line is used. */
   timeoutMs?: number;
   /** First back-off after a failed call; doubles per failure in a row, up to a minute. */
   backoffMs?: number;
-  /** The human has neither moved nor spoken for this long: suggest the next goal. */
-  idleHintMs?: number;
-  /** Answers a turn when the brain fails (429, 503, timeout, bad JSON), so the game never stalls. */
-  fallback?: Brain;
-  /** Called with each line the AI says (for speech). */
-  onSay?: (msg: ChatMessage) => void;
+  /** The server-wide caps and the usage log. Without it (tests) only this room's own throttle applies. */
+  budget?: Budget;
+  /**
+   * Called with each line the AI says (for speech). `scripted` = one of the script's own
+   * lines, not a model's; `line` = which one (its key and relay args), when it is said as written.
+   */
+  onSay?: (msg: ChatMessage, info: { scripted: boolean; line?: Say }) => void;
   log?: (line: string) => void;
 }
 
-export const FALLBACK_LINE = 'Give me a sec...';
-const FALLBACK_EVERY_MS = 20_000;
-/** After a failed call, wait this long before the next one, doubling up to the max. */
+const STEP_MS = 200;
+const MIN_THINK_MS = 6000;
+const TIMEOUT_MS = 3000;
 const BACKOFF_MS = 6000;
 const BACKOFF_MAX_MS = 60_000;
-const EVENTS_KEPT = 8;
-/** Human idle time before the AI suggests the next goal. */
-const IDLE_HINT_MS = 20_000;
+/** The human is "stuck" after this long with no solve, no strike and no chat line of theirs. */
+export const STUCK_MS = 60_000;
+/** "I did not get that" at most this often. */
+const HUH_EVERY_MS = 8000;
+/** Lines waiting to be said. Over it, small talk goes first; a puzzle line (an answer, a question) is never dropped. */
+const OUTBOX_MAX = 6;
+/** Small talk that has waited this long behind other lines is no longer worth saying. */
+export const STALE_MS = 10_000;
 /** An AI whose own code has thrown this many times is stopped: it is broken, not unlucky. */
 const MAX_FAULTS = 3;
+/**
+ * Time between two of its lines, so each one can be heard and read (one caption shows at a
+ * time, and the next line replaces it): at least LINE_GAP_MS, and the time it takes to say
+ * the line, about LINE_MS_PER_CHAR per character.
+ */
+export const LINE_GAP_MS = 1500;
+export const LINE_MS_PER_CHAR = 65;
+/** How long a line is given before the next one may be sent. */
+export const lineHoldMs = (text: string): number => Math.max(LINE_GAP_MS, text.length * LINE_MS_PER_CHAR);
 
 export interface ParsedReply {
   say: string | null;
-  action: BotAction | null;
+  /** The human's message in protocol words, as the model read it. */
+  heard: string | null;
 }
 
 /** Cut a line to the say limit, at a word boundary when there is one. */
@@ -80,349 +112,343 @@ export function parseReply(text: string): ParsedReply | null {
   }
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const r = raw as Record<string, unknown>;
-  if (!('say' in r) && !('action' in r)) return null;
+  // An "action" (older prompts asked for one) is not read at all: Gemini never moves the body.
+  if (!('say' in r) && !('action' in r) && !('heard' in r)) return null;
   if (r.say != null && typeof r.say !== 'string') return null;
-  const say = typeof r.say === 'string' && r.say.trim() ? clip(r.say.trim()) : null;
-  const action = r.action == null ? null : parseAction(r.action);
-  if (r.action != null && !action) return say ? { say, action: null } : null; // bad action: keep the words
-  return { say, action };
+  const say = typeof r.say === 'string' && r.say.trim() ? clip(r.say.replace(/\s*\u2014\s*/g, ', ').trim()) : null;
+  const heard = typeof r.heard === 'string' && r.heard.trim() ? r.heard.trim().slice(0, 60) : null;
+  return { say, heard };
 }
 
+/** Why a call is made: a line of the script to reword (solved, strike, stuck), or a human message to read. */
+type Ask = { kind: 'line'; reason: Exclude<GeminiReason, 'chat'>; line: string; key: string } | { kind: 'chat'; text: string; read: Heard };
+const reasonOf = (ask: Ask): GeminiReason => (ask.kind === 'chat' ? 'chat' : ask.reason);
+/** The core's small-talk lines that Gemini may reword. The greeting is not one: it is always the script's. */
+const REWORDED = new Set(['solved', 'win']);
+
+/** A line of a puzzle script: an answer (a relay line) or a question the script waits on. Never dropped from the queue. */
+const essential = (l: { line?: Say }): boolean => !!l.line && isPuzzleLine(l.line.key) && !l.line.key.startsWith('event.');
+
 export class AiPlayer {
-  private queue: BotStep[] = [];
-  private doing: string | null = null;
-  private events: string[] = [];
-  private lastResult: string | null = null;
+  private mind = newMind();
+  private mindOf: GameState;
+  private lastChatId = 0;
+  /** What the script hears on its next decision. */
+  private heard: Heard[] = [];
+  /** Lines waiting for the chat rate limit. */
+  private outbox: { text: string; scripted: boolean; line?: Say; at: number }[] = [];
+  /** How long the line said last is given before the next one (lineHoldMs). */
+  private holdMs = 0;
+  private last: Decision | null = null;
+  /** Strikes and solves seen so far, and when the game was last anything but quiet (see STUCK_MS). */
+  private strikes = 0;
+  private solved = 0;
+  private quietSince = Date.now();
+  /** The stuck event fires once per quiet period. */
+  private stuckAsked = false;
   private thinking = false;
-  private lastFallbackAt = 0;
   /** No Gemini call before this time (rate limit + back-off after errors). */
   private nextThinkAt = 0;
   private failures = 0;
-  /** Something happened since the last think. */
-  private stale = true;
-  private lastSeen = '';
+  private lastHuhAt = -Infinity;
+  private lastSaidAt = -Infinity;
   private stopped = false;
-  /** Times this AI's own code has thrown (see guard). */
+  /** Times this AI's own code has thrown (see fault). */
   private faults = 0;
-  private stepTimer: NodeJS.Timeout;
-  private thinkTimer: NodeJS.Timeout;
-  private wakeTimer: NodeJS.Timeout | null = null;
+  private timer: NodeJS.Timeout;
   private abort: AbortController | null = null;
-  /** What this side has seen so far, and where the voice says the partner is. */
-  private memory = newMemory();
-  private memoryOf: GameState;
-  private idleTimer: NodeJS.Timeout | null = null;
-  /** The human went quiet: the next turn suggests the next goal. */
-  private hintDue = false;
-  /** The hint line for the turn being answered, until something has been said. */
-  private hint: string | null = null;
   private unlisten: () => void;
+  private readonly persona: Persona;
+  private readonly minThinkMs: number;
+  private readonly timeoutMs: number;
   /** Stats, for logs and tests. */
   calls = 0;
   tokens = { input: 0, output: 0 };
-
-  private readonly minThinkMs: number;
-  private readonly timeoutMs: number;
+  stats = { answered: 0, timeouts: 0, errors: 0, scriptedLines: 0, modelLines: 0, refused: 0 };
 
   constructor(
     private room: Room,
     readonly side: Side,
-    private brain: Brain,
+    /** Gemini, or null to play from the script alone (no key, AI_FAKE=1). */
+    private advisor: Brain | null,
     private opts: AiOptions = {},
   ) {
-    this.minThinkMs = opts.minThinkMs ?? 6000;
-    this.timeoutMs = opts.timeoutMs ?? 12_000;
-    this.memoryOf = room.state;
+    this.persona = opts.persona ?? 'default';
+    this.minThinkMs = opts.minThinkMs ?? MIN_THINK_MS;
+    this.timeoutMs = opts.timeoutMs ?? TIMEOUT_MS;
+    this.mindOf = room.state;
+    this.strikes = room.state.strikes;
+    this.solved = room.state.solved.length;
+    opts.budget?.newGame(room.code);
     room.sit(side, true);
-    this.unlisten = room.listen({
-      onChat: (msg) =>
-        this.guard('chat listener', () => {
-          if (msg.from === side) return;
-          this.humanActed();
-          this.wake();
-        }),
-      onState: (u) =>
-        this.guard('state listener', () => {
-          this.look(); // the voice signal changes as either of us walks
-          if (u.events.some((e) => 'side' in e && e.side !== side)) this.humanActed();
-          this.notice(u.events);
-        }),
-      onClosed: () => this.stop(),
-    });
-    this.stepTimer = setInterval(() => this.guard('step', () => this.step()), opts.stepMs ?? 200);
-    this.thinkTimer = setInterval(() => this.guard('think', () => this.maybeThink()), opts.idleMs ?? 8000);
-    this.stepTimer.unref();
-    this.thinkTimer.unref();
-    this.humanActed();
-    this.wake();
-  }
-
-  /**
-   * Everything the AI does on its own runs through here: its timers, and the room
-   * listeners (which run inside the human's own move). A throw in one of them would
-   * otherwise be an uncaught exception or an unhandled rejection, which ends the process
-   * and with it every room on the server. Here it costs this AI its current action, and
-   * an AI that keeps throwing is stopped.
-   */
-  private guard(what: string, fn: () => void | Promise<void>): void {
-    try {
-      const result = fn();
-      if (result) result.catch((e: unknown) => this.fault(what, e));
-    } catch (e) {
-      this.fault(what, e);
-    }
-  }
-
-  private fault(what: string, e: unknown): void {
-    this.log(`error in ${what}: ${(e instanceof Error ? (e.stack ?? e.message) : String(e)).slice(0, 600)}`);
-    this.queue = [];
-    this.doing = null;
-    if (what === 'think') this.thinking = false; // it threw before the call: nothing is in flight
-    if (++this.faults >= MAX_FAULTS) this.stop();
-  }
-
-  /** Look around: this side's observation, folded into what it remembers. */
-  private look(): Observation {
-    if (this.memoryOf !== this.room.state) {
-      this.memoryOf = this.room.state; // a new game: forget the old cube
-      this.memory = newMemory();
-    }
-    const observation = observe(this.room.state, this.side);
-    this.memory = remember(this.memory, observation);
-    return observation;
-  }
-
-  /** The human moved or spoke: start the idle clock again. Only the fact is used, never where they are. */
-  private humanActed(): void {
-    this.hintDue = false;
-    if (this.idleTimer) clearTimeout(this.idleTimer);
-    if (this.stopped) return;
-    this.idleTimer = setTimeout(() => {
-      this.idleTimer = null;
-      this.guard('idle hint', () => {
-        this.hintDue = true;
-        // Gemini is failing: do not make one line wait out the back-off.
-        if (this.failures > 0 && !this.thinking) this.takeHint();
-        else this.wake();
-      });
-    }, this.opts.idleHintMs ?? IDLE_HINT_MS);
-    this.idleTimer.unref();
-  }
-
-  /** The hint is due and the brain is not going to say it: the body says it for this turn. */
-  private takeHint(): void {
-    if (!this.hintDue || this.stopped || this.room.state.wonAt !== null) return;
-    this.hintDue = false;
-    this.hint = idleHint(chooseGoal(this.look(), this.memory));
-    if (!this.thinking) this.speak(this.hint);
+    this.unlisten = room.listen({ onClosed: () => this.stop() });
+    this.timer = setInterval(() => this.tick(), opts.stepMs ?? STEP_MS);
+    this.timer.unref();
   }
 
   private log(line: string): void {
     (this.opts.log ?? console.log)(`[ai ${this.room.code}] ${line}`);
   }
 
-  /** Only what this side could notice: its own body, and things announced to both. */
-  private notice(events: GameEvent[]): void {
-    let news = false;
-    for (const e of events) {
-      if ('side' in e && e.side !== this.side) continue;
-      if (e.type === 'step' || e.type === 'flip') continue;
-      const text =
-        e.type === 'bump'
-          ? 'you bumped into something'
-          : e.type === 'solve'
-            ? `face ${e.face} was solved`
-            : e.type === 'win'
-              ? 'you both escaped: the game is won'
-              : e.type === 'strike'
-                ? 'you got a strike'
-                : e.type === 'puzzle'
-                  ? `something happened: ${e.name}`
-                  : e.type === 'pickup'
-                    ? 'you picked something up'
-                    : e.type === 'drop'
-                      ? 'you put something down'
-                      : e.type === 'place'
-                        ? 'you placed the item on a target'
-                        : e.type;
-      this.events.push(text);
-      if (e.type !== 'bump') news = true;
+  /**
+   * May Gemini be asked right now, for this event? One call at a time and per 6 s in this
+   * room, then the caps of the whole server. A yes is counted as a call: ask at once.
+   */
+  private may(reason: GeminiReason, now: number): boolean {
+    if (!this.advisor || this.thinking || now < this.nextThinkAt) return false;
+    if (this.opts.budget && this.opts.budget.gemini(this.room.code, reason) !== null) {
+      this.stats.refused++;
+      return false;
     }
-    this.events = this.events.slice(-EVENTS_KEPT);
-    if (news) this.wake();
+    return true;
+  }
+
+  /** Something happened: the human is not stuck. */
+  private stir(now: number): void {
+    this.quietSince = now;
+    this.stuckAsked = false;
   }
 
   /**
-   * Think as soon as the rate limit allows. At most one wake-up is ever pending: more
-   * triggers in the meantime are folded into it, never queued. Until then the body keeps
-   * doing its current action.
+   * One decision and at most one step. Never throws: this runs in a timer, where a throw
+   * would be an uncaught exception that ends the process and every room on the server.
    */
-  private wake(): void {
-    this.stale = true;
-    this.schedule();
+  private tick(): void {
+    if (this.stopped) return;
+    try {
+      this.act();
+    } catch (e) {
+      this.fault('step', e);
+    }
   }
 
-  /** Look again when the rate limit allows, without claiming that anything changed. */
-  private schedule(): void {
-    if (this.wakeTimer || this.stopped) return;
-    const wait = Math.max(0, this.nextThinkAt - Date.now());
-    this.wakeTimer = setTimeout(() => {
-      this.wakeTimer = null;
-      this.guard('think', () => this.maybeThink());
-    }, wait + 20);
-    this.wakeTimer.unref();
+  /** A throw costs this AI what it was doing. An AI that keeps throwing is stopped. */
+  private fault(what: string, e: unknown): void {
+    this.log(`error in ${what}: ${(e instanceof Error ? (e.stack ?? e.message) : String(e)).slice(0, 600)}`);
+    if (++this.faults >= MAX_FAULTS) this.stop();
   }
 
-  private step(): void {
-    if (this.stopped || this.room.state.wonAt !== null) return;
-    const next = this.queue.shift();
-    if (!next) return;
-    const from = this.room.state.players[this.side].pose;
-    if (next !== 'interact') {
-      // The leash, checked again at every edge: the partner may have moved since the plan.
-      const to = stepPose(from, next[0], next[1]).pose.face;
-      if (to !== from.face && !leashAllows(this.look(), this.memory, to)) {
-        this.queue = [];
-        return this.finish(`stopped at the edge: face ${to} is more than one face away from your partner`);
+  /** Ask Gemini without waiting for it. A throw before the call is even made must not become an unhandled rejection. */
+  private consult(ask: Ask, now: number): void {
+    this.ask(ask, now).catch((e: unknown) => {
+      this.thinking = false;
+      this.fault('think', e);
+      if (!this.stopped) this.scripted(ask);
+    });
+  }
+
+  private act(): void {
+    const { room, side } = this;
+    const human: Side = side === 'out' ? 'in' : 'out';
+    const now = Date.now();
+    if (!room.isConnected(human)) return this.stir(now); // nobody to play with: no decisions, no calls
+    if (this.mindOf !== room.state) {
+      // A new game in the same room: forget the old cube.
+      this.mindOf = room.state;
+      this.mind = newMind();
+      this.strikes = room.state.strikes;
+      this.solved = room.state.solved.length;
+      this.stir(now);
+      this.opts.budget?.newGame(room.code);
+    }
+
+    // 1. Listen. Plain protocol words go straight to the script; anything else is for Gemini,
+    // if it may be asked right now. Every line reaches the script, with its raw text (a
+    // script reads digits and colours from Heard.text): nothing waits for a later call, and
+    // only a line nobody could read gets "I did not get that".
+    for (const m of room.chat) {
+      if (m.id <= this.lastChatId) continue;
+      this.lastChatId = m.id;
+      if (m.from === side) continue;
+      this.stir(now);
+      const read = parseHuman(m.text);
+      if (read.plain) this.heard.push(read);
+      else if (this.may('chat', now)) this.consult({ kind: 'chat', text: m.text, read }, now);
+      else {
+        this.heard.push(read);
+        if (!read.tokens.length) this.huh(now);
       }
     }
-    const events = next === 'interact' ? this.room.interact(this.side) : this.room.move(this.side, next[0], next[1]);
-    if (events.some((e) => e.type === 'bump')) {
-      this.queue = [];
-      this.finish('blocked: you bumped into something and stopped');
-    } else if (events.some((e) => e.type === 'flip') && leashBroken(this.look())) {
-      // Walked out of earshot (the partner was not where the voice suggested): come straight back.
-      const back = planAction(this.room.state, this.side, { type: 'go_face', face: from.face });
-      this.queue = 'steps' in back ? back.steps : [];
-      this.doing = `${this.doing ?? 'action'} stopped: you walked out of earshot of your partner. Turning back`;
-      if (this.queue.length === 0) this.finish('could not');
-    } else if (this.queue.length === 0) this.finish('done');
+
+    // 2. Decide, from this side's own view only.
+    const d = decide(this.mind, observe(room.state, side), this.heard.splice(0), now, this.opts.scripts);
+    this.last = d;
+
+    // 3. Talk. Lines are said as written, now; only "solved" and "win" may be reworded by Gemini.
+    for (const s of d.say) {
+      const text = lineText(this.persona, s.key, s.args);
+      if (s.flavor && REWORDED.has(s.key) && this.may('solved', now)) this.consult({ kind: 'line', reason: 'solved', line: text, key: s.key }, now);
+      else this.queue(text, true, s);
+    }
+    // A question that was answered while it waited its turn is not asked after the answer.
+    if (d.cancel.length) this.outbox = this.outbox.filter((l) => !l.line || !d.cancel.includes(l.line.key));
+    // The two events the script has no line of its own for: a strike, and a quiet minute.
+    if (room.state.solved.length !== this.solved) {
+      this.solved = room.state.solved.length;
+      this.stir(now);
+    }
+    if (room.state.strikes !== this.strikes) {
+      const more = room.state.strikes > this.strikes;
+      this.strikes = room.state.strikes;
+      this.stir(now);
+      // A puzzle script that speaks on the strike says what went wrong and what to do: its
+      // line stands, and the generic one (and its Gemini call) is dropped.
+      const own = (this.opts.scripts ?? PUZZLE_SCRIPTS).flatMap((s) => s.lines);
+      if (more && !d.say.some((s) => own.includes(s.key))) this.event('strike', now);
+    }
+    if (room.state.wonAt !== null) this.stir(now);
+    else if (!this.stuckAsked && now - this.quietSince >= STUCK_MS) {
+      this.stuckAsked = true;
+      this.event('stuck', now);
+    }
+    this.flush();
+
+    // 4. Walk: the script's step, and nothing else. Gemini has no say in it.
+    if (room.state.wonAt !== null || !d.action) return;
+    const step = nextStep(room.state, side, d);
+    if (!step) return;
+    if (step === 'interact') room.interact(side);
+    else room.move(side, step[0], step[1]);
   }
 
-  private finish(result: string): void {
-    this.lastResult = `${this.doing ?? 'action'}: ${result}`;
-    this.doing = null;
-    this.wake();
+  /** A strike or a quiet minute: Gemini's line if it may be asked, else the script's. */
+  private event(reason: 'strike' | 'stuck', now: number): void {
+    const ask: Ask = { kind: 'line', reason, line: eventLine(this.persona, reason), key: `event.${reason}` };
+    if (this.may(reason, now)) this.consult(ask, now);
+    else this.scripted(ask);
   }
 
-  private async maybeThink(): Promise<void> {
-    if (this.stopped || this.thinking || this.room.state.wonAt !== null) return;
-    if (!this.room.isConnected(this.side === 'out' ? 'in' : 'out')) return; // nobody to play with
-    if (Date.now() < this.nextThinkAt) return this.schedule();
-    const observation = this.look();
-    // Nothing new to react to: do not spend a call. Its own lines are not news, or it
-    // would keep answering itself while the human is quiet.
-    const seen = JSON.stringify(observation) + (this.room.chat.filter((m) => m.from !== this.side).at(-1)?.id ?? 0);
-    if (!this.stale && seen === this.lastSeen) return;
-    this.lastSeen = seen;
-    this.stale = false;
+  private queue(text: string, scripted: boolean, line?: Say): void {
+    if (this.outbox.some((l) => l.text === text)) return;
+    this.outbox.push(line ? { text, scripted, line, at: Date.now() } : { text, scripted, at: Date.now() });
+    // Bounded: the oldest small talk gives way. Puzzle lines are few and each is said once.
+    while (this.outbox.length > OUTBOX_MAX) {
+      const i = this.outbox.findIndex((l) => !essential(l));
+      if (i < 0) break;
+      this.outbox.splice(i, 1);
+    }
+  }
 
+  /** Say the next waiting line, one at a time, a beat apart. The rest goes on a later tick. */
+  private flush(): void {
+    const now = Date.now();
+    if (now - this.lastSaidAt < this.holdMs) return;
+    // small talk that waited too long behind other lines is stale: skip it
+    while (this.outbox[0] && !essential(this.outbox[0]) && now - this.outbox[0].at > STALE_MS) this.outbox.shift();
+    const line = this.outbox[0];
+    if (!line) return;
+    const msg = this.room.say(this.side, line.text, line.line?.key);
+    if (!msg) return; // the chat rate limit: try again next tick
+    this.lastSaidAt = now;
+    this.holdMs = lineHoldMs(msg.text);
+    this.outbox.shift();
+    if (line.scripted) this.stats.scriptedLines++;
+    else this.stats.modelLines++;
+    this.opts.onSay?.(msg, line.line ? { scripted: line.scripted, line: line.line } : { scripted: line.scripted });
+  }
+
+  private huh(now: number): void {
+    if (now - this.lastHuhAt < HUH_EVERY_MS) return;
+    this.lastHuhAt = now;
+    this.queue(lineText(this.persona, 'huh'), true, { key: 'huh' });
+  }
+
+  /** The script's own answer to a turn Gemini did not take. */
+  private scripted(ask: Ask): void {
+    if (ask.kind === 'line') return this.queue(ask.line, true, { key: ask.key });
+    this.heard.push(ask.read);
+    if (!ask.read.tokens.length) this.huh(Date.now());
+  }
+
+  /** One Gemini call. The body keeps moving meanwhile; on any failure the script answers instead. */
+  private async ask(ask: Ask, now: number): Promise<void> {
+    const advisor = this.advisor!;
     this.thinking = true;
-    this.nextThinkAt = Date.now() + this.minThinkMs;
+    this.nextThinkAt = now + this.minThinkMs;
+    this.calls++;
     this.room.setTyping(this.side, true);
-    const goal = chooseGoal(observation, this.memory);
-    this.hint = this.hintDue ? idleHint(goal) : null;
+    const reason = reasonOf(ask);
+    const budget = this.opts.budget;
     const turn = turnPrompt({
       side: this.side,
-      observation,
-      recentEvents: this.events,
+      event: reason,
+      observation: observe(this.room.state, this.side),
+      planner: this.last?.status ?? 'starting',
+      scriptLine: ask.kind === 'line' ? ask.line : null,
+      partnerSaid: ask.kind === 'chat' ? ask.text : null,
+      partnerSays: humanSays(observe(this.room.state, this.side).puzzleId, this.side),
       chat: this.room.chat,
-      lastActionResult: this.lastResult,
-      busy: this.doing,
-      goal,
-      partnerIdle: this.hintDue,
     });
-    this.hintDue = false;
-    this.events = [];
-    this.abort = new AbortController();
-    const timeout = setTimeout(() => this.abort?.abort(), this.timeoutMs);
+    const abort = (this.abort = new AbortController());
+    let timedOut = false;
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      abort.abort();
+    }, this.timeoutMs);
     try {
-      this.calls++;
-      const reply = await Promise.race([
-        this.brain.think(turn, this.abort.signal),
-        new Promise<never>((_, no) => this.abort!.signal.addEventListener('abort', () => no(new Error('timed out')))),
-      ]);
+      const reply = await Promise.race([advisor.think(turn, abort.signal), new Promise<never>((_, no) => abort.signal.addEventListener('abort', () => no(new Error('timed out'))))]);
+      const took = Date.now() - now;
       if (reply.tokens) {
         this.tokens.input += reply.tokens.input;
         this.tokens.output += reply.tokens.output;
-        this.log(`tokens in=${reply.tokens.input} out=${reply.tokens.output} (total in=${this.tokens.input} out=${this.tokens.output}, calls=${this.calls})`);
       }
+      budget?.geminiDone(this.room.code, reason, reply.tokens);
       if (this.stopped) return;
       const parsed = parseReply(reply.text);
       if (!parsed) {
-        this.log(`unusable reply: ${reply.text.slice(0, 120)}`);
-        await this.fallback(turn);
-      } else {
-        this.failures = 0;
-        this.act(parsed);
+        this.stats.errors++;
+        this.log(`gemini: unusable reply after ${took} ms, the script answers: ${reply.text.slice(0, 120)}`);
+        return this.scripted(ask);
       }
+      this.failures = 0;
+      this.stats.answered++;
+      this.log(`gemini answered in ${took} ms; tokens in=${reply.tokens?.input ?? 0} out=${reply.tokens?.output ?? 0} (total in=${this.tokens.input} out=${this.tokens.output}, calls=${this.calls})`);
+      this.take(ask, parsed);
     } catch (e) {
-      // 429, 503, network, timeout: back off, and let the scripted partner take this turn.
+      // Too slow, 429, 503, network: back off, and the script answers this turn. No retry,
+      // no other model. A 429 also stops every room's calls for ten minutes (budget.ts).
+      budget?.geminiDone(this.room.code, reason, undefined, timedOut ? 'timeout' : isQuotaError(e) ? '429' : 'failed');
+      if (!timedOut && isQuotaError(e)) budget?.geminiQuota(this.room.code);
       this.failures++;
       const backoff = Math.min(BACKOFF_MAX_MS, (this.opts.backoffMs ?? BACKOFF_MS) * 2 ** (this.failures - 1));
       this.nextThinkAt = Date.now() + Math.max(this.minThinkMs, backoff);
-      this.log(`gemini error: ${(e instanceof Error ? e.message : String(e)).slice(0, 200)} (backing off ${Math.round(backoff / 1000)}s)`);
-      if (!this.stopped) await this.fallback(turn);
+      if (timedOut) this.stats.timeouts++;
+      else this.stats.errors++;
+      const why = timedOut ? `no answer after ${this.timeoutMs} ms` : `error: ${(e instanceof Error ? e.message : String(e)).slice(0, 200)}`;
+      this.log(`gemini ${why}; the script answers, next call in ${Math.round(Math.max(this.minThinkMs, backoff) / 1000)}s`);
+      if (!this.stopped) this.scripted(ask);
     } finally {
       clearTimeout(timeout);
       this.thinking = false;
-      if (!this.stopped) this.room.setTyping(this.side, false);
-      if (this.stale || this.hintDue) this.schedule(); // something happened while it was thinking
-    }
-  }
-
-  private async fallback(turn: string): Promise<void> {
-    this.takeHint(); // the human may have gone quiet while the failed call was out
-    if (this.opts.fallback) {
-      try {
-        const parsed = parseReply((await this.opts.fallback.think(turn, new AbortController().signal)).text);
-        if (parsed && !this.stopped) return this.act(this.hint ? { ...parsed, say: this.hint } : parsed);
-      } catch {
-        // fall through to the plain line
+      if (!this.stopped) {
+        this.room.setTyping(this.side, false);
+        this.flush();
       }
     }
-    if (this.stopped) return;
-    if (this.hint) return this.speak(this.hint);
-    if (Date.now() - this.lastFallbackAt < FALLBACK_EVERY_MS) return;
-    this.lastFallbackAt = Date.now();
-    this.speak(FALLBACK_LINE);
   }
 
-  private speak(text: string): void {
-    this.hint = null;
-    const msg = this.room.say(this.side, text);
-    if (msg) this.opts.onSay?.(msg);
-  }
-
-  private act(reply: ParsedReply): void {
-    // A brain that stays quiet on an idle turn still gets the hint said for it.
-    const say = reply.say ?? this.hint;
-    if (say) this.speak(say);
-    if (!reply.action) return;
-    const observation = this.look();
-    const plan = planAction(this.room.state, this.side, reply.action, undefined, (face) => leashAllows(observation, this.memory, face));
-    const label = JSON.stringify(reply.action);
-    if ('error' in plan) {
-      this.queue = [];
-      this.doing = null;
-      this.lastResult = `${label}: could not do it, ${plan.error}`;
-      this.wake();
-      return;
-    }
-    this.queue = plan.steps;
-    this.doing = plan.steps.length ? label : null;
-    if (plan.steps.length === 0) this.lastResult = `${label}: done`;
+  /** Use a model reply: its line and what it heard. Nothing in a reply can move the body or press anything. */
+  private take(ask: Ask, reply: ParsedReply): void {
+    if (ask.kind === 'line') return this.queue(reply.say ?? ask.line, !reply.say);
+    const heard = reply.heard ? parseHuman(reply.heard) : null;
+    // The model read no protocol word into it: only keep what cannot be small talk (a sign, a face).
+    const sure = ask.read.tokens.filter((t) => t.t === 'sign' || t.t === 'face');
+    // The script gets the line as typed, with the tokens the model (or nobody) read into it.
+    this.heard.push({ text: ask.text, tokens: heard?.tokens.length ? heard.tokens : sure, plain: false });
+    if (reply.say) this.queue(reply.say, false);
+    else if (!heard?.tokens.length && !sure.length) this.huh(Date.now());
   }
 
   stop(): void {
     if (this.stopped) return;
     this.stopped = true;
-    clearInterval(this.stepTimer);
-    clearInterval(this.thinkTimer);
-    if (this.wakeTimer) clearTimeout(this.wakeTimer);
-    if (this.idleTimer) clearTimeout(this.idleTimer);
+    clearInterval(this.timer);
     this.abort?.abort();
     this.unlisten();
-    this.log(`stopped after ${this.calls} calls, tokens in=${this.tokens.input} out=${this.tokens.output}`);
+    this.opts.budget?.endRoom(this.room.code);
+    const s = this.stats;
+    this.log(
+      `stopped: gemini calls=${this.calls} answered=${s.answered} timeouts=${s.timeouts} errors=${s.errors}, tokens in=${this.tokens.input} out=${this.tokens.output}; lines scripted=${s.scriptedLines} model=${s.modelLines}; calls refused by the budget=${s.refused}`,
+    );
   }
 }

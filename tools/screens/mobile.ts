@@ -595,7 +595,7 @@ async function extra(browser: Browser): Promise<void> {
 // one phone by default; name the others (pixel, ipad, extra) to run them too
 const only = process.argv.length > 2 ? process.argv.slice(2) : ['iphone'];
 // the microphone is a fake one, and its permission prompt is answered yes
-const browser = await chromium.launch({ args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] });
+const browser = await chromium.launch({ args: ['--mute-audio', '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] });
 try {
   for (const dev of DEVICES) if (!only.length || only.includes(dev.id)) await play(browser, dev);
   if (!only.length || only.includes('extra')) await extra(browser);
