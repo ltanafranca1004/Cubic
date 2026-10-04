@@ -272,7 +272,7 @@ ${ICONS.map((name, i) => `.cu-ico.${name} { background-position: -${i * 16}u 0; 
 .cu-bubble.under::after { bottom: auto; top: -6u; }
 
 /* ---------- captions and "Partner speaking" ---------- */
-.cu-subs { position: absolute; left: 50%; bottom: 6u; transform: translateX(-50%); z-index: 8; display: flex; flex-direction: column; align-items: center; gap: 2u; pointer-events: none; max-width: 90%; }
+.cu-subs { position: absolute; left: 50%; bottom: max(6u, calc(var(--subs-lift, 0px) + 2u)); transform: translateX(-50%); z-index: 8; display: flex; flex-direction: column; align-items: center; gap: 2u; pointer-events: none; max-width: 90%; }
 .cu-caption { ${nine('ui/tag.png', 4)} padding: 1u 5u 3u; color: ${ROLE.paper}; text-transform: none; text-align: center; max-width: 340u; }
 .cu[data-side="in"] .cu-caption { outline: 1u solid ${ROLE.dimOnDark}; }
 .cu-caption b { font-weight: normal; text-transform: uppercase; color: ${ROLE.in.base}; }
