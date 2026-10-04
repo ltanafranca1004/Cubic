@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { EASE, ROLE, TIME } from '../style/tokens';
 import { Sky } from './clouds';
-import { MenuScene, type SceneData } from './flow';
+import { BLOCKED_TEXT, MenuScene, type SceneData } from './flow';
 import { menuAction } from '../input/keymap';
 import { Button, seeded, textCentred, type Text } from './kit';
 
@@ -53,8 +53,9 @@ export class StartScene extends MenuScene {
   }
 
   protected sync(): void {
-    // the server may still be waking (free hosting): say so, but Play always works
-    const msg = this.ui.online ? '' : 'WAKING THE SERVER...';
+    // the server may still be waking (free hosting): say so, but Play always works.
+    // A server that is up and refuses this site is a config mistake, and says so.
+    const msg = this.ui.online ? '' : this.ui.blocked ? BLOCKED_TEXT : 'WAKING THE SERVER...';
     if (this.status.text !== msg) {
       this.status.setText(msg);
       this.status.x = Math.round(this.W / 2 - this.status.width / 2);

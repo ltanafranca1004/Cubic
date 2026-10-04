@@ -113,6 +113,8 @@ export interface UIState {
   screen: 'lobby' | 'game';
   /** Socket connection to the server. */
   online: boolean;
+  /** Not online because the server refuses this site (its CLIENT_ORIGIN): not a cold start. */
+  blocked?: boolean;
   status: LobbyStatus;
   error: string | null;
   roomCode: string | null;

@@ -33,6 +33,8 @@ interface Btn {
   height: number;
 }
 interface Cubic {
+  online: boolean;
+  blocked: boolean;
   code: string | null;
   role: string | null;
   error: string | null;
@@ -255,6 +257,35 @@ async function coldLoad(browser: Browser): Promise<void> {
   await expect(tag, 'the other three tracks are fetched after the first key press', async () => music().length === 3, 20_000);
   if (new Set(music().map((f) => f.split('.')[1])).size !== 1) fail(`${tag}: the tracks were fetched in more than one format: [${music().join(', ')}]`);
   await context.close();
+}
+
+/**
+ * The server is up but refuses this site (a wrong CLIENT_ORIGIN on the server): /health
+ * answers "originAllowed: false" and every socket handshake fails. The menus must say so,
+ * not "waking the server", and must connect by themselves once it is put right.
+ */
+async function blockedOrigin(browser: Browser): Promise<void> {
+  const tag = 'blocked origin';
+  console.log(`\n${tag}`);
+  const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+  await page.route('**/health', (route) => route.fulfill({ contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ ok: true, rooms: 0, originAllowed: false }) }));
+  await page.route('**/socket.io/**', (route) => route.abort());
+  await page.routeWebSocket(/socket\.io/, (ws) => ws.close());
+  await page.goto(`${BASE}/?renderer=canvas`);
+  await expect(tag, 'the client knows it is blocked, not waiting for a cold start', () => page.evaluate(() => !window.__cubic.online && window.__cubic.blocked), 10_000);
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(2200);
+  const line = await statusLine(page);
+  if (!/CLIENT_ORIGIN/.test(line) || /WAKING/.test(line)) fail(`${tag}: the mode screen says "${line}"`);
+  else console.log(`   ok: the mode screen says "${line}"`);
+  if ((await buttons(page)).some((b) => b.label === 'CREATE LOBBY' && b.enabled)) fail(`${tag}: Create Lobby is enabled with no server`);
+
+  // put right: the socket's own retries get through, and the message goes
+  await page.unrouteAll({ behavior: 'ignoreErrors' });
+  await page.routeWebSocket(/socket\.io/, (ws) => void ws.connectToServer());
+  await expect(tag, 'it connects by itself once the server allows the site', () => page.evaluate(() => window.__cubic.online && !window.__cubic.blocked), 20_000);
+  await expect(tag, 'the message is gone and Create Lobby works', async () => (await statusLine(page)) === '' && (await buttons(page)).some((b) => b.label === 'CREATE LOBBY' && b.enabled));
+  await page.close();
 }
 
 /**
@@ -564,8 +595,12 @@ async function run(browser: Browser, size: { width: number; height: number }, re
 const browser = await chromium.launch();
 try {
   await coldLoad(browser);
+  await blockedOrigin(browser);
+  // SIZE=1920x1080 and RENDERER=webgl (or canvas) cut the matrix down to one size or one renderer
   for (const size of [{ width: 1920, height: 1080 }, { width: 1280, height: 720 }]) {
+    if (process.env.SIZE && process.env.SIZE !== `${size.width}x${size.height}`) continue;
     for (const renderer of ['webgl', 'canvas'] as const) {
+      if (process.env.RENDERER && process.env.RENDERER !== renderer) continue;
       await resizeMidTransition(browser, size, renderer).catch((e: Error) => fail(`${size.width}x${size.height} ${renderer} resize: stopped early: ${e.message}`));
       if (process.argv[2] !== 'resize') await run(browser, size, renderer);
     }

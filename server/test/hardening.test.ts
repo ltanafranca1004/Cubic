@@ -214,3 +214,30 @@ test('joining the room you are already in keeps it alive', async () => {
   const b = new Client();
   assert.equal((await b.join(first.code)).role, 'guest');
 });
+
+test('GET /health tells any origin whether it is allowed to connect', async () => {
+  const strict = createApp({ origins: ['https://cubic.example'], allowLocalhost: false });
+  const base = `http://localhost:${await strict.listen(0)}`;
+  try {
+    const ask = async (origin?: string) => {
+      const res = await fetch(`${base}/health`, origin ? { headers: { origin } } : {});
+      return { cors: res.headers.get('access-control-allow-origin'), body: (await res.json()) as { ok: boolean; originAllowed: boolean } };
+    };
+    const good = await ask('https://cubic.example');
+    assert.deepEqual([good.cors, good.body.ok, good.body.originAllowed], ['*', true, true]);
+    // the wrong origin still gets a readable answer: that is how its page learns it is blocked
+    const wrong = await ask('https://someone-else.example');
+    assert.deepEqual([wrong.cors, wrong.body.ok, wrong.body.originAllowed], ['*', true, false]);
+    assert.equal((await ask('http://localhost:5173')).body.originAllowed, false, 'localhost is not allowed in production');
+    // and its socket is refused, as before
+    const sock = io(base, { transports: ['websocket'], forceNew: true, reconnection: false, extraHeaders: { origin: 'https://someone-else.example' } });
+    socks.push(sock);
+    const refused = await new Promise<boolean>((res) => {
+      sock.on('connect', () => res(false));
+      sock.on('connect_error', () => res(true));
+    });
+    assert.ok(refused, 'the socket of a wrong origin is refused');
+  } finally {
+    await strict.close();
+  }
+});

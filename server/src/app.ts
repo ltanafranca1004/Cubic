@@ -111,8 +111,11 @@ export function createApp(opts: AppOptions = {}): App {
 
   const http = createServer((req, res) => {
     if (req.url === '/health') {
-      res.writeHead(200, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ ok: true, rooms: rooms.size }));
+      // Readable from any origin, and it says whether the asking origin may connect: a
+      // client that the socket refuses can then tell a wrong CLIENT_ORIGIN (we are up, and
+      // it is not allowed) from a server that is still waking up (no answer at all).
+      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store', 'access-control-allow-origin': '*' });
+      res.end(JSON.stringify({ ok: true, rooms: rooms.size, originAllowed: originAllowed(req.headers.origin) }));
       return;
     }
     if (req.url === '/ice') {

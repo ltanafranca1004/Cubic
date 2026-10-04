@@ -165,6 +165,13 @@ export class Flow {
   }
 }
 
+/**
+ * Shown on the title and the mode screen instead of "waking the server" when the server
+ * answers but refuses this site: its CLIENT_ORIGIN does not list the address the game is
+ * served from. The socket keeps retrying, so it clears by itself once that is fixed.
+ */
+export const BLOCKED_TEXT = 'THE SERVER REFUSES THIS SITE: CHECK CLIENT_ORIGIN. RETRYING...';
+
 export function splitRgb(color: number): { r: number; g: number; b: number } {
   return { r: (color >> 16) & 255, g: (color >> 8) & 255, b: color & 255 };
 }

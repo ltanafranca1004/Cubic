@@ -3,7 +3,7 @@ import { ENABLE_AI } from '../config';
 import { menuAction, pasteCode, stepFocus, typeCode } from '../input/keymap';
 import { overlayOwnsInput } from '../input/overlay';
 import { EASE, ROLE, TIME, hex } from '../style/tokens';
-import { MenuScene, type SceneData } from './flow';
+import { BLOCKED_TEXT, MenuScene, type SceneData } from './flow';
 import { Button, centre, paint, shake, slice, text, textCentred, type Text } from './kit';
 
 const CODE_LEN = 4;
@@ -116,8 +116,8 @@ export class ModeScene extends MenuScene {
     this.aiButtons.forEach((b) => b.setEnabled(!busy && !this.popup && s.aiAvailable));
     // while we wait for a room, Back would only bounce straight into it
     this.back.setEnabled(s.status !== 'connecting' && !this.popup);
-    const msg = !s.online ? 'WAKING THE SERVER... THIS CAN TAKE A MINUTE.' : s.status === 'connecting' ? 'CONNECTING...' : error ? error.toUpperCase() : ENABLE_AI && !s.aiAvailable ? 'THE AI PARTNER IS NOT AVAILABLE ON THIS SERVER.' : '';
-    paint(this.status.setText(msg), error && s.online ? ROLE.danger : ROLE.ink);
+    const msg = !s.online ? (s.blocked ? BLOCKED_TEXT : 'WAKING THE SERVER... THIS CAN TAKE A MINUTE.') : s.status === 'connecting' ? 'CONNECTING...' : error ? error.toUpperCase() : ENABLE_AI && !s.aiAvailable ? 'THE AI PARTNER IS NOT AVAILABLE ON THIS SERVER.' : '';
+    paint(this.status.setText(msg), (error && s.online) || (s.blocked && !s.online) ? ROLE.danger : ROLE.ink);
     // centred under the panel, but never off the left of the screen
     this.status.x = Math.max(6, Math.round(this.statusX - this.status.width / 2));
 

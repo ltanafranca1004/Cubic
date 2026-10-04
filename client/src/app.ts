@@ -172,6 +172,7 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
     return {
       screen: inGame ? 'game' : 'lobby',
       online: net.online,
+      blocked: net.blocked,
       status,
       error: net.error,
       roomCode: net.code,
