@@ -53,6 +53,8 @@ export const DEFAULT_SETTINGS: Readonly<Settings> = {
 /** Where the voice settings go: the existing Voice class, through the UI actions. */
 export interface VoiceSink {
   setVolume(v: number): void;
+  /** The AI partner's lines: never switched off by "Voice chat". */
+  setAiVolume?(v: number): void;
   setMuted(muted: boolean): void;
   /** Open mic, or push-to-talk. */
   setMode?(mode: Settings['micMode']): void;
@@ -126,6 +128,7 @@ function apply(keys: readonly (keyof Settings)[]): void {
   if (keys.includes('sfx')) audio.setSfx(current.sfx);
   if (voice && keys.some((k) => k === 'voiceOn' || k === 'voiceVolume' || k === 'micMuted')) {
     voice.setVolume(current.voiceOn ? current.voiceVolume : 0);
+    voice.setAiVolume?.(current.voiceVolume); // "Voice chat" is player to player only
     voice.setMuted(!current.voiceOn || current.micMuted);
   }
   if (voice && keys.includes('micMode')) voice.setMode?.(current.micMode);

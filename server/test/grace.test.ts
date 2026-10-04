@@ -430,3 +430,16 @@ test('sockets: both tabs close: the room is kept for the window, then deleted', 
     await close();
   }
 });
+
+test('a host alone in the lobby is held for seatHoldMs: a phone leaves the page to send the code', () => {
+  fake();
+  const rooms = new Rooms();
+  const room = rooms.create('friend');
+  const host = room.join();
+  room.drop(host.id);
+  pass(LIMITS.lobbyHoldMs);
+  assert.equal(rooms.get(room.code), room); // the short hold is for a lobby someone else waits in
+  assert.equal(room.idOfToken(host.token), host.id);
+  pass(LIMITS.seatHoldMs - LIMITS.lobbyHoldMs);
+  assert.equal(rooms.get(room.code), undefined);
+});
