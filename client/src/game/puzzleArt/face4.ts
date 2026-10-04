@@ -15,7 +15,7 @@ const PETALS: Record<string, readonly [string, string]> = {
 };
 const COLOURS = Object.keys(PETALS);
 
-/** A clay pot with soil in it. `asleep` is the grey pot that takes nothing yet. */
+/** A clay pot with soil in it. `asleep` is the grey pot (`locked`: the puzzle no longer shows it; it keeps its cell on the sheet). */
 function clay(rect: Rect, asleep: boolean): void {
   const [rim, body, shade] = asleep ? [C.silver, C.mauve, C.slate] : [C.sandDark, C.copper, C.rust];
   rect(2, 7, 12, 4, C.ink);
@@ -42,7 +42,7 @@ function flower(rect: Rect, colour: string): void {
   rect(7, 2, 2, 2, colour === 'yellow' ? C.rust : C.lemon);
 }
 
-/** An outside pot: `empty`, `locked` (asleep until face 6 is solved) or `bloom-<colour>`. */
+/** An outside pot: `empty`, or `bloom-<colour>` once its flower is planted (it stays). */
 function pot(rect: Rect, state: string): void {
   clay(rect, state === 'locked');
   if (state.startsWith('bloom-')) flower(rect, state.slice(6));

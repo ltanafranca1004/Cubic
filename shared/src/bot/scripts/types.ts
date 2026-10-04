@@ -21,7 +21,7 @@ import type { Cell } from './grid';
 export interface ScriptCtx<M> {
   /** What this side sees right now. */
   o: Observation;
-  /** The script's own memory. Mutate it. Starts as init() and is reset whenever the bot enters the face. */
+  /** The script's own memory. Mutate it. Starts as init() and is reset (init(previous)) whenever the bot enters the face. */
   mem: M;
   /** What the human said since the last decision, one entry per chat line, oldest first. */
   heard: readonly Heard[];
@@ -70,8 +70,12 @@ export interface PuzzleScript<M = unknown> {
   id: string;
   /** Every line key this script can say, each starting with "<id>.". The words live in server/src/ai/scripted.ts. */
   lines: readonly string[];
-  /** A fresh memory. JSON-serializable. */
-  init(): M;
+  /**
+   * A fresh memory. JSON-serializable. `prev` is the memory it replaces when the bot enters
+   * the face again: a script that works across the cube (an errand) copies over what it must
+   * not forget. Most scripts ignore it.
+   */
+  init(prev?: M): M;
   /**
    * Tiles on this face that no walk may enter while the puzzle is unsolved, from what this
    * side can see: tiles that cost a strike, keys that must not be pressed by walking. Deadly

@@ -43,6 +43,9 @@ export const LEGEND: Readonly<Record<string, { tile: TileKind } | { object: stri
   // A pot: a target that takes anything (the flower is made during the game, so it cannot
   // be named here); the puzzle hands back whatever is not the flower.
   p: { object: 'target' },
+  // A spot where a loose flower may lie at the start (outside, faces 1, 2, 3 and 5): the seed
+  // picks one per face. Never drawn and never seen: it only keeps the tile free of decor.
+  f: { object: 'flower-spot' },
 
   // ---------- face 5: sequence-laser ----------
   // A symbol tile (seven per side, same tiles; the i-th in map order is the i-th symbol).

@@ -205,6 +205,7 @@ export type BotAction =
   | { type: 'move'; dir: 'up' | 'down' | 'left' | 'right'; steps?: number }
   | { type: 'pick_up' }                          // the item on this tile
   | { type: 'drop' }                             // on a target it gets placed
+  | { type: 'place'; col: number; row: number }  // into a solid target (a pot): walk next to it, face it, E
   | { type: 'use'; col?: number; row?: number; object?: string; state?: string }
   | { type: 'wait' };
 

@@ -26,7 +26,7 @@ does, which map objects it uses and why nobody can get stuck in it.
 | 1 | `hiddenCode.ts` | `hidden-code` | reads the 3-digit number laid out in the grass (right only at compass drift 0) | types it on the floor keypad, ENTER | nothing | nothing |
 | 2 | `equationSafe.ts` | `equation-safe` | counts bushes, rocks and hopping birds (1 to 4 each) | types 3 x bushes x 2 x birds x rocks, ENTER | nothing | the battery (inside) |
 | 3 | `mirroredGlyph.ts` | `mirrored-glyph` | describes the symbol in the snow | flips tiles with E to copy it (mirrored); CLEAR in the corner | nothing | nothing |
-| 4 | `botanicalMirror.ts` | `botanical-mirror` | plants the flower in the pot the partner names | sees which of five pots holds that colour | face 6 (the flower) | the end of the chain |
+| 4 | `botanicalMirror.ts` | `botanical-mirror` | collects five flowers and plants each in the pot the partner names (next to the pot, facing it) | sees which of five pots holds each colour | face 6 (one of the five flowers) | the end of the chain |
 | 5 | `sequenceLaser.ts` | `sequence-laser` | calls the order seven symbols light up in; E on REPLAY | battery into the emitter, then E on the symbols in that order | face 2 (the battery) | the laser on face 6 |
 | 6 | `laserPath.ts` | `laser-path` | pushes two mirrors until the beam burns the crate, then calls the path it reveals | walks that path over the lava to the button, E | face 5 | the flower (outside) |
 

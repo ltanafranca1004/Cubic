@@ -4,10 +4,13 @@ import {
   applyInteract,
   applyMove,
   defaultEnv,
+  findPath,
+  isBlocked,
   needsTick,
   seedOf,
   objectsOn,
   pathTo,
+  stepPose,
   tick,
   type FaceId,
   type GameEnv,
@@ -47,6 +50,11 @@ export interface Solver {
   readonly events: GameEvent[];
   /** Walk `side` to a tile by the shortest legal path. Fails the test if there is none. */
   go(side: Side, target: TileRef): GameEvent[];
+  /**
+   * Walk `side` to a tile next to `target` (a tile nobody can stand on: a pot) and turn to
+   * face it, with a step into it (a bump). Then t.interact places what they carry in it.
+   */
+  face(side: Side, target: TileRef): GameEvent[];
   /** One step in `side`'s own screen space (dx, dy: one of them is -1 or 1). */
   move(side: Side, dx: number, dy: number): GameEvent[];
   /** The E key: drop / place the carried item, pick up the one on this tile, or use the tile. */
@@ -110,6 +118,24 @@ export function solver(state: GameState, env: GameEnv = defaultEnv, startAt = 10
       assert.deepEqual([p.face, p.x, p.y], [target.face, target.x, target.y], `${side} did not arrive at ${where}`);
       return out;
     },
+    face(side, target) {
+      const where = `face ${target.face} ${target.x},${target.y}`;
+      const MOVES = [[0, -1], [0, 1], [-1, 0], [1, 0]] as const;
+      /** The step from this pose that runs into the target, without leaving the face. */
+      const into = (p: GameState['players'][Side]['pose']) =>
+        MOVES.find(([dx, dy]) => {
+          const { pose, crossed } = stepPose(p, dx, dy);
+          return !crossed && pose.face === target.face && pose.x === target.x && pose.y === target.y;
+        });
+      const path = findPath(state, side, (p) => !!into(p), env);
+      assert.ok(path, `no way for ${side} to stand next to ${where}`);
+      const out: GameEvent[] = [];
+      for (const [dx, dy] of path) out.push(...t.move(side, dx, dy));
+      const bump = into(state.players[side].pose);
+      assert.ok(bump, `${side} did not arrive next to ${where}`);
+      out.push(...t.move(side, bump[0], bump[1]));
+      return out;
+    },
     find(side, face, type, name) {
       const o = objectsOn(env.world, side, face, type).find((x) => name === undefined || x.name === name);
       assert.ok(o, `no "${type}"${name === undefined ? '' : ` named "${name}"`} on ${side} face ${face}`);
@@ -146,6 +172,7 @@ export function puzzleCtx(state: GameState, env: GameEnv, puzzle: AnyPuzzle, now
     teleport: readOnly('teleport'),
     rand: (...keys) => mix(seedOf(state), ...keys),
     faceSolved: (face) => state.solved.includes(face),
+    blocked: (side, tile) => isBlocked(state, side, tile, env, now),
     spawnItem: readOnly('spawnItem'),
     giveItem: readOnly('giveItem'),
     removeItem: readOnly('removeItem'),
@@ -189,6 +216,8 @@ export function recordingEnv(base: GameEnv): { env: GameEnv; missing: Set<string
       face: p.face,
       init: (ctx) => p.init(spy(ctx)),
       isSolved: (s, ctx) => p.isSolved(s, spy(ctx)),
+      ...(p.onStart ? { onStart: (s, ctx) => p.onStart!(s, spy(ctx)) } : {}),
+      ...(p.devSolve ? { devSolve: (s, ctx) => p.devSolve!(s, spy(ctx)) } : {}),
       ...(p.isBlocked ? { isBlocked: (s, ctx, side, tile) => p.isBlocked!(s, spy(ctx), side, tile) } : {}),
       ...(p.onEnter ? { onEnter: (s, ctx, side, tile) => p.onEnter!(s, spy(ctx), side, tile) } : {}),
       ...(p.onLeave ? { onLeave: (s, ctx, side, tile) => p.onLeave!(s, spy(ctx), side, tile) } : {}),

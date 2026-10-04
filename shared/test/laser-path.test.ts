@@ -149,7 +149,7 @@ test('laser-path: the intended pushes burn the crate once; the flower appears on
   pushMirrors(t);
   t.wait(1000);
   assert.equal(names(t.events).filter((n) => n === 'burn').length, 1);
-  assert.equal(Object.values(t.state.items).filter((i) => i.kind.startsWith('flower')).length, 1);
+  assert.equal(Object.values(t.state.items).filter((i) => i.face === FACE && i.kind.startsWith('flower')).length, 1); // (four more lie on other faces: face 4's)
   assert.ok(!t.state.solved.includes(FACE), 'only the button solves the face');
   // the outside player can carry the flower off
   t.go('out', t.item(FLOWER_ID));

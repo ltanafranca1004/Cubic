@@ -26,8 +26,9 @@
 // Exit code 1 if any step fails. A failed step saves a picture of every player.
 //
 // The puzzle run also checks what is DRAWN, not only the state (section "what is DRAWN"):
-//   ITEM-RENDER   the battery (inside, after the safe) and the flower (outside, after the
-//                 crate) lie in GameState.items AND their sprite is on that player's canvas
+//   ITEM-RENDER   the battery (inside, after the safe), the flower of the crate and the
+//                 four flowers that lie about (outside) lie in GameState.items AND their
+//                 sprite is on that player's canvas
 //   CARRY-RENDER  the carried item's sprite is above the turtle's head, on the canvas
 //   LAVA-RENDER   face 6 inside: 99 hot lava tiles in the view AND each one mostly
 //                 lava-coloured on the canvas
@@ -290,35 +291,78 @@ const PUZZLE_SCRIPTS: PuzzleScript[] = [
       ],
     };
   })(),
-  // Face 4. Botanical Mirror.
-  {
-    id: 'botanical-mirror',
-    steps: [
-      {
-        // the flower face 6 left outside: fetch it, unless it is in hand already
-        who: 'out',
-        plan: (state) => {
-          const flower = Object.values(state.items).find((i) => i.side === 'out' && i.kind.startsWith('flower-'));
-          if (!flower) throw new Error('face 6 is solved but there is no flower outside');
-          return flower.carriedBy === 'out' ? [] : [{ who: 'out', goto: { item: flower.id } }, { who: 'out', keys: 'e' }];
-        },
+  // Face 4. Botanical Mirror. Five flowers (the crate's and the four that lie about from the
+  // start), five SOLID pots: each is planted from the tile next to its pot, facing it.
+  ((): PuzzleScript => {
+    const loose = (state: GameState) => Object.values(state.items).filter((i) => i.side === 'out' && i.kind.startsWith('flower-') && !i.placedOn);
+    const bloom = (state: GameState) => visibleObjects(state, 'out', 4).filter((o) => o.type === 'f4-pot' && !!o.state?.startsWith('bloom-')).length;
+    /** The key that steps from `pose` into the tile, without leaving the face (a bump when it is solid). */
+    const into = (pose: Pose, t: TileRef) => Object.entries(MOVE_OF).find(([, m]) => ((to) => !to.crossed && to.pose.face === t.face && to.pose.x === t.x && to.pose.y === t.y)(stepPose(pose, m[0], m[1])))?.[0];
+    /** Walk to a tile next to `t`. `turn`: then press towards it, so the player faces it (a pot cannot be stood on). */
+    const nextTo = (t: TileRef, turn: boolean): PuzzleStep => ({
+      who: 'out',
+      plan: (state) => {
+        const way = findPath(state, 'out', (p) => !!into(p, t));
+        if (!way) throw new Error(`no way for the outside player to stand next to face ${t.face} (${t.x},${t.y})`);
+        const there = structuredClone(state);
+        for (const m of way) applyMove(there, 'out', m[0], m[1], 0);
+        const { face, x, y } = there.players.out.pose;
+        const facing: PuzzleStep = { who: 'out', plan: (now) => [{ who: 'out', keys: into(now.players.out.pose, t) ?? '' }] };
+        return [{ who: 'out', goto: { tile: { face, x, y } } }, ...(turn ? [facing] : [])];
       },
-      { expect: 'the outside player carries the flower', check: (state) => state.players.out.carrying !== null && !!state.items[state.players.out.carrying]?.kind.startsWith('flower-') },
-      { who: 'out', drawn: { carried: 'flower' } },
-      {
-        // the inside player sees which pot holds that colour and names it; the outside player plants it there
-        who: 'in',
-        plan: (state) => {
-          const colour = state.items[state.players.out.carrying ?? '']?.kind.replace('flower-', '');
-          const pot = visibleObjects(state, 'in', 4).find((o) => o.type === 'f4-flowerpot' && o.state === colour);
-          if (!pot) throw new Error(`the inside player sees no ${colour} flower on face 4`);
-          return [{ who: 'out', goto: { tile: { face: 4, x: pot.x, y: pot.y } } }, { who: 'out', drawn: { carried: 'flower' } }, { who: 'out', keys: 'e' }];
+    });
+    let strikes = 0;
+    return {
+      id: 'botanical-mirror',
+      steps: [
+        { expect: 'five flowers are outside, none of them planted', check: (state) => loose(state).length === 5 && bloom(state) === 0 },
+        {
+          who: 'out',
+          plan: (state) => {
+            strikes = state.strikes;
+            // the one in hand first (if any), then one walk per flower
+            const flowers = loose(state).sort((a, b) => Number(b.carriedBy === 'out') - Number(a.carriedBy === 'out'));
+            return flowers.flatMap((flower, n): PuzzleStep[] => {
+              const colour = flower.kind.replace('flower-', '');
+              // the inside player sees which pot holds that colour and names it
+              const pots = visibleObjects(state, 'in', 4).filter((o) => o.type === 'f4-flowerpot');
+              const pot = pots.find((o) => o.state === colour);
+              const other = pots.find((o) => o.state !== colour);
+              if (!pot || !other) throw new Error(`the inside player sees no ${colour} flower on face 4`);
+              const tile = (o: { x: number; y: number }): TileRef => ({ face: 4, x: o.x, y: o.y });
+              const held = (state: GameState) => state.players.out.carrying === flower.id;
+              return [
+                // collect: look at it lying there from the tile beside it, then step on it and E
+                ...(flower.carriedBy === 'out' ? [] : ([nextTo({ face: flower.face, x: flower.x, y: flower.y }, false), { who: 'out', drawn: { lying: flower.id } }, { who: 'out', goto: { item: flower.id } }, { who: 'out', keys: 'e' }] satisfies PuzzleStep[])),
+                { expect: `the outside player carries the ${colour} flower`, check: held },
+                { who: 'out', drawn: { carried: flower.id } },
+                // one deliberate mistake, with the first flower: a strike, and the flower is back in the hands
+                ...(n === 0
+                  ? ([
+                      nextTo(tile(other), true),
+                      { who: 'out', keys: 'e' },
+                      { expect: 'the wrong pot: one strike, the flower is back in the hands, nothing is planted', check: (state) => state.strikes === strikes + 1 && held(state) && bloom(state) === 0 },
+                      { who: 'out', drawn: { carried: flower.id } },
+                      { who: 'out', shot: 'wrong-pot-flower-back-in-hands' },
+                    ] satisfies PuzzleStep[])
+                  : []),
+                // plant: next to the pot, facing it, E (every second one with Q, the drop key)
+                nextTo(tile(pot), true),
+                { who: 'out', drawn: { carried: flower.id } },
+                { who: 'out', keys: n % 2 ? 'q' : 'e' },
+                {
+                  expect: `the ${colour} flower is planted in its pot and stays (${n + 1} of ${flowers.length})`,
+                  check: (state) => state.players.out.carrying === null && state.items[flower.id]?.placedOn != null && state.items[flower.id]?.x === pot.x && state.items[flower.id]?.y === pot.y && bloom(state) === 5 - flowers.length + n + 1,
+                },
+                ...(n === 0 || n === flowers.length - 1 ? ([{ who: 'out', shot: n === 0 ? 'first-flower-planted-next-to-the-pot' : 'all-five-flowers-planted' }] satisfies PuzzleStep[]) : []),
+              ];
+            });
+          },
         },
-      },
-      { expect: 'the flower is planted and blooms', check: (state) => state.players.out.carrying === null && visibleObjects(state, 'out', 4).some((o) => o.type === 'f4-pot' && !!o.state?.startsWith('bloom-')) },
-      { who: 'out', shot: 'flower-planted-in-the-pot' },
-    ],
-  },
+        { expect: 'all five pots bloom, with one strike', check: (state) => bloom(state) === 5 && state.strikes === strikes + 1 },
+      ],
+    };
+  })(),
 ];
 
 // ---------- setup ----------
@@ -1463,7 +1507,8 @@ async function looked(what: string, look: (say: (text: string) => false) => Prom
  */
 async function seen(run: Run, page: Page, side: Side, what: Drawn, picture: (name: string, who: Side) => string): Promise<void> {
   const who = side === 'out' ? 'outside' : 'inside';
-  const find = (state: GameState, name: string) => Object.values(state.items).find((i) => i.id === name || i.kind.startsWith(name));
+  // by id first: "flower" is the crate's flower, not any of the five whose kind starts with it
+  const find = (state: GameState, name: string) => state.items[name] ?? Object.values(state.items).find((i) => i.kind.startsWith(name));
   if ('lying' in what) {
     await step(run, `ITEM-RENDER: the ${what.lying} lies in the state and is drawn on the ${who} player's canvas`, async () => {
       try {
