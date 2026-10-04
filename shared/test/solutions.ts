@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { visibleObjects } from '../src/index';
 import { readCode } from '../src/puzzles/hiddenCode';
-import type { SolutionScript, Solver } from './harness';
+import type { SolutionScript } from './harness';
 // face 4: botanical-mirror
 import { FLOWER_ID } from '../src/puzzles/chain';
 import { solveLaserPath, solveSequenceLaser } from './laser-solutions'; // faces 5 and 6
