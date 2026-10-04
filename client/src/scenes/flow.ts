@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { overlayOwnsInput } from '../input/overlay';
 import { C, TIME, hex } from '../style/tokens';
 import type { UIActions, UIState } from '../ui/hooks';
 import type { CubeBackdropScene } from './CubeBackdropScene';
@@ -191,7 +192,7 @@ export abstract class MenuScene extends Phaser.Scene {
   protected keys(fn: (e: KeyboardEvent) => void): void {
     const onKey = (e: KeyboardEvent) => {
       if (!this.scene.isActive() || e.ctrlKey || e.metaKey || e.altKey) return;
-      if (document.activeElement instanceof HTMLInputElement || document.querySelector('.cu-modal.on')) return;
+      if (overlayOwnsInput()) return;
       // Tab moved the focus to a DOM button (the settings gear): the key is that button's
       if (document.activeElement instanceof HTMLButtonElement) return;
       fn(e);

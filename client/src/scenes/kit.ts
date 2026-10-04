@@ -332,24 +332,37 @@ export class Button {
   }
 }
 
-/** Three quick swings left and right: "no". Returns to where it started. */
-export function shake(scene: Phaser.Scene, target: { x: number }, amount = 4): void {
-  const x = target.x;
-  scene.tweens.add({
-    targets: target,
-    x: { from: x - amount, to: x + amount },
-    duration: TIME.shake / 6,
-    yoyo: true,
-    repeat: 2,
-    ease: 'Sine.easeInOut',
-    onComplete: () => (target.x = x),
+/** The shake (x) or hop (y) playing on a target right now: one per target and axis. */
+const nudges = { x: new WeakMap<object, Phaser.Tweens.Tween>(), y: new WeakMap<object, Phaser.Tweens.Tween>() };
+
+/**
+ * Play a shake or a hop around the target's REST position, which the caller passes in. It
+ * is never read from the target: a second call while the first is still playing would
+ * read a mid-swing position, return to that, and so creep a little further every time.
+ * A nudge still playing on the same target is stopped first.
+ */
+function nudge<A extends 'x' | 'y'>(scene: Phaser.Scene, axis: A, target: Record<A, number>, base: number, config: Phaser.Types.Tweens.TweenBuilderConfig): void {
+  const running = nudges[axis];
+  running.get(target)?.stop();
+  target[axis] = base;
+  const tween = scene.tweens.add({
+    ...config,
+    onComplete: () => {
+      target[axis] = base;
+      if (running.get(target) === tween) running.delete(target);
+    },
   });
+  running.set(target, tween);
 }
 
-/** A small hop: "picked". */
-export function hop(scene: Phaser.Scene, target: { y: number }, height = 6): void {
-  const y = target.y;
-  scene.tweens.add({ targets: target, y: y - height, duration: TIME.quick, yoyo: true, ease: EASE.out, onComplete: () => (target.y = y) });
+/** Three quick swings left and right of `baseX`, the target's rest x: "no". Ends on `baseX`. */
+export function shake(scene: Phaser.Scene, target: { x: number }, baseX: number, amount = 4): void {
+  nudge(scene, 'x', target, baseX, { targets: target, x: { from: baseX - amount, to: baseX + amount }, duration: TIME.shake / 6, yoyo: true, repeat: 2, ease: 'Sine.easeInOut' });
+}
+
+/** A small hop up from `baseY`, the target's rest y: "picked". Ends on `baseY`. */
+export function hop(scene: Phaser.Scene, target: { y: number }, baseY: number, height = 6): void {
+  nudge(scene, 'y', target, baseY, { targets: target, y: { from: baseY, to: baseY - height }, duration: TIME.quick, yoyo: true, ease: EASE.out });
 }
 
 /** Deterministic random numbers, so clouds sit in the same place on every screen. */
