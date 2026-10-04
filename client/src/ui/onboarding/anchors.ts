@@ -4,7 +4,7 @@
 
 export const ANCHOR = {
   /** "This is the cube": the HUD's picture of the cube. */
-  cube: '.cu-net',
+  cube: '.cu-cube',
   /** The frame around the game canvas: the side card and the edge hint sit on it, the caption above it. */
   view: '#cu-view',
   /** The HUD's one-line key reminder: the controls hint covers it until it fades. */

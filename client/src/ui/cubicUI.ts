@@ -1,4 +1,4 @@
-import { FACE_SIZE, NO_SIGNALS, TILE_PX, type FaceId, type SignalView } from '@cubic/shared';
+import { FACE_SIZE, NO_SIGNALS, TILE_PX, type SignalView } from '@cubic/shared';
 import { cubeMap } from '../cube/api';
 import { createCubeHud } from '../cube/hud';
 import { mountGamepad } from '../input/gamepad';
@@ -8,7 +8,7 @@ import { createStage, type Stage } from '../scenes/stage';
 import { ITEM_DEFAULT_FRAME, ITEM_FRAMES, asset } from '../style/assets';
 import { uiScale } from '../style/scale';
 import { bindSettings, onSettings, setSetting, settings } from '../style/settings';
-import { netCellLabel, textScale } from './a11y';
+import { textScale } from './a11y';
 import { caption, onCaption, onPartnerSpeaking, partnerSpeaking, type Caption } from './captions';
 import { CSS } from './css';
 import { focusFirst, modalKey, topModal } from './focus';

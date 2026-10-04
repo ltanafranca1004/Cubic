@@ -144,7 +144,7 @@ test('the cube net says its states in words, not only in colour', () => {
 });
 
 test('colour cues come with a shape or a word in the HUD', () => {
-  const ui = src('ui/cubicUI.ts');
+  const ui = src('ui/cubicUI.ts') + src('cube/hud.ts'); // the cube HUD draws the face states
   const css = src('ui/css.ts');
   for (const shape of ['cu-tick', 'cu-pip', 'cu-ring']) {
     assert.ok(ui.includes(shape), `${shape} is drawn`);

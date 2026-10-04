@@ -143,11 +143,12 @@ ${ICONS.map((name, i) => `.cu-ico.${name} { background-position: -${i * 16}u 0; 
 .cu-cube-e.partner { outline: 2u solid var(--pc); animation: cu-way 0.84s steps(2) infinite; z-index: 1; }
 @keyframes cu-way { 50% { outline-color: ${ROLE.ink}; } }
 .cu-pips { display: flex; gap: 2u; }
-.cu-pips i { width: 7u; height: 4u; background: ${C.mist}; outline: 1u solid ${ROLE.ink}; }
-.cu[data-side="in"] .cu-pips i { background: ${C.slate}; }
-.cu-pips i.ok, .cu[data-side="in"] .cu-pips i.ok { background: var(--c); }
-.cu-pips i.here { outline: 1u solid ${ROLE.focus}; z-index: 1; }
-.cu-pips i.portal, .cu[data-side="in"] .cu-pips i.portal { background: ${ROLE.portal}; animation: cu-blink 0.84s steps(2) infinite; }
+.cu-pips > i { position: relative; width: 9u; height: 8u; background: ${C.mist}; color: ${ROLE.ink}; outline: 1u solid ${ROLE.ink}; }
+.cu-pips .cu-tick { position: absolute; right: 1u; top: 1u; }
+.cu[data-side="in"] .cu-pips > i { background: ${C.slate}; color: ${ROLE.paper}; }
+.cu-pips > i.ok, .cu[data-side="in"] .cu-pips > i.ok { background: var(--c); color: ${ROLE.ink}; }
+.cu-pips > i.here { outline: 1u solid ${ROLE.focus}; z-index: 1; }
+.cu-pips > i.portal, .cu[data-side="in"] .cu-pips > i.portal { background: ${ROLE.portal}; animation: cu-blink 0.84s steps(2) infinite; }
 @keyframes cu-blink { 50% { background: ${ROLE.portalDark}; } }
 .cu-cubemap { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; z-index: 8; pointer-events: none; }
 .cu-cubemap.on { display: flex; }

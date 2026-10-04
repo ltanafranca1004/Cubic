@@ -238,10 +238,12 @@ export function createCubeHud(mount: HTMLElement): CubeHud {
       chip.title = `Face ${face} ${FACE_NAMES[s.side][face]}${hint?.edge === dir ? ': the way to your partner' : ''}`;
       chip.firstElementChild!.textContent = String(face);
     }
-    for (const pip of mount.querySelectorAll<HTMLElement>('.cu-pips i')) {
+    for (const pip of mount.querySelectorAll<HTMLElement>('.cu-pips > i')) {
       const face = Number(pip.dataset.face) as FaceId;
       pip.className = [s.solved.includes(face) ? 'ok' : '', face === s.face ? 'here' : '', face === 6 && s.portalOpen ? 'portal' : ''].join(' ').trim();
-      pip.title = `Face ${face}${s.solved.includes(face) ? ': solved' : ''}`;
+      // every state has a shape as well as a colour: tick = solved, pip = you, ring = portal
+      pip.innerHTML = `${s.solved.includes(face) ? '<i class="cu-tick"></i>' : ''}${face === s.face ? '<i class="cu-pip"></i>' : ''}${face === 6 && s.portalOpen ? '<i class="cu-ring"></i>' : ''}`;
+      pip.title = `Face ${face}${s.solved.includes(face) ? ': solved' : ''}${face === s.face ? ': you are here' : ''}${face === 6 && s.portalOpen ? ': the portal is open' : ''}`;
     }
     return true;
   }
