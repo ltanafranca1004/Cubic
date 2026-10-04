@@ -97,6 +97,23 @@ export class AudioManager {
     }
   }
 
+  // ----- ambience (the looping face sounds in client/src/world/ambience/loops.ts) -----
+
+  /** True once the first click or key press has let the AudioContext run. */
+  get unlocked(): boolean {
+    return this.mixer.isUnlocked;
+  }
+
+  /** The SFX bus (master x sfx), for a source that starts and stops itself, e.g. a loop. */
+  sfxBus(): GainNode {
+    return this.mixer.sfxInput() as GainNode;
+  }
+
+  /** Fetch and decode a file in assets/audio. Null when it cannot be loaded. */
+  loadBuffer(file: string): Promise<AudioBuffer | null> {
+    return this.decode(file);
+  }
+
   // ----- ducking -----
 
   /** Feed the partner's voice level (Voice's 0..1 meter) every tick: the music dips about 6 dB while they talk. */
