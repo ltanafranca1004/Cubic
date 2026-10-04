@@ -38,7 +38,8 @@ const RAW = `
   ${faceVars('out')}
 }
 * { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; overflow: hidden; background: ${ROLE.surface}; }
+/* never white: the stage canvas covers the window, and what is not covered yet is dark */
+html, body { margin: 0; height: 100%; overflow: hidden; background: ${ROLE.ink}; }
 #app { height: 100%; }
 
 .cu {
@@ -62,7 +63,7 @@ ${Object.keys(FACE_HUD)
 .cu button:disabled, .cu .off [role="slider"], .cu .off [role="radio"], .cu .off button { cursor: var(--cursor), auto; }
 .cu canvas { image-rendering: pixelated; display: block; }
 .cu [hidden] { display: none !important; }
-.cu-stage { position: absolute; inset: 0; }
+.cu-stage { position: absolute; inset: 0; overflow: hidden; }
 
 /* ---------- kit ---------- */
 .cu-panel { ${nine('ui/panel.png', 6)} color: ${ROLE.ink}; --dim: ${ROLE.dimOnLight}; }
@@ -138,14 +139,14 @@ ${ICONS.map((name, i) => `.cu-ico.${name} { background-position: -${i * 16}u 0; 
   --view: calc(${VIEW.px}px * var(--z));
   --frame: ${VIEW.frame}u; --gap: ${VIEW.gap}u; --pad: 3u;
   /* the edge bands hold a line of text: they grow with a larger text, as far as the window lets them */
-  --edge: max(${VIEW.edge}u, min(11t, calc((100vh - var(--view) - 2 * var(--frame) - 4u) / 2)));
+  --edge: max(${VIEW.edge}u, min(11t, calc((var(--vh, 100vh) - var(--view) - 2 * var(--frame) - 4u) / 2)));
   --col-min: ${VIEW.columnMin}u; --col-max: max(${VIEW.columnMax}u, ${VIEW.columnMax}t);
   /* the view with its frame and its four edge bands: a square */
   --mid: calc(var(--view) + 2 * var(--frame) + 2 * var(--edge) + 4u);
-  --col: clamp(var(--col-min), calc(100vw - var(--mid) - 3 * var(--gap)), var(--col-max));
+  --col: clamp(var(--col-min), calc(var(--vw, 100vw) - var(--mid) - 3 * var(--gap)), var(--col-max));
   --hud-w: calc(var(--mid) + var(--gap) + var(--col));
-  --hud-x: max(var(--gap), calc((100vw - var(--hud-w)) / 2));
-  --hud-y: max(0px, calc((100vh - var(--mid)) / 2));
+  --hud-x: max(var(--gap), calc((var(--vw, 100vw) - var(--hud-w)) / 2));
+  --hud-y: max(0px, calc((var(--vh, 100vh) - var(--mid)) / 2));
   /* for what is placed on the view or on the column from outside the grid */
   --view-x: calc(var(--hud-x) + var(--mid) / 2);
   --view-top: calc(var(--hud-y) + var(--edge) + 2u + var(--frame));
@@ -154,8 +155,8 @@ ${ICONS.map((name, i) => `.cu-ico.${name} { background-position: -${i * 16}u 0; 
 /* whole pixels only: a canvas on a half pixel is blurred */
 @supports (width: round(down, 1px, 1px)) {
   .cu {
-    --edge: round(down, max(${VIEW.edge}u, min(11t, calc((100vh - var(--view) - 2 * var(--frame) - 4u) / 2))), 1px);
-    --hud-x: round(down, max(var(--gap), calc((100vw - var(--hud-w)) / 2)), 1px); --hud-y: round(down, max(0px, calc((100vh - var(--mid)) / 2)), 1px);
+    --edge: round(down, max(${VIEW.edge}u, min(11t, calc((var(--vh, 100vh) - var(--view) - 2 * var(--frame) - 4u) / 2))), 1px);
+    --hud-x: round(down, max(var(--gap), calc((var(--vw, 100vw) - var(--hud-w)) / 2)), 1px); --hud-y: round(down, max(0px, calc((var(--vh, 100vh) - var(--mid)) / 2)), 1px);
   }
 }
 .cu-hud { position: absolute; top: 0; bottom: 0; left: var(--hud-x); width: var(--hud-w); display: none; grid-template-columns: var(--mid) var(--col); grid-template-rows: 100%; grid-template-areas: "view side"; column-gap: var(--gap); }
@@ -275,7 +276,7 @@ ${ICONS.map((name, i) => `.cu-ico.${name} { background-position: -${i * 16}u 0; 
 .cu-modal.on { display: flex; }
 /* The panel drops in. It only MOVES: its opacity is never animated, so it cannot be seen
    half transparent however the animation is cut short or restarted. */
-.cu-modal > .cu-panel { animation: cu-drop 0.2s steps(4) both; max-width: calc(100vw - 8u); max-height: calc(100vh - 8u); }
+.cu-modal > .cu-panel { animation: cu-drop 0.2s steps(4) both; max-width: calc(var(--vw, 100vw) - 8u); max-height: calc(var(--vh, 100vh) - 8u); }
 @keyframes cu-drop { from { transform: translateY(-8u); } to { transform: none; } }
 .cu-title { text-align: center; margin: 0 0 4t; }
 .cu-actions { display: flex; justify-content: center; gap: 6t; margin-top: 4t; }
@@ -288,7 +289,7 @@ ${ICONS.map((name, i) => `.cu-ico.${name} { background-position: -${i * 16}u 0; 
 .cu-win .cu-actions { margin-top: 8t; }
 
 /* ---------- settings: three tabs in one box, two columns of rows each ---------- */
-.cu-settings { width: min(calc(100vw - 12u), max(448u, 448t)); display: flex; flex-direction: column; gap: 3t; padding: 2t 4t 4t; }
+.cu-settings { width: min(calc(var(--vw, 100vw) - 12u), max(448u, 448t)); display: flex; flex-direction: column; gap: 3t; padding: 2t 4t 4t; }
 .cu-tabs { display: flex; justify-content: center; gap: 2u; outline: none; }
 .cu-tabs > span { display: block; ${nine('ui/btn-light-idle.png', 6)} height: var(--btn-h); padding: 0 6t; line-height: 7t; color: ${ROLE.dimOnLight}; white-space: nowrap; }
 .cu-tabs > span > b { display: block; font-weight: normal; margin-top: -1t; }
@@ -378,7 +379,7 @@ ${focusRule()} {
 .cu-subs { position: absolute; left: 50%; bottom: max(6u, calc(var(--subs-lift, 0px) + 2u)); transform: translateX(-50%); z-index: 8; display: flex; flex-direction: column; align-items: center; gap: 2u; pointer-events: none; max-width: 90%; }
 .cu-caption { ${nine('ui/tag.png', 4)} padding: 1t 5t 3t; color: ${ROLE.paper}; text-transform: none; text-align: center; max-width: 340t; }
 /* in game they sit on the game view, along its bottom */
-.cu[data-screen="game"] .cu-subs { left: var(--view-x); width: max-content; max-width: calc(var(--view) - 8u); bottom: max(calc(100vh - var(--view-top) - var(--view) + 4u), calc(var(--subs-lift, 0px) + 2u)); }
+.cu[data-screen="game"] .cu-subs { left: var(--view-x); width: max-content; max-width: calc(var(--view) - 8u); bottom: max(calc(var(--vh, 100vh) - var(--view-top) - var(--view) + 4u), calc(var(--subs-lift, 0px) + 2u)); }
 .cu[data-side="in"] .cu-caption { outline: 1u solid ${ROLE.dimOnDark}; }
 .cu-caption b { font-weight: normal; text-transform: uppercase; color: ${ROLE.in.base}; }
 .cu-speaking { ${nine('ui/tag-light.png', 4)} height: var(--tag-h); padding: 0 5t 0 1u; color: ${ROLE.ink}; display: flex; align-items: center; gap: 2u; white-space: nowrap; line-height: 10t; }

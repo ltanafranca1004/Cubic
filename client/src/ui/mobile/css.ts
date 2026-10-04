@@ -7,17 +7,18 @@ import { C, ROLE } from '../../style/tokens';
 // 9-slices, the m5x7 font inherited from .cu, art sizes in "u" (4u = four art pixels).
 // What a THUMB presses is sized in real CSS pixels instead (44px is 44px on every phone).
 //
-// Everything here is keyed on .cu[data-touch] ("compact" on a phone, "wide" on a tablet),
-// which only ui/mobile sets, and only on a touch screen: a desktop never matches a rule
-// in this file. The numbers that place things (--m-*) are set by ui/mobile/index.ts from
+// Two keys, both set from style/fit.ts: .cu[data-touch] (the main pointer is a finger: the
+// controls and the page rules) and .cu[data-layout] ("compact": the column is a panel,
+// "full": it is beside the view). A desktop window that fits the full layout never loads
+// this file. The numbers that place things (--m-*) are set by ui/mobile/index.ts from
 // style/fit.ts, the same arithmetic the zoom of the game view comes from.
 
 const url = (path: string) => `url("${asset(path)}")`;
 const nine = (path: string, corner: number) => `border: ${corner}u solid transparent; border-image: ${url(path)} ${corner} fill / ${corner}u stretch;`;
 const icon = (name: (typeof ICONS)[number]) => `-${ICONS.indexOf(name) * 16}u 0`;
 
-const COMPACT = '.cu[data-touch="compact"]';
-const WIDE = '.cu[data-touch="wide"]';
+const COMPACT = '.cu[data-layout="compact"]';
+const WIDE = '.cu[data-touch][data-layout="full"]';
 const GAME = '[data-screen="game"]';
 
 const RAW = `
@@ -61,7 +62,10 @@ html[data-touch][data-dark] body { background: ${ROLE.ink}; }
 
 /* ---------- the controls ---------- */
 .cu-m { display: none; }
-.cu[data-touch]${GAME} .cu-m { display: block; }
+.cu[data-touch]${GAME} .cu-m, ${COMPACT}${GAME} .cu-m { display: block; }
+/* a small window with a mouse: the panel and its button, but nothing for thumbs */
+.cu:not([data-touch]) .cu-m-pad, .cu:not([data-touch]) .cu-m-acts, .cu:not([data-touch]) .cu-m-chat, .cu:not([data-touch]) .cu-m-code { display: none; }
+.cu[data-glance="off"] .cu-m-glance { display: none !important; }
 .cu-m-btn {
   ${nine('ui/btn-dark-idle.png', 6)}
   position: relative; display: flex; align-items: center; justify-content: center; gap: 2u; min-width: 0; padding: 0;
@@ -180,6 +184,12 @@ ${COMPACT} .cu-m-info { position: absolute; z-index: 4; right: ${TOUCH.margin}px
 .cu-m-info { display: none; }
 ${COMPACT} .cu-m-info { display: flex; }
 ${COMPACT}[data-drawer="on"] .cu-m-info { z-index: 10; width: 64px; }
+
+/* too narrow for rails (a flip phone's cover): the view on top, the controls under it */
+.cu[data-stack="on"] .cu-m-pad { left: ${TOUCH.margin}px; }
+.cu[data-stack="on"] .cu-m-acts { grid-auto-rows: ${TOUCH.buttonMin}px; }
+.cu[data-stack="on"] .cu-m-info { width: 52px; }
+.cu[data-stack="on"] .cu-edge.l, .cu[data-stack="on"] .cu-edge.r { display: none; }
 
 /* the HUD column, folded away: the HUD button opens it as a panel over the game */
 ${COMPACT} .cu-col { display: none; }

@@ -1,4 +1,4 @@
-import { DESKTOP, hudScaleFor, layoutMode, uiScaleFor, viewZoomFor, type Device, type LayoutMode } from './fit';
+import { DESKTOP, hudScaleFor, isPortrait, layoutMode, uiScaleFor, viewZoomFor, type Device, type LayoutMode } from './fit';
 
 // ONE PIXEL GRID. Menus, HUD and the game view all draw at a whole-number scale, so an art
 // pixel is the same size everywhere on screen. The scale is the largest that still leaves
@@ -10,18 +10,24 @@ import { DESKTOP, hudScaleFor, layoutMode, uiScaleFor, viewZoomFor, type Device,
 let found: Device | null = null;
 
 /**
- * The device we run on, decided once. Touch means the MAIN pointer is a finger (a phone, a
- * tablet): a laptop with a touch screen, or a narrow desktop window, is still a desktop.
- * `?touch` forces it, to try the touch layout with a mouse.
+ * The device we run on. Touch means the MAIN pointer is a finger (a phone, a tablet): a
+ * laptop with a touch screen, or a narrow desktop window, is still a desktop. `?touch`
+ * forces it, to try the touch layout with a mouse. Never the user agent or a device name.
+ * Read again on every fit (a keyboard clipped onto a tablet, a window dragged to another
+ * screen), see onFit below.
  */
 export function device(): Device {
   if (found) return found;
   if (typeof window === 'undefined') return DESKTOP; // node: the check scripts in tools/screens
+  found = readDevice();
+  return found;
+}
+
+function readDevice(): Device {
   const flag = new URLSearchParams(window.location.search).get('touch');
   const media = (q: string) => !!window.matchMedia?.(q).matches;
   const touch = flag !== null ? flag !== '0' : media('(pointer: coarse)') || (media('(any-pointer: coarse)') && media('(hover: none)'));
-  found = touch ? { touch, dpr: Math.max(1, window.devicePixelRatio || 1) } : DESKTOP;
-  return found;
+  return touch ? { touch, dpr: Math.max(1, window.devicePixelRatio || 1) } : DESKTOP;
 }
 
 export interface Insets {
@@ -46,6 +52,20 @@ export function safeInsets(): Insets {
   return { top: px(s.paddingTop), right: px(s.paddingRight), bottom: px(s.paddingBottom), left: px(s.paddingLeft) };
 }
 
+/**
+ * THE ONE SIZE everything is laid out from: the part of the page that can be seen right
+ * now. The visual viewport knows about a phone's sliding toolbars and a tablet's split
+ * view where window.innerWidth can lag behind; a browser without it, or one zoomed in
+ * with two fingers, falls back to the layout viewport, then to the window.
+ */
+export function visibleSize(): { width: number; height: number } {
+  const vv = window.visualViewport;
+  if (vv && Math.abs(vv.scale - 1) < 0.01 && vv.width > 0 && vv.height > 0) return { width: Math.round(vv.width), height: Math.round(vv.height) };
+  const el = document.documentElement;
+  if (el.clientWidth > 0 && el.clientHeight > 0) return { width: el.clientWidth, height: el.clientHeight };
+  return { width: window.innerWidth, height: window.innerHeight };
+}
+
 let last: { width: number; height: number } | null = null;
 
 /**
@@ -55,14 +75,83 @@ let last: { width: number; height: number } | null = null;
  * it does not shrink while the on-screen keyboard is up, so typing never rescales the game.
  */
 export function viewport(): { width: number; height: number } {
-  if (!device().touch) return { width: window.innerWidth, height: window.innerHeight };
+  const size = visibleSize();
+  if (!device().touch) return size;
   const inset = safeInsets();
-  const width = window.innerWidth - inset.left - inset.right;
-  const height = window.innerHeight - inset.top;
+  const width = size.width - inset.left - inset.right;
+  const height = size.height - inset.top;
   const typing = document.activeElement instanceof HTMLInputElement;
   if (typing && last && width === last.width && height < last.height) return last;
   last = { width, height };
   return last;
+}
+
+/** Held upright: taller than wide, by the same size everything else uses. */
+export function upright(): boolean {
+  const { width, height } = visibleSize();
+  return isPortrait(width, height);
+}
+
+// RE-FIT. Everything that lays out from the size above subscribes here, and nowhere else:
+// one pass, in the order of subscription, whenever the size, the safe area, the pixel
+// density or the pointer changes. The browser has many ways of saying so (and Safari does
+// not always say `resize`), so all of them are heard, and a pass only runs when one of
+// those numbers really changed.
+
+const fitters: (() => void)[] = [];
+let fitKey = '';
+let queued = 0;
+let listening = false;
+
+function measureKey(): string {
+  found = readDevice();
+  const { width, height } = viewport();
+  const inset = safeInsets();
+  return [width, height, inset.top, inset.right, inset.bottom, inset.left, found.touch, found.dpr].join();
+}
+
+/** Lay everything out again now (after mounting something that changes the layout). */
+export function refit(): void {
+  fitKey = measureKey();
+  for (const fn of [...fitters]) fn();
+}
+
+function check(): void {
+  queued = 0;
+  if (measureKey() !== fitKey) refit();
+}
+
+function queue(): void {
+  if (!queued) queued = requestAnimationFrame(check);
+}
+
+function listen(): void {
+  listening = true;
+  fitKey = measureKey();
+  // a rotation settles late on iOS: look again once it has
+  const late = () => {
+    queue();
+    setTimeout(queue, 120);
+    setTimeout(queue, 500);
+  };
+  window.addEventListener('resize', queue);
+  window.addEventListener('orientationchange', late);
+  window.addEventListener('pageshow', late);
+  window.visualViewport?.addEventListener('resize', queue);
+  window.screen?.orientation?.addEventListener?.('change', late);
+  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(queue).observe(document.documentElement);
+  for (const q of ['(pointer: coarse)', '(any-pointer: coarse)', '(hover: none)', '(orientation: portrait)']) window.matchMedia?.(q).addEventListener?.('change', queue);
+  late(); // and once after the first layout, in case the page was measured before it settled
+}
+
+/** Call `fn` on every re-fit. Returns the way to stop. */
+export function onFit(fn: () => void): () => void {
+  if (!listening) listen();
+  fitters.push(fn);
+  return () => {
+    const i = fitters.indexOf(fn);
+    if (i >= 0) fitters.splice(i, 1);
+  };
 }
 
 export function uiScale(width = viewport().width, height = viewport().height): number {

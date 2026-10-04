@@ -1,7 +1,8 @@
 import Phaser from 'phaser';
 import { pointerGate } from '../input/overlay';
 import { rendererType } from '../style/renderer';
-import { logicalSize } from '../style/scale';
+import { sizeCanvas } from '../style/canvas';
+import { logicalSize, onFit } from '../style/scale';
 import { ROLE } from '../style/tokens';
 import type { UIActions, UIState } from '../ui/hooks';
 import { BackdropScene } from './BackdropScene';
@@ -64,12 +65,12 @@ export function createStage(parent: HTMLElement, actions: UIActions, initial: UI
     });
   }
 
-  const onResize = () => {
+  const fit = () => {
     const next = logicalSize();
-    game.scale.setZoom(next.scale);
-    game.scale.resize(next.width, next.height);
+    sizeCanvas(game, next.width, next.height, next.scale);
   };
-  window.addEventListener('resize', onResize);
+  const fitOff = onFit(fit);
+  game.events.once(Phaser.Core.Events.READY, fit); // the window may have changed while Phaser booted
 
   return {
     update(state) {
@@ -79,7 +80,7 @@ export function createStage(parent: HTMLElement, actions: UIActions, initial: UI
     },
     screen: () => ctx.flow.current,
     destroy() {
-      window.removeEventListener('resize', onResize);
+      fitOff();
       ctx.flow.destroy();
       game.destroy(true);
     },

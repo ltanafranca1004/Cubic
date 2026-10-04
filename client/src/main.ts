@@ -1,6 +1,7 @@
 import { startApp } from './app';
 import { audio, type SfxId, type TrackId } from './audio/AudioManager';
 import { setAudioApi } from './style/audioApi';
+import { mountFitDebug } from './style/fitDebug';
 import { ui } from './ui';
 import { mockActions, mockGameUIState, mockLobbyState, mockMenuState } from './ui/mock';
 
@@ -33,3 +34,5 @@ if (mock === 'lobby' || mock === 'hud' || mock === 'menu') {
 } else {
   startApp(root, ui);
 }
+
+if (params.get('debug') === 'fit') mountFitDebug();
