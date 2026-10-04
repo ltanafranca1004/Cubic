@@ -127,8 +127,29 @@ async function run(browser: Browser, size: { width: number; height: number }, re
   await a.waitForTimeout(2200);
   await shot(a, '2-mode');
   const labels = (await buttons(a)).map((b) => b.label);
-  if (labels.join('|') !== 'CREATE LOBBY|JOIN LOBBY') fail(`${tag}: mode screen buttons are [${labels.join(', ')}]`);
+  if (labels.join('|') !== 'BACK|CREATE LOBBY|JOIN LOBBY') fail(`${tag}: mode screen buttons are [${labels.join(', ')}]`);
   for (const label of ['CREATE LOBBY', 'JOIN LOBBY']) if (!(await hasPanel(a, label))) fail(`${tag}: "${label}" has no solid panel`);
+
+  // Back (the button, then Esc) returns to the title; a second press mid-fade must not break anything
+  await click(a, 'BACK', tag);
+  await a.mouse.down();
+  await a.mouse.up();
+  await expect(tag, 'Back on the mode screen goes back to the title', async () => (await buttons(a)).some((b) => b.label === 'PLAY'));
+  await a.waitForTimeout(600);
+  await click(a, 'PLAY', tag);
+  await a.waitForTimeout(2200);
+  await a.keyboard.press('Escape');
+  await expect(tag, 'Esc on the mode screen goes back to the title', async () => (await buttons(a)).some((b) => b.label === 'PLAY'));
+  await a.waitForTimeout(600);
+  await click(a, 'PLAY', tag);
+  await a.waitForTimeout(2200);
+  // Esc with the settings open closes the settings only
+  await a.locator('#cu-gear').click();
+  await a.waitForTimeout(400);
+  await a.keyboard.press('Escape');
+  await a.waitForTimeout(600);
+  if (await a.evaluate(() => !!document.querySelector('#cu-settings.on'))) fail(`${tag}: Esc does not close the settings panel`);
+  if (!(await buttons(a)).some((b) => b.label === 'CREATE LOBBY')) fail(`${tag}: the Esc that closed settings also left the mode screen`);
 
   // Join Lobby opens the popup; a wrong code is refused; Cancel closes it
   await click(a, 'JOIN LOBBY', tag);

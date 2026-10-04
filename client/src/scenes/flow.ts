@@ -63,7 +63,7 @@ export class Flow {
     const dark = to === 'backdrop' && this.state().side === 'in';
     const fade = { color: dark ? C.ink : C.white };
     this.current = to;
-    this.entered = (to !== 'start');
+    this.entered = to !== 'start';
     if (!from) {
       scenes.start(to, {});
       return;
@@ -81,9 +81,10 @@ export class Flow {
     cam.fadeOut(half, r, g, b);
   }
 
-  /** Navigate to a specific screen. */
-  goTo(screen: Screen): void {
-    this.go(screen);
+  /** Back from the mode screen to the title. Ignored mid-fade, mid-dive and when already there. */
+  back(): void {
+    if (!this.loaded || this.busy || this.current !== 'mode') return;
+    this.go('start');
   }
 
   /** StartScene began its dive: the mode screen appears underneath it. */

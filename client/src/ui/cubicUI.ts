@@ -118,6 +118,7 @@ export const cubicUI: UIHost = {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && panel.isOpen()) {
         panel.toggle(false);
+        e.stopImmediatePropagation(); // this Esc closed the panel: it is not also Back on the screen underneath
         return;
       }
       const typing = document.activeElement instanceof HTMLInputElement;
@@ -126,7 +127,7 @@ export const cubicUI: UIHost = {
         chat.focus();
       }
     };
-    window.addEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKey, true);
 
     // Voice controls: rebuilt only when what they show changes.
     const voice = $('cu-voice');
@@ -275,7 +276,7 @@ export const cubicUI: UIHost = {
         renderVoice(next);
       },
       destroy() {
-        window.removeEventListener('keydown', onKey);
+        window.removeEventListener('keydown', onKey, true);
         window.removeEventListener('resize', rescale);
         gearOff();
         settingsOff();
