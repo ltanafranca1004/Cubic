@@ -670,6 +670,30 @@
         "on": 65,
         "done": 66
       }
+    },
+    "f4-pot": {
+      "image": "sprites/objects.png",
+      "frames": {
+        "default": 67,
+        "empty": 67,
+        "locked": 68,
+        "bloom-red": 69,
+        "bloom-blue": 70,
+        "bloom-yellow": 71,
+        "bloom-pink": 72,
+        "bloom-white": 73
+      }
+    },
+    "f4-flowerpot": {
+      "image": "sprites/objects.png",
+      "frames": {
+        "default": 74,
+        "red": 74,
+        "blue": 75,
+        "yellow": 76,
+        "pink": 77,
+        "white": 78
+      }
     }
   },
   "items": {
