@@ -13,8 +13,10 @@ interface Marker {
   root: Phaser.GameObjects.Container;
   note: Text;
   slot: Slot | null;
-  /** Rest position; the idle bob moves around it. */
+  /** Where it waits in the middle. */
   y: number;
+  /** The x it rests at now (or is moving to): a shake swings around this. */
+  x: number;
 }
 
 /**
@@ -77,6 +79,11 @@ export class SideSelectScene extends MenuScene {
       return { image, hero, ring, top: cubeTop, heroY };
     };
     this.cubes = { out: make('out', 9), in: make('in', 40) };
+    if (import.meta.env.DEV) {
+      // where the two heroes stand now, in art pixels (tools/screens/check.ts)
+      const at = (side: Side) => ({ x: this.cubes[side].hero.x, y: this.cubes[side].hero.y });
+      Object.assign(window, { __cubicHeroes: () => ({ out: at('out'), in: at('in') }) });
+    }
 
     // titles sit on their own halves, in their side's voice
     // (white on a sky with white clouds: an ink outline keeps it readable over both)
@@ -106,7 +113,7 @@ export class SideSelectScene extends MenuScene {
       const note = text(this, 0, -13, '', ROLE.ink);
       const root = this.add.container(half, y, [plate, note]).setDepth(5);
       this.tweens.add({ targets: plate, y: 2, duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut', delay: role === 'host' ? 0 : 350 });
-      return { root, note, slot: null, y };
+      return { root, note, slot: null, y, x: half };
     };
     this.markers = { host: marker('host', py + 34), guest: marker('guest', py + 34) };
     this.badge = this.add.image(0, 0, 'not-ready').setOrigin(0.5, 0).setDepth(5);
@@ -139,11 +146,16 @@ export class SideSelectScene extends MenuScene {
     const partner = this.lobby!.role === 'host' ? this.lobby!.guest : this.lobby!.host;
     if (side && partner?.side === side) {
       // no need to ask: both screens already show that arrow there
-      shake(this, this.markers[this.lobby!.role].root);
+      this.no(this.lobby!.role);
       this.flash(`${this.lobby!.role === 'host' ? 'P2' : 'P1'} ALREADY PICKED THAT SIDE`);
       return;
     }
     this.ctx.actions.onPickSide(side);
+  }
+
+  /** Shake a player's arrow: "no". */
+  private no(role: Role): void {
+    shake(this, this.markers[role].root, this.markers[role].x);
   }
 
   private flash(msg: string): void {
@@ -203,7 +215,7 @@ export class SideSelectScene extends MenuScene {
       this.ring(side, owner ? (owner === 'host' ? ROLE.p1 : ROLE.p2) : null);
       const picked = this.last[owner ?? 'host'] !== side && owner !== null;
       if (picked && !this.first) {
-        hop(this, this.cubes[side].hero, 4 * this.zoom);
+        hop(this, this.cubes[side].hero, this.cubes[side].heroY, 4 * this.zoom);
       }
     }
     this.last.host = l.host.side;
@@ -228,7 +240,7 @@ export class SideSelectScene extends MenuScene {
     }
     const error = this.ui.error;
     if (error && error !== this.last.error) {
-      shake(this, this.markers[you].root);
+      this.no(you);
       this.setStatus(error.toUpperCase(), ROLE.danger);
     } else if (!this.ui.online) this.setStatus('CONNECTION LOST. RECONNECTING...', ROLE.danger);
     else if (you === 'host') this.setStatus((l.startBlocker ?? 'READY TO START').toUpperCase(), ROLE.paper);
@@ -260,6 +272,7 @@ export class SideSelectScene extends MenuScene {
     if (m.slot === slot) return;
     const from = m.slot;
     m.slot = slot;
+    m.x = x + off;
     if (from === null || this.first) m.root.setPosition(x + off, y);
     else this.tweens.add({ targets: m.root, x: x + off, y, duration: TIME.quick, ease: EASE.out });
   }

@@ -157,6 +157,8 @@ export class ModeScene extends MenuScene {
 class JoinPopup {
   private root: Phaser.GameObjects.Container;
   private boxes: Phaser.GameObjects.Container;
+  /** Where the code boxes rest: the shake swings around this. */
+  private boxesX: number;
   private slots: { idle: Phaser.GameObjects.Image; active: Phaser.GameObjects.Image; error: Phaser.GameObjects.Image; letter: Text }[] = [];
   private message: Text;
   private join: Button;
@@ -186,7 +188,8 @@ class JoinPopup {
 
     const size = 28;
     const gap = 6;
-    this.boxes = scene.add.container(Math.round((w - (size * CODE_LEN + gap * (CODE_LEN - 1))) / 2), 40);
+    this.boxesX = Math.round((w - (size * CODE_LEN + gap * (CODE_LEN - 1))) / 2);
+    this.boxes = scene.add.container(this.boxesX, 40);
     for (let i = 0; i < CODE_LEN; i++) {
       const x = i * (size + gap);
       const idle = slice(scene, x, 0, 'field', size, size);
@@ -270,7 +273,7 @@ class JoinPopup {
     this.message.setText(reason.toUpperCase());
     this.message.x = Math.round((this.w - this.message.width) / 2);
     this.draw();
-    shake(this.scene, this.boxes);
+    shake(this.scene, this.boxes, this.boxesX);
   }
 
   private draw(): void {

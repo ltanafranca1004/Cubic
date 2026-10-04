@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { pointerGate } from '../input/overlay';
 import { rendererType } from '../style/renderer';
 import { logicalSize } from '../style/scale';
 import { ROLE } from '../style/tokens';
@@ -35,6 +36,10 @@ export function createStage(parent: HTMLElement, actions: UIActions, initial: UI
     banner: false,
     audio: { noAudio: true }, // all sound goes through style/audioApi
     scale: { mode: Phaser.Scale.NONE, zoom: size.scale },
+    // Only presses on the canvas itself count. By default Phaser also listens on the window
+    // and treats a press on any DOM element (a settings button, the pause menu, the chat
+    // field) as a press on the canvas button that happens to be behind it.
+    input: { windowEvents: false },
     // drawn in this order: the cube is under every menu
     scene: [BootScene, CubeBackdropScene, StartScene, ModeScene, SideSelectScene, BackdropScene],
   });
@@ -42,6 +47,22 @@ export function createStage(parent: HTMLElement, actions: UIActions, initial: UI
   const ctx: StageContext = { actions, state: initial, flow: null as unknown as Flow };
   ctx.flow = new Flow(game, () => ctx.state);
   game.registry.set('ctx', ctx);
+
+  // While a DOM overlay is open on top of the stage (settings, pause, win, a focused text
+  // field) the stage takes no pointer input at all, and it gets it back a frame after the
+  // overlay closes. Keys are gated the same way in MenuScene.keys (flow.ts).
+  const gate = pointerGate();
+  const onStep = () => {
+    game.input.enabled = gate.step();
+  };
+  game.events.on(Phaser.Core.Events.PRE_STEP, onStep);
+
+  if (import.meta.env.DEV) {
+    Object.assign(window, {
+      /** Is the stage taking pointer input, and when it last saw a press (tools/screens/check.ts). */
+      __cubicStage: () => ({ input: game.input.enabled, lastDown: Math.max(...game.input.pointers.map((p) => p.downTime)) }),
+    });
+  }
 
   const onResize = () => {
     const next = logicalSize();
