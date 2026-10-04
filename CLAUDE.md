@@ -146,6 +146,17 @@ density and the pointer.
 - **Canvas size.** Both Phaser canvases run `Scale.NONE`; `style/canvas.ts` `sizeCanvas`
   sets backing size, zoom and the CSS size together. Do not call `scale.setZoom` /
   `scale.resize` directly (Phaser leaves a stale CSS size: the iPad bug).
+  `sizeCanvas` also re-measures the canvas box for Phaser (`syncBounds`, and again at every
+  press): Phaser measured it before the CSS size was written and, at zoom 1, never again,
+  so after a turn or a sliding toolbar every tap missed (PLAY dead until a reload).
+- A menu scene rebuilds only when its canvas really changed (`sizeKey` in `fit.ts`):
+  Phaser says "resize" for every resize event, and a restart drops the press under a finger.
+- No zoom: `input/zoom.ts` (rules in `zoomRules.ts`) cancels the second finger, Safari's
+  gesture events and the second tap of a double tap (its click is given back), on top of
+  `touch-action`. iOS Safari ignores `user-scalable=no`, so the meta holds nothing. If the
+  page is zoomed anyway (`zoomed()` in `scale.ts`, part of every fit), `html[data-zoomed]`
+  and the guards let go so two fingers can zoom back out, and the layout keeps its x1 size
+  (`visibleFrom`). Check: `tools/screens/first-tap.ts`.
 - `device()`: touch = the main pointer is a finger (`pointer: coarse`), or `?touch`
   (`?touch=0` forces a mouse). Re-read on every fit.
 - On touch the pixel grid is the DEVICE pixel (`style/fit.ts`, pure and tested): every

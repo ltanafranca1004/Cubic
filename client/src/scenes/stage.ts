@@ -62,9 +62,20 @@ export function createStage(parent: HTMLElement, actions: UIActions, initial: UI
   game.events.on(Phaser.Core.Events.PRE_STEP, onStep);
 
   if (import.meta.env.DEV) {
+    /** How often Phaser said "resized" (each one rebuilds the menu on screen). */
+    let resizes = 0;
+    game.events.once(Phaser.Core.Events.READY, () => game.scale.on(Phaser.Scale.Events.RESIZE, () => resizes++));
     Object.assign(window, {
       /** Is the stage taking pointer input, and when it last saw a press (tools/screens/check.ts). */
-      __cubicStage: () => ({ input: game.input.enabled, lastDown: Math.max(...game.input.pointers.map((p) => p.downTime)) }),
+      __cubicStage: () => ({
+        input: game.input.enabled,
+        lastDown: Math.max(...game.input.pointers.map((p) => p.downTime)),
+        screen: ctx.flow.current,
+        resizes,
+        // where Phaser thinks the canvas is: what a tap is measured against (tools/screens/first-tap.ts)
+        bounds: { x: game.scale.canvasBounds.x, y: game.scale.canvasBounds.y, width: game.scale.canvasBounds.width, height: game.scale.canvasBounds.height },
+        displayScale: { x: game.scale.displayScale.x, y: game.scale.displayScale.y },
+      }),
     });
   }
 

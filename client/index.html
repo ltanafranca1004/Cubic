@@ -8,7 +8,11 @@
     <meta name="theme-color" content="#2e222f" />
     <title>Cubic</title>
     <!-- dark before the script has loaded, and behind anything the canvas does not cover -->
-    <style>html, body { margin: 0; background: #2e222f; }</style>
+    <!-- and no double-tap zoom from the first moment (the rest: ui/mobile/css.ts, input/zoom.ts; iOS Safari ignores user-scalable=no) -->
+    <style>
+      html, body { margin: 0; background: #2e222f; }
+      html, body { touch-action: manipulation; }
+    </style>
   </head>
   <body>
     <div id="app"></div>
