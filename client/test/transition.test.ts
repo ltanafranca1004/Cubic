@@ -8,7 +8,13 @@ import {
   HOP_MS,
   InputBuffer,
   ROLL_MS,
+  HOP_LANDING,
+  HOP_SHADOW_ALPHA,
+  HOP_SHADOW_H,
+  HOP_TAKEOFF,
   easeInOut,
+  hopBoxes,
+  hopFrame,
   hopLift,
   mirrorStrip,
   rollPoint,
@@ -146,6 +152,106 @@ test('hop and easing: start and end on the ground, highest in the middle', () =>
   assert.equal(easeInOut(0), 0);
   assert.equal(easeInOut(1), 1);
   assert.equal(easeInOut(0.5), 0.5);
+});
+
+// ---------- the hop ----------
+
+/** The scene's numbers: a tile, a face plus the wall, a tile plus the wall, the arc height. */
+const WALL_PX = 10;
+const HOP = { size: TILE_PX, span: V + WALL_PX, reach: TILE_PX + WALL_PX, height: 14 };
+const FRAMES = Array.from({ length: 401 }, (_, i) => hopFrame(i / 400, HOP));
+const APEX = (HOP_TAKEOFF + HOP_LANDING) / 2;
+
+test('hop: starts and ends as the standing character, with no lift and no shadow', () => {
+  for (const [k, slide, travel] of [
+    [0, 0, 0],
+    [1, HOP.span, HOP.reach],
+  ] as const) {
+    const f = hopFrame(k, HOP);
+    assert.deepEqual(f, { slide, travel, lift: 0, width: TILE_PX, height: TILE_PX, shadowWidth: TILE_PX - 2, shadowAlpha: 0 }, `k ${k}`);
+    // drawn exactly on the tile: nothing jumps when the transition starts or ends
+    assert.deepEqual(hopBoxes(f, 32, 48, TILE_PX).body, { x: 32, y: 48, w: TILE_PX, h: TILE_PX });
+  }
+  // out of range is clamped
+  assert.deepEqual(hopFrame(-1, HOP), hopFrame(0, HOP));
+  assert.deepEqual(hopFrame(2, HOP), hopFrame(1, HOP));
+});
+
+test('hop: the arc peaks at the full height right above the wall, and only rises then falls', () => {
+  const peak = Math.max(...FRAMES.map((f) => f.lift));
+  assert.equal(peak, HOP.height);
+  const mid = hopFrame(APEX, HOP);
+  assert.equal(mid.lift, HOP.height);
+  // the character's middle is over the middle of the wall at the top of the arc
+  assert.equal(mid.travel, HOP.reach / 2);
+  const top = FRAMES.findIndex((f) => f.lift === peak);
+  FRAMES.forEach((f, i) => {
+    if (i === 0) return;
+    const before = FRAMES[i - 1]!.lift;
+    assert.ok(i <= top ? f.lift >= before : f.lift <= before, `frame ${i}`);
+  });
+  assert.ok(HOP.height >= TILE_PX * 0.75, 'a hop you can see: most of a tile high');
+});
+
+test('hop: crouch on the ground, bigger in the air, squash on landing', () => {
+  for (const [i, f] of FRAMES.entries()) {
+    const k = i / 400;
+    if (k < HOP_TAKEOFF || k >= HOP_LANDING) {
+      assert.equal(f.lift, 0, `on the ground at ${k}`);
+      assert.ok(f.height <= TILE_PX && f.width >= TILE_PX, `squashed, never stretched, at ${k}`);
+    }
+    if (k < HOP_TAKEOFF) assert.equal(f.travel, 0, 'no sliding along the floor before the jump');
+    if (k >= HOP_LANDING) assert.equal(f.travel, HOP.reach, 'landed on the tile');
+  }
+  const crouch = hopFrame(HOP_TAKEOFF - 0.001, HOP);
+  assert.ok(crouch.height < TILE_PX && crouch.width > TILE_PX);
+  const apex = hopFrame(APEX, HOP);
+  assert.ok(apex.width > TILE_PX && apex.height > TILE_PX, 'nearer the eye at the top');
+  const landed = hopFrame(HOP_LANDING + 0.001, HOP);
+  assert.ok(landed.height < TILE_PX && landed.width > TILE_PX);
+});
+
+test('hop: the view slide and the travel never step back and land exactly', () => {
+  FRAMES.forEach((f, i) => {
+    if (i === 0) return;
+    assert.ok(f.slide >= FRAMES[i - 1]!.slide && f.travel >= FRAMES[i - 1]!.travel, `frame ${i}`);
+  });
+  assert.equal(FRAMES[400]!.slide, HOP.span);
+  // the last frames of the slide close in one pixel at a time: no jump onto the new face
+  const last = FRAMES.slice(360).map((f) => f.slide);
+  last.forEach((s, i) => assert.ok(i === 0 || s - last[i - 1]! <= 1));
+  // slow, fast, slow
+  assert.ok(hopFrame(HOP_TAKEOFF, HOP).slide <= 2, 'the view waits for the crouch');
+  assert.equal(hopFrame(0.5, HOP).slide, HOP.span / 2);
+});
+
+test('hop: the shadow stays on the floor line, and shrinks and fades towards the top', () => {
+  const [gx, gy] = [64, 80];
+  for (const f of FRAMES) {
+    const { body, shadow, carried } = hopBoxes(f, gx, gy, TILE_PX);
+    assert.deepEqual([shadow.y, shadow.h], [gy + TILE_PX - HOP_SHADOW_H, HOP_SHADOW_H], 'the shadow does not rise');
+    assert.equal(shadow.x + shadow.w / 2, gx + TILE_PX / 2, 'centred under the character');
+    assert.equal(body.x + body.w / 2, gx + TILE_PX / 2);
+    assert.equal(body.y + body.h, gy + TILE_PX - f.lift, 'the feet are the lift above the floor');
+    assert.equal(carried.y, body.y - 11, 'the carried item rides on the head');
+    assert.equal(carried.x, gx);
+    assert.ok(f.shadowAlpha >= 0 && f.shadowAlpha <= HOP_SHADOW_ALPHA);
+  }
+  const ground = hopFrame(HOP_TAKEOFF, HOP);
+  const apex = hopFrame(APEX, HOP);
+  assert.ok(apex.shadowWidth < ground.shadowWidth, 'smaller at the top');
+  assert.ok(apex.shadowAlpha < ground.shadowAlpha && apex.shadowAlpha > 0, 'fainter at the top, still there');
+  assert.equal(ground.shadowAlpha, HOP_SHADOW_ALPHA);
+});
+
+test('hop: every frame is whole pixels, and sizes stay even so the centre does not wobble', () => {
+  for (const f of FRAMES) {
+    for (const [name, v] of Object.entries(f)) if (name !== 'shadowAlpha') assert.ok(Number.isInteger(v), `${name} = ${v}`);
+    assert.equal(f.width % 2, 0);
+    assert.equal(f.shadowWidth % 2, 0);
+    const { body, shadow, carried } = hopBoxes(f, 7, 9, TILE_PX);
+    for (const v of [...Object.values(body), ...Object.values(shadow), carried.x, carried.y]) assert.ok(Number.isInteger(v));
+  }
 });
 
 // ---------- input during a transition ----------
