@@ -85,7 +85,7 @@ The puzzles are linked by items that travel between faces:
 
 Faces 1 and 3 stand alone. Every game uses a new random seed, so codes, counts and orders change each time.
 
-The game is won the moment all six puzzles are solved. The end screen shows your time and strikes next to the unfolded cube.
+The game is won the moment all six puzzles are solved. The cube then unfolds, the two turtles meet, and the end card shows your time and strikes.
 
 <p align="center">
   <img src="docs/readme/ending.png" alt="The end screen: PASSED CUBE 1, with the time, the strike count, MAIN MENU and PLAY AGAIN buttons above the unfolded cube" width="640">
@@ -294,6 +294,7 @@ npx tsx screens/playtest.ts       # example: the full two-player regression pass
 | `probe-fit.ts` | How the page fits an iPad-shaped window through rotation and toolbar changes. |
 | `inactivity.ts` | The idle countdown, removal and return, with short timers. |
 | `voice.ts` | The voice call: connect, hang up on leave, come back, survive a refresh (fake microphone). |
+| `ending.ts` | The ending sequence for both players: both renderers, reduce motion, a phone, and a game found already won. |
 | `transitions.ts` | Face-crossing animations, input buffering and agreement between client and server. |
 | `cube.ts`, `cubes.ts`, `hud.ts`, `hud-turn.ts` | The cube visuals and the HUD cube, in both renderers. |
 | `faces.ts`, `world.ts`, `props.ts`, `lava.ts` | Pictures of every face from both sides, the living scenery, tall props and walking pace, and the lava room. |
