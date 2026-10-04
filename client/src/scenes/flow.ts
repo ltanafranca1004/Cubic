@@ -163,6 +163,8 @@ export abstract class MenuScene extends Phaser.Scene {
     const onKey = (e: KeyboardEvent) => {
       if (!this.scene.isActive() || e.ctrlKey || e.metaKey || e.altKey) return;
       if (document.activeElement instanceof HTMLInputElement || document.querySelector('.cu-modal.on')) return;
+      // Tab moved the focus to a DOM button (the settings gear): the key is that button's
+      if (document.activeElement instanceof HTMLButtonElement) return;
       fn(e);
     };
     window.addEventListener('keydown', onKey);

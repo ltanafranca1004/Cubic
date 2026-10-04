@@ -171,6 +171,9 @@ if (import.meta.env.DEV) {
   });
 }
 
+/** How far the focus outline reaches outside a button, in art pixels. */
+const FOCUS_RING = 4;
+
 const TEXT_ON: Record<ButtonVariant, string> = { dark: ROLE.paper, light: ROLE.ink, out: ROLE.ink, in: ROLE.ink, danger: ROLE.paper };
 
 export interface ButtonOptions {
@@ -196,6 +199,8 @@ export class Button {
   readonly height: number;
   private faces: Record<'idle' | 'hover' | 'pressed' | 'disabled', Phaser.GameObjects.Image>;
   private shadow: Phaser.GameObjects.Rectangle;
+  /** The keyboard focus outline: ink, amber, ink, just outside the box. */
+  private ring: Phaser.GameObjects.Graphics;
   private zone: Phaser.GameObjects.Zone;
   private label: Text;
   private enabled = true;
@@ -218,7 +223,15 @@ export class Button {
     // a soft drop shadow lifts the button off whatever is behind it
     this.shadow = scene.add.rectangle(2, 3, this.width, this.height - 1, hex(ROLE.ink), 0.3).setOrigin(0, 0);
     const zone = scene.add.zone(0, 0, this.width, this.height).setOrigin(0, 0).setInteractive({ useHandCursor: true });
-    const parts: Phaser.GameObjects.GameObject[] = [this.shadow, ...Object.values(this.faces), this.label, zone];
+    // Three plain bands (filled rectangles: the same in WebGL and Canvas), so the outline
+    // reads on the white menu, the sky and the dark half alike. It is a shape, not a tint.
+    this.ring = scene.add.graphics();
+    const band = (grow: number, color: string) => this.ring.fillStyle(hex(color)).fillRect(-grow, -grow, this.width + grow * 2, this.height + grow * 2);
+    band(FOCUS_RING, ROLE.ink);
+    band(FOCUS_RING - 1, ROLE.focus);
+    band(1, ROLE.ink);
+    this.ring.setVisible(false);
+    const parts: Phaser.GameObjects.GameObject[] = [this.ring, this.shadow, ...Object.values(this.faces), this.label, zone];
     if (opts.pulse) {
       const glow = scene.add.rectangle(-3, -3, this.width + 6, this.height + 6, hex(ROLE.paper), 0.15).setOrigin(0, 0);
       scene.tweens.add({ targets: glow, alpha: 0.65, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
@@ -249,9 +262,9 @@ export class Button {
   }
 
   /** Where the button is and what it says (dev check). */
-  probe(): { label: string; enabled: boolean; alpha: number; x: number; y: number; width: number; height: number } {
+  probe(): { label: string; enabled: boolean; focused: boolean; alpha: number; x: number; y: number; width: number; height: number } {
     const m = this.zone.getWorldTransformMatrix();
-    return { label: this.label.text, enabled: this.enabled, alpha: this.root.alpha, x: m.tx, y: m.ty, width: this.width, height: this.height };
+    return { label: this.label.text, enabled: this.enabled, focused: this.focused, alpha: this.root.alpha, x: m.tx, y: m.ty, width: this.width, height: this.height };
   }
 
   /** Click it from code (keyboard): the same pressed beat, then the action. */
@@ -294,7 +307,7 @@ export class Button {
     return this;
   }
 
-  /** Keyboard focus looks like hover. */
+  /** Keyboard focus: the hover face plus the focus outline. */
   setFocus(focused: boolean): this {
     if (this.focused !== focused) {
       this.focused = focused;
@@ -310,6 +323,7 @@ export class Button {
   private draw(): void {
     const state = !this.enabled ? 'disabled' : this.down ? 'pressed' : this.over || this.focused ? 'hover' : 'idle';
     for (const [name, face] of Object.entries(this.faces)) face.setVisible(name === state);
+    this.ring.setVisible(this.focused);
     paint(this.label, this.enabled ? TEXT_ON[this.variant] : ROLE.dimOnLight);
     // pressed: the button sinks into its shadow
     this.shadow.setVisible(this.enabled && state !== 'pressed');

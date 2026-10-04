@@ -18,7 +18,7 @@ const RAW = `
 @font-face { font-family: "m5x7"; src: ${url('fonts/m5x7.ttf')} format("truetype"); font-display: block; }
 
 :root {
-  --u: 2;
+  --u: 2; --tu: 2;
   --ink: ${ROLE.ink}; --paper: ${ROLE.paper}; --dim: ${ROLE.dimOnLight};
   --out: ${ROLE.out.base}; --in: ${ROLE.in.base}; --danger: ${ROLE.danger}; --ok: ${ROLE.ok};
   --signal: ${ROLE.signal}; --portal: ${ROLE.portal}; --p1: ${ROLE.p1.base}; --p2: ${ROLE.p2.base};
@@ -169,7 +169,7 @@ ${ICONS.map((name, i) => `.cu-ico.${name} { background-position: -${i * 16}u 0; 
 .cu-modal > .cu-panel { animation: cu-drop 0.2s steps(4) both; }
 @keyframes cu-drop { from { transform: translateY(-8u); opacity: 0; } to { transform: none; opacity: 1; } }
 .cu-title { text-align: center; margin: 0 0 4u; }
-.cu-settings { width: 232u; display: flex; flex-direction: column; gap: 3u; padding: 2u 4u 4u; }
+.cu-settings { width: 448u; display: flex; flex-direction: column; gap: 3u; padding: 2u 4u 4u; }
 .cu-set { display: flex; align-items: center; gap: 4u; height: 16u; }
 .cu-set label { flex: 1; white-space: nowrap; }
 .cu-set .val { width: 20u; flex: none; text-align: right; color: ${ROLE.dimOnLight}; }
@@ -188,6 +188,103 @@ ${ICONS.map((name, i) => `.cu-ico.${name} { background-position: -${i * 16}u 0; 
 .cu-win { width: 200u; text-align: center; padding: 4u; }
 .cu-win h2 { font: 32u/26u "m5x7", monospace; margin: 0 0 4u; color: ${ROLE.portalDark}; font-weight: normal; }
 .cu-win p { margin: 0 0 2u; }
+
+/* ---------- settings: two columns of rows ---------- */
+.cu-setgrid { display: grid; grid-template-columns: 228u 1fr; column-gap: 8u; align-items: start; }
+.cu-setcol { display: flex; flex-direction: column; gap: 3u; min-width: 0; }
+.cu-sub { color: var(--dim); border-bottom: 1u solid var(--dim); padding-bottom: 2u; margin: 2u 0 1u; }
+.cu-state { width: 20u; flex: none; text-align: right; color: ${ROLE.dimOnLight}; }
+.cu-seg { display: flex; flex: none; gap: 1u; outline: none; background: ${ROLE.ink}; padding: 1u; }
+.cu-seg span { display: block; height: 12u; min-width: 14u; padding: 0 3u; line-height: 9u; text-align: center; white-space: nowrap; background: ${C.mist}; color: ${ROLE.dimOnLight}; }
+/* the chosen one is inverted and underlined: a shape, not only a colour */
+.cu-seg span.on { background: ${ROLE.ink}; color: ${ROLE.paper}; box-shadow: inset 0 -2u 0 ${ROLE.focus}; }
+
+/* ---------- pause menu ---------- */
+.cu-pause { width: 448u; padding: 2u 4u 8u; }
+.cu-pausegrid { display: grid; grid-template-columns: 96u 1fr; column-gap: 10u; align-items: start; }
+.cu-pausebtns { display: flex; flex-direction: column; gap: 5u; padding-top: 4u; }
+.cu-pausebtns .cu-btn { width: 100%; }
+.cu-pausebtns .cu-note { margin: 2u 0 0; }
+.cu-help { display: flex; flex-direction: column; gap: 1u; }
+.cu-helprow { display: grid; grid-template-columns: 84u 80u 1fr; column-gap: 4u; align-items: baseline; }
+.cu-helprow kbd { font: inherit; }
+.cu-helprow span { text-transform: none; }
+.cu-helprow.head { color: var(--dim); }
+
+/* ---------- keyboard focus: one pixel outline, the same on every control ---------- */
+.cu-btn:focus-visible, .cu-gear:focus-visible, .cu-toggle:focus-visible, .cu-slider:focus-visible, .cu-seg:focus-visible {
+  outline: 2u solid ${ROLE.focus}; outline-offset: 1u; box-shadow: 0 0 0 4u ${ROLE.ink};
+}
+
+/* ---------- shapes next to colours ---------- */
+/* a pixel tick: solved */
+.cu-tick { display: inline-block; position: relative; width: 4u; height: 3u; flex: none; }
+.cu-tick::before { content: ""; position: absolute; left: 0; top: 0; width: 1u; height: 1u; box-shadow: 0 1u currentColor, 1u 2u currentColor, 2u 1u currentColor, 3u 0 currentColor; }
+.cu-net div .cu-tick { position: absolute; right: 1u; top: 1u; }
+/* a pixel plus: you are here */
+.cu-pip { position: absolute; left: 1u; bottom: 1u; width: 3u; height: 3u; }
+.cu-pip::before { content: ""; position: absolute; left: 0; top: 0; width: 1u; height: 1u; box-shadow: 1u 0 currentColor, 0 1u currentColor, 1u 1u currentColor, 2u 1u currentColor, 1u 2u currentColor; }
+/* a pixel ring: the portal is awake */
+.cu-ring { position: absolute; right: 1u; bottom: 1u; width: 3u; height: 3u; border: 1u solid currentColor; }
+.cu-net div.here { color: ${ROLE.ink}; }
+.cu[data-side="in"] .cu-net div.here:not(.ok):not(.portal) { color: ${ROLE.paper}; }
+
+/* ---------- pings and quick-chat bubbles, over the game view ---------- */
+.cu-view { position: relative; }
+.cu-over { position: absolute; inset: 2u; z-index: 2; pointer-events: none; line-height: 13u; }
+.cu-ping { position: absolute; width: 16u; height: 16u; }
+/* the partner's ping: a solid ring with a "!" in it, and a ring that spreads */
+.cu-ping.theirs { border: 2u solid ${ROLE.focus}; box-shadow: 0 0 0 1u ${ROLE.ink}, inset 0 0 0 1u ${ROLE.ink}; }
+.cu-ping.theirs i { position: absolute; left: 5u; top: 2u; width: 2u; height: 5u; background: ${ROLE.paper}; box-shadow: 0 0 0 1u ${ROLE.ink}, 0 7u 0 0 ${ROLE.paper}, 0 7u 0 1u ${ROLE.ink}; }
+.cu-ping.theirs::after { content: ""; position: absolute; inset: -2u; border: 1u solid ${ROLE.paper}; animation: cu-ping 0.9s steps(4) infinite; }
+@keyframes cu-ping { from { inset: -2u; opacity: 1; } to { inset: -10u; opacity: 0; } }
+/* your own: a dashed frame, no mark, so the two are told apart without colour */
+.cu-ping.mine { border: 2u dashed ${ROLE.paper}; box-shadow: 0 0 0 1u ${ROLE.ink}, inset 0 0 0 1u ${ROLE.ink}; }
+.cu-ping.mine i { display: none; }
+.cu-bubble {
+  position: absolute; transform: translate(-50%, -100%); margin-top: -3u; white-space: nowrap; text-transform: none;
+  ${nine('ui/tag.png', 4)} padding: 0 3u; color: ${ROLE.paper}; z-index: 1;
+}
+.cu-bubble.under { transform: translate(-50%, 0); margin-top: 1u; }
+.cu-bubble.mine { border-image-source: ${url('ui/tag-light.png')}; color: ${ROLE.ink}; }
+/* the tail: it points at who is speaking */
+.cu-bubble::after { content: ""; position: absolute; left: 50%; bottom: -6u; margin-left: -1u; width: 2u; height: 2u; background: ${ROLE.ink}; }
+.cu-bubble.under::after { bottom: auto; top: -6u; }
+
+/* ---------- captions and "Partner speaking" ---------- */
+.cu-subs { position: absolute; left: 50%; bottom: 6u; transform: translateX(-50%); z-index: 8; display: flex; flex-direction: column; align-items: center; gap: 2u; pointer-events: none; max-width: 90%; }
+.cu-caption { ${nine('ui/tag.png', 4)} padding: 1u 5u 3u; color: ${ROLE.paper}; text-transform: none; text-align: center; max-width: 340u; }
+.cu[data-side="in"] .cu-caption { outline: 1u solid ${ROLE.dimOnDark}; }
+.cu-caption b { font-weight: normal; text-transform: uppercase; color: ${ROLE.in.base}; }
+.cu-speaking { ${nine('ui/tag-light.png', 4)} height: 18u; padding: 0 5u 0 1u; color: ${ROLE.ink}; display: flex; align-items: center; gap: 2u; white-space: nowrap; line-height: 10u; }
+.cu-speaking .cu-ico { margin: -4u 0; }
+.cu-speaking span { display: block; margin-top: -1u; }
+
+/* ---------- text size (settings): the reading text, in whole pixel multiples ---------- */
+.cu-log, .cu-obj, .cu-caption, .cu-bubble { font-size: calc(16px * var(--tu)); line-height: calc(13px * var(--tu)); }
+
+/* ---------- high contrast (settings): no faint text, hard edges, a heavier veil ---------- */
+.cu[data-contrast="high"], .cu[data-contrast="high"] .cu-panel { --dim: ${ROLE.ink}; }
+.cu[data-contrast="high"][data-side="in"], .cu[data-contrast="high"][data-side="in"] .cu-hud .cu-panel { --dim: ${ROLE.paper}; }
+.cu[data-contrast="high"] .cu-panel { outline: 2u solid ${ROLE.ink}; }
+.cu[data-contrast="high"][data-side="in"] .cu-hud .cu-panel { outline-color: ${ROLE.paper}; }
+.cu[data-contrast="high"] .cu-modal { background: rgba(46, 34, 47, 0.88); }
+.cu[data-contrast="high"] .cu-set .val, .cu[data-contrast="high"] .cu-state, .cu[data-contrast="high"] .cu-set.off, .cu[data-contrast="high"] .cu-seg span { color: ${ROLE.ink}; }
+.cu[data-contrast="high"] .cu-seg span.on { color: ${ROLE.paper}; }
+.cu[data-contrast="high"] .cu-set.off label { text-decoration: line-through; }
+.cu[data-contrast="high"] .cu-field::placeholder { color: ${ROLE.ink}; }
+.cu[data-contrast="high"] .cu-log b, .cu[data-contrast="high"] .cu-edge.done, .cu[data-contrast="high"] .cu-you b, .cu[data-contrast="high"] .cu-stats .x, .cu[data-contrast="high"] .cu-warn { color: inherit; }
+.cu[data-contrast="high"] .cu-log b { text-decoration: underline; }
+.cu[data-contrast="high"] .cu-net div { color: ${ROLE.ink}; background: ${ROLE.paper}; }
+.cu[data-contrast="high"] .cu-net div.here { outline-width: 3u; }
+.cu[data-contrast="high"] .cu-view { outline: 2u solid ${ROLE.paper}; }
+.cu[data-contrast="high"] .cu-ping { border-width: 3u; }
+.cu[data-contrast="high"] .cu-caption, .cu[data-contrast="high"] .cu-bubble, .cu[data-contrast="high"] .cu-speaking { outline: 1u solid ${ROLE.paper}; }
+.cu[data-contrast="high"] .cu-btn:focus-visible, .cu[data-contrast="high"] .cu-gear:focus-visible, .cu[data-contrast="high"] .cu-toggle:focus-visible, .cu[data-contrast="high"] .cu-slider:focus-visible, .cu[data-contrast="high"] .cu-seg:focus-visible { outline-width: 3u; box-shadow: 0 0 0 6u ${ROLE.ink}; }
+
+/* ---------- less motion ---------- */
+.cu[data-motion="reduce"] .cu-ping.theirs::after { animation: none; }
+@media (prefers-reduced-motion: reduce) { .cu-ping.theirs::after { animation: none; } }
 `;
 
 /** "12u" to calc(12px * var(--u)). */

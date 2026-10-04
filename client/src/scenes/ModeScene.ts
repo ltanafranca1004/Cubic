@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { FACE_SIZE, TILE_PX, defaultEnv, type FaceId, type TileKind } from '@cubic/shared';
 import { ENABLE_AI } from '../config';
+import { menuAction, stepFocus, typeCode } from '../input/keymap';
 import { C, EASE, ROLE, TIME, hex } from '../style/tokens';
 import { MenuScene, type SceneData } from './flow';
 import { Button, centre, paint, shake, slice, text, textCentred, type Text } from './kit';
@@ -31,6 +32,7 @@ export class ModeScene extends MenuScene {
   private aiButtons: Button[] = [];
   private back!: Button;
   private status!: Text;
+  /** Index into [...buttons, back]; -1 until a key is pressed. */
   private focus = -1;
   private popup: JoinPopup | null = null;
   /** The join request we are waiting on, to tell its error from an old one. */
@@ -172,9 +174,14 @@ export class ModeScene extends MenuScene {
     this.sync();
   }
 
+  /** Everything the focus can land on: the menu, top to bottom, then Back. */
+  private get targets(): Button[] {
+    return [...this.buttons, this.back];
+  }
+
   private setFocus(i: number): void {
     this.focus = i;
-    this.buttons.forEach((b, n) => b.setFocus(n === i));
+    this.targets.forEach((b, n) => b.setFocus(n === i));
   }
 
   private key(e: KeyboardEvent): void {
@@ -182,12 +189,14 @@ export class ModeScene extends MenuScene {
       this.popup.key(e);
       return;
     }
-    // arrows (or W/S) walk the menu, Enter presses
-    const move: Record<string, number> = { ArrowUp: -1, ArrowDown: 1, w: -1, s: 1, W: -1, S: 1 };
-    if (e.key in move) {
-      const next = this.focus < 0 ? 0 : this.focus + move[e.key]!;
-      if (next >= 0 && next < this.buttons.length) this.setFocus(next);
-    } else if (e.key === 'Enter' && this.focus >= 0) this.buttons[this.focus]!.press();
+    // arrows or WASD walk the menu (down past the last choice, or left, is Back);
+    // Enter or Space press; Esc is Back
+    const action = menuAction(e);
+    const last = this.targets.length - 1;
+    if (action === 'up' || action === 'down') this.setFocus(stepFocus(this.focus, this.targets.length, action === 'up' ? -1 : 1));
+    else if (action === 'left') this.setFocus(last);
+    else if (action === 'right' && this.focus === last) this.setFocus(0);
+    else if (action === 'select' && this.focus >= 0) this.targets[this.focus]!.press();
     else if (e.key === 'Escape') this.back.press();
   }
 }
@@ -202,6 +211,9 @@ class JoinPopup {
   private slots: { idle: Phaser.GameObjects.Image; active: Phaser.GameObjects.Image; error: Phaser.GameObjects.Image; letter: Text }[] = [];
   private message: Text;
   private join: Button;
+  private cancel: Button;
+  /** Where the keyboard is: the code boxes, or one of the two buttons. */
+  private focus: 'code' | 'cancel' | 'join' = 'code';
   private code = '';
   private failed = false;
   private busy = false;
@@ -236,7 +248,7 @@ class JoinPopup {
       this.slots.push({ idle, active, error, letter });
     }
     this.message = text(scene, 0, 74, '', ROLE.danger);
-    const cancel = new Button(scene, { label: 'CANCEL', variant: 'light', width: 80, onClick: () => this.close() }).setPosition(12, h - 34);
+    const cancel = (this.cancel = new Button(scene, { label: 'CANCEL', variant: 'light', width: 80, onClick: () => this.close() }).setPosition(12, h - 34));
     this.join = new Button(scene, { label: 'JOIN', variant: 'in', width: 80, onClick: () => this.submit() }).setPosition(w - 92, h - 34);
 
     const x = Math.round((W - w) / 2);
@@ -251,12 +263,33 @@ class JoinPopup {
     this.draw();
   }
 
+  /**
+   * Type the code straight in: letters, Backspace, Enter joins, Esc closes. The arrows
+   * reach the buttons (letters are the code here, so WASD do not move the focus):
+   * down to JOIN, left / right between CANCEL and JOIN, up back to the code.
+   */
   key(e: KeyboardEvent): void {
     if (this.closed) return;
-    if (e.key === 'Escape') this.close();
-    else if (e.key === 'Enter') this.join.press();
-    else if (e.key === 'Backspace') this.set(this.code.slice(0, -1));
-    else if (/^[a-zA-Z]$/.test(e.key) && this.code.length < CODE_LEN) this.set(this.code + e.key.toUpperCase());
+    const action = menuAction(e, false);
+    if (action === 'back') this.close();
+    else if (action === 'select') (this.focus === 'cancel' ? this.cancel : this.join).press();
+    else if (action === 'down' || action === 'next') this.setFocus(this.focus === 'code' ? 'join' : this.focus === 'join' ? 'cancel' : 'code');
+    else if (action === 'up' || action === 'prev') this.setFocus('code');
+    else if (action === 'left') this.setFocus('cancel');
+    else if (action === 'right') this.setFocus('join');
+    else {
+      const next = typeCode(this.code, e, CODE_LEN);
+      if (next === this.code) return;
+      this.setFocus('code'); // typing always goes to the code
+      this.set(next);
+    }
+  }
+
+  private setFocus(focus: 'code' | 'cancel' | 'join'): void {
+    this.focus = focus;
+    this.cancel.setFocus(focus === 'cancel');
+    this.join.setFocus(focus === 'join');
+    this.draw();
   }
 
   /** Pasted or typed text: keep the letters, upper-cased, at most four. */
@@ -293,7 +326,7 @@ class JoinPopup {
 
   private draw(): void {
     this.slots.forEach((slot, i) => {
-      const active = !this.failed && i === Math.min(this.code.length, CODE_LEN - 1);
+      const active = !this.failed && this.focus === 'code' && i === Math.min(this.code.length, CODE_LEN - 1);
       slot.idle.setVisible(!this.failed && !active);
       slot.active.setVisible(active);
       slot.error.setVisible(this.failed);

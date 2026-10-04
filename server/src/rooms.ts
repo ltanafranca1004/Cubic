@@ -1,17 +1,24 @@
 import { randomBytes } from 'node:crypto';
 import {
   CHAT_MAX_LEN,
+  QUICK_CHATS,
   SIDES,
   TICK_MS,
   applyInteract,
   applyMove,
+  canPing,
   createGame,
+  makePing,
   needsTick,
+  quickIndex,
   tick,
   type ChatMessage,
   type GameEvent,
   type GameState,
+  type InteractOnly,
   type MemberInfo,
+  type Ping,
+  type QuickChat,
   type Role,
   type RoomInfo,
   type RoomMode,
@@ -56,6 +63,8 @@ interface Member {
   budget: number;
   budgetAt: number;
   chatTimes: number[];
+  /** When they last pinged (null = never), for the ping cooldown. */
+  pingAt: number | null;
   dropTimer: NodeJS.Timeout | null;
 }
 
@@ -65,6 +74,8 @@ type Who = number | Side;
 export interface RoomListener {
   onState?(update: StateUpdate): void;
   onChat?(msg: ChatMessage): void;
+  onPing?(ping: Ping): void;
+  onQuick?(quick: QuickChat): void;
   onRoom?(info: RoomInfo): void;
   onTyping?(side: Side, on: boolean): void;
   onClosed?(): void;
@@ -77,6 +88,7 @@ export class Room {
   private members: Member[] = [];
   private listeners = new Set<RoomListener>();
   private chatId = 0;
+  private signalId = 0;
   private memberId = 0;
   private ticker: NodeJS.Timeout | null = null;
 
@@ -167,6 +179,7 @@ export class Room {
       budget: LIMITS.moveBurst,
       budgetAt: this.now(),
       chatTimes: [],
+      pingAt: null,
       dropTimer: null,
     };
     this.members.push(m);
@@ -347,11 +360,11 @@ export class Room {
     return events;
   }
 
-  interact(side: Side, seq = 0): GameEvent[] {
+  interact(side: Side, seq = 0, only?: InteractOnly): GameEvent[] {
     const seat = this.playing(side);
     if (!seat) return [];
     if (seq > seat.ack) seat.ack = seq;
-    const events = this.spend(seat) ? applyInteract(this.state, side, this.now()) : [];
+    const events = this.spend(seat) ? applyInteract(this.state, side, this.now(), undefined, only) : [];
     this.emitState(events);
     return events;
   }
@@ -371,6 +384,31 @@ export class Room {
     if (this.chat.length > CHAT_HISTORY) this.chat.shift();
     for (const l of this.listeners) l.onChat?.(msg);
     return msg;
+  }
+
+  /** Ping marker on the sender's own tile. Null while their cooldown runs. */
+  ping(side: Side): Ping | null {
+    const seat = this.playing(side);
+    const now = this.now();
+    if (!seat || !canPing(seat.pingAt, now)) return null;
+    seat.pingAt = now;
+    const ping = makePing(this.state, side, ++this.signalId, now);
+    for (const l of this.listeners) l.onPing?.(ping);
+    return ping;
+  }
+
+  /**
+   * Quick chat: one of the fixed lines. It is a chat message like any other (same rate
+   * limit, same log, the AI partner hears it), plus a bubble over the speaker.
+   */
+  quick(side: Side, index: unknown): QuickChat | null {
+    const i = quickIndex(index);
+    if (i === null) return null;
+    const msg = this.say(side, QUICK_CHATS[i]);
+    if (!msg) return null;
+    const quick: QuickChat = { id: ++this.signalId, from: side, index: i, chatId: msg.id, at: msg.at };
+    for (const l of this.listeners) l.onQuick?.(quick);
+    return quick;
   }
 
   /** The AI partner is thinking (typing indicator). */

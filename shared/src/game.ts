@@ -4,7 +4,7 @@ import { SPAWN, isSolidTile, loadWorld, objectsOn } from './maps';
 import type { MapObject, World } from './maps/types';
 import { PUZZLES } from './puzzles';
 import type { ItemEvent, PuzzleCtx, PuzzleModule, VisibleObject } from './puzzles/types';
-import { FACES, SIDES, type FaceId, type GameEvent, type GameState, type Item, type Side, type TileRef } from './types';
+import { FACES, SIDES, type FaceId, type GameEvent, type GameState, type InteractOnly, type Item, type Side, type TileRef } from './types';
 
 // The game engine: pure functions over GameState. The server runs them as the truth, the
 // client runs the same code to predict its own moves.
@@ -139,11 +139,16 @@ const accepts = (target: MapObject, item: Item) => {
   return want === undefined || want === '' || want === item.id || want === item.kind;
 };
 
-/** E key: drop the carried item on this tile, or pick up the item lying on it. */
-export function applyInteract(state: GameState, side: Side, now: number = Date.now(), env: GameEnv = defaultEnv): GameEvent[] {
+/**
+ * E key: drop the carried item on this tile, or pick up the item lying on it.
+ * `only` narrows it: 'drop' (Q key) never picks up, 'pick' never drops.
+ */
+export function applyInteract(state: GameState, side: Side, now: number = Date.now(), env: GameEnv = defaultEnv, only?: InteractOnly): GameEvent[] {
   if (state.wonAt !== null) return [];
   const events: GameEvent[] = [];
   const player = state.players[side];
+  if (only === 'drop' && !player.carrying) return [];
+  if (only === 'pick' && player.carrying) return [];
   const { face, x, y } = player.pose;
   const tile: TileRef = { face, x, y };
   const lying = Object.values(state.items).find((i) => !i.carriedBy && i.side === side && i.face === face && i.x === x && i.y === y);

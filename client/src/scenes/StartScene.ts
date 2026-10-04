@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { EASE, ROLE, TIME } from '../style/tokens';
 import { Sky } from './clouds';
 import { MenuScene, type SceneData } from './flow';
+import { menuAction } from '../input/keymap';
 import { Button, seeded, textCentred, type Text } from './kit';
 
 /**
@@ -38,8 +39,11 @@ export class StartScene extends MenuScene {
     // the logo floats: two pixels up and down, landing on whole pixels
     this.tweens.add({ targets: this.logo, y: logoY - 2, duration: 1600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
 
+    // One button, so there is nowhere for the focus to go: the first key of any kind
+    // shows the outline on it (a mouse player keeps the plain pulsing button).
     this.keys((e) => {
-      if (e.key === 'Enter' || e.key === ' ') this.play.press();
+      this.play.setFocus(true);
+      if (menuAction(e) === 'select') this.play.press();
     });
     this.begin(data);
   }

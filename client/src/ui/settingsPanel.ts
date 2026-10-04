@@ -1,32 +1,62 @@
 import { onSettings, setSetting, settings, type Settings } from '../style/settings';
+import { STEP_EVENT, type StepDetail } from './focus';
 
 // The settings panel behind the gear. The same panel on every screen, menus and game.
 // Every control writes straight to the settings store, which applies it at once:
 // volumes to the AudioManager (style/audioApi), voice to the Voice class.
+//
+// The rows are data: to add a setting, add one line to ROWS (and the key to Settings in
+// style/settings.ts). Keyboard: up/down walk the rows, left/right change the focused
+// one, Enter or Space flips a switch, Esc or Done closes (ui/focus.ts).
 
-type NumberKey = 'master' | 'music' | 'sfx' | 'voiceVolume';
-type ToggleKey = 'voiceOn' | 'micMuted' | 'reduceMotion';
+type KeysOf<T> = { [K in keyof Settings]: Settings[K] extends T ? K : never }[keyof Settings];
+type NumberKey = KeysOf<number>;
+type ToggleKey = KeysOf<boolean>;
+type ChoiceKey = Exclude<KeysOf<string>, NumberKey | ToggleKey>;
 
-const SLIDERS: { key: NumberKey; label: string; icon: string }[] = [
-  { key: 'master', label: 'Master volume', icon: 'speaker' },
-  { key: 'music', label: 'Music', icon: 'music' },
-  { key: 'sfx', label: 'Sound effects', icon: 'sfx' },
+type Section = 'sound' | 'voice' | 'access';
+type Row = { section: Section; label: string; icon?: string; aria?: string; needsVoice?: boolean } & (
+  | { kind: 'slider'; key: NumberKey }
+  | { kind: 'toggle'; key: ToggleKey }
+  | { kind: 'choice'; key: ChoiceKey; options: { value: string; label: string }[] }
+);
+
+const SECTIONS: { id: Section; title: string; column: 1 | 2 }[] = [
+  { id: 'sound', title: 'Sound', column: 1 },
+  { id: 'voice', title: 'Voice', column: 1 },
+  { id: 'access', title: 'Accessibility', column: 2 },
 ];
 
-const slider = (key: NumberKey, label: string) =>
-  `<div class="cu-slider" data-key="${key}" role="slider" tabindex="0" aria-label="${label}" aria-valuemin="0" aria-valuemax="100"><div class="track"></div><div class="fill"></div><div class="knob"></div></div><span class="val" data-val="${key}"></span>`;
-const toggle = (key: ToggleKey, label: string) => `<button class="cu-toggle" data-key="${key}" role="switch" aria-label="${label}"></button>`;
+const ROWS: Row[] = [
+  { section: 'sound', kind: 'slider', key: 'master', label: 'Master volume', icon: 'speaker' },
+  { section: 'sound', kind: 'slider', key: 'music', label: 'Music', icon: 'music' },
+  { section: 'sound', kind: 'slider', key: 'sfx', label: 'Sound effects', icon: 'sfx' },
+  { section: 'voice', kind: 'toggle', key: 'voiceOn', label: 'Proximity chat', icon: 'chat' },
+  { section: 'voice', kind: 'slider', key: 'voiceVolume', label: 'Chat volume', icon: 'speaker', aria: 'Proximity chat volume', needsVoice: true },
+  { section: 'voice', kind: 'toggle', key: 'micMuted', label: 'Mute my mic', icon: 'micOff', aria: 'Mute my microphone', needsVoice: true },
+  { section: 'voice', kind: 'choice', key: 'micMode', label: 'Mic mode', icon: 'mic', needsVoice: true, options: [{ value: 'open', label: 'Open' }, { value: 'ptt', label: 'Hold V' }] },
+  { section: 'access', kind: 'choice', key: 'textSize', label: 'Text size', options: [{ value: 's', label: 'S' }, { value: 'm', label: 'M' }, { value: 'l', label: 'L' }] },
+  { section: 'access', kind: 'toggle', key: 'highContrast', label: 'High contrast' },
+  { section: 'access', kind: 'toggle', key: 'screenShake', label: 'Screen shake' },
+  { section: 'access', kind: 'toggle', key: 'reduceMotion', label: 'Reduce motion', icon: 'hand' },
+];
+
+function control(row: Row): string {
+  const aria = row.aria ?? row.label;
+  if (row.kind === 'slider')
+    return `<div class="cu-slider" data-key="${row.key}" data-step role="slider" tabindex="0" aria-label="${aria}" aria-valuemin="0" aria-valuemax="100"><div class="track"></div><div class="fill"></div><div class="knob"></div></div><span class="val" data-val="${row.key}"></span>`;
+  if (row.kind === 'toggle') return `<button class="cu-toggle" data-key="${row.key}" role="switch" aria-label="${aria}"></button><span class="cu-state" data-state="${row.key}"></span>`;
+  return `<div class="cu-seg" data-key="${row.key}" data-step="cycle" role="radiogroup" tabindex="0" aria-label="${aria}">${row.options.map((o) => `<span role="radio" data-value="${o.value}">${o.label}</span>`).join('')}</div>`;
+}
+
+const rowHtml = (row: Row) => `<div class="cu-set"${row.needsVoice ? ' data-needs-voice' : ''}>${row.icon ? `<i class="cu-ico ${row.icon}"></i>` : ''}<label>${row.label}</label>${control(row)}</div>`;
+const sectionHtml = (s: (typeof SECTIONS)[number]) => `<div class="cu-sub">${s.title}</div>${ROWS.filter((r) => r.section === s.id).map(rowHtml).join('')}`;
+const columnHtml = (column: 1 | 2) => `<div class="cu-setcol">${SECTIONS.filter((s) => s.column === column).map(sectionHtml).join('')}</div>`;
 
 const HTML = `
 <div class="cu-panel cu-settings" role="dialog" aria-label="Settings">
   <div class="cu-title">Settings</div>
-  ${SLIDERS.map((s) => `<div class="cu-set"><i class="cu-ico ${s.icon}"></i><label>${s.label}</label>${slider(s.key, s.label)}</div>`).join('')}
-  <div class="cu-rule"></div>
-  <div class="cu-set"><i class="cu-ico chat"></i><label>Proximity chat</label>${toggle('voiceOn', 'Proximity chat')}</div>
-  <div class="cu-set" data-needs-voice><i class="cu-ico speaker"></i><label>Chat volume</label>${slider('voiceVolume', 'Proximity chat volume')}</div>
-  <div class="cu-set" data-needs-voice><i class="cu-ico micOff"></i><label>Mute my mic</label>${toggle('micMuted', 'Mute my microphone')}</div>
-  <div class="cu-rule"></div>
-  <div class="cu-set"><i class="cu-ico hand"></i><label>Reduce motion</label>${toggle('reduceMotion', 'Reduce motion')}</div>
+  <div class="cu-setgrid">${columnHtml(1)}${columnHtml(2)}</div>
   <div class="cu-actions"><button class="cu-btn" data-close><span>Done</span></button></div>
 </div>`;
 
@@ -63,6 +93,16 @@ export function createSettingsPanel(parent: HTMLElement): SettingsPanel {
       const on = s[node.dataset.key as ToggleKey];
       node.classList.toggle('on', on);
       node.setAttribute('aria-checked', String(on));
+      // the word as well as the colour of the switch
+      modal.querySelector<HTMLElement>(`[data-state="${node.dataset.key}"]`)!.textContent = on ? 'On' : 'Off';
+    });
+    modal.querySelectorAll<HTMLElement>('.cu-seg').forEach((node) => {
+      const value = s[node.dataset.key as ChoiceKey];
+      node.querySelectorAll<HTMLElement>('[role="radio"]').forEach((opt) => {
+        const on = opt.dataset.value === value;
+        opt.classList.toggle('on', on);
+        opt.setAttribute('aria-checked', String(on));
+      });
     });
     modal.querySelectorAll<HTMLElement>('[data-needs-voice]').forEach((row) => row.classList.toggle('off', !s.voiceOn));
   }
@@ -83,19 +123,31 @@ export function createSettingsPanel(parent: HTMLElement): SettingsPanel {
     node.addEventListener('pointermove', (e) => {
       if (node.hasPointerCapture(e.pointerId)) drag(node, e);
     });
-    node.addEventListener('keydown', (e) => {
+    // left / right on the keyboard (ui/focus.ts sends the step)
+    node.addEventListener(STEP_EVENT, (e) => {
       const key = node.dataset.key as NumberKey;
-      const step = e.key === 'ArrowRight' || e.key === 'ArrowUp' ? 0.05 : e.key === 'ArrowLeft' || e.key === 'ArrowDown' ? -0.05 : 0;
-      if (!step) return;
-      e.preventDefault();
-      e.stopPropagation(); // the arrows are also the game's movement keys
-      setSetting(key, Math.round((settings()[key] + step) * 20) / 20);
+      setSetting(key, Math.round((settings()[key] + (e as CustomEvent<StepDetail>).detail.by * 0.05) * 20) / 20);
     });
   });
   modal.querySelectorAll<HTMLElement>('.cu-toggle').forEach((node) => {
     node.addEventListener('click', () => {
       const key = node.dataset.key as ToggleKey;
       setSetting(key, !settings()[key]);
+    });
+  });
+  modal.querySelectorAll<HTMLElement>('.cu-seg').forEach((node) => {
+    const key = node.dataset.key as ChoiceKey;
+    const values = [...node.querySelectorAll<HTMLElement>('[role="radio"]')].map((o) => o.dataset.value!);
+    const pick = (value: string) => setSetting(key, value as Settings[ChoiceKey]);
+    node.addEventListener('click', (e) => {
+      const value = (e.target as HTMLElement).closest<HTMLElement>('[role="radio"]')?.dataset.value;
+      if (value) pick(value);
+    });
+    // left / right step and stop at the ends; Enter (a "cycle" step) wraps around
+    node.addEventListener(STEP_EVENT, (e) => {
+      const { by, wrap } = (e as CustomEvent<StepDetail>).detail;
+      const at = values.indexOf(settings()[key]) + by;
+      pick(values[wrap ? (at + values.length) % values.length : Math.min(values.length - 1, Math.max(0, at))]!);
     });
   });
 
