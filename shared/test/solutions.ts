@@ -2,7 +2,6 @@ import { visibleObjects, type FaceId, type Side } from '../src/index';
 import type { SolutionScript, Solver } from './harness';
 // face 4: botanical-mirror
 import assert from 'node:assert/strict';
-import { visibleObjects } from '../src/index';
 import { FLOWER_ID } from '../src/puzzles/chain';
 
 // ONE SOLUTION SCRIPT PER PUZZLE, keyed by the module's `id`.
