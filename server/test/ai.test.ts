@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import { after, test, type TestContext } from 'node:test';
 import { AI_STEP_MS, CORE_LINES, FACES, PUZZLE_SCRIPTS, createGame, defaultEnv, devSolve, devTeleport, faceDistance, lineKeys, visibleObjects, type FaceId, type PuzzleScript, type Say, type Side } from '@cubic/shared';
 import { HUMAN_SCRIPTS, SimHuman, type HumanOptions } from '../../shared/test/partnerSim';
-import { AiPlayer, LINE_GAP_MS, LINE_MS_PER_CHAR, STALE_MS, lineHoldMs, parseReply, type AiOptions } from '../src/ai/aiPlayer';
-import { Budget, GEMINI_PAUSE_MS } from '../src/ai/budget';
-import type { Brain } from '../src/ai/gemini';
+import { AiPlayer, CHAT_TIMEOUT_MS, LINE_GAP_MS, LINE_MS_PER_CHAR, STALE_MS, lineHoldMs, parseReply, type AiOptions } from '../src/ai/aiPlayer';
+import { Budget, GEMINI_PAUSE_MS, GEMINI_PER_GAME, GEMINI_PER_MINUTE } from '../src/ai/budget';
+import { geminiBrain, type Brain, type GeminiClient } from '../src/ai/gemini';
 import { MAX_SAY_CHARS, REPLY_SCHEMA, parsePersona, systemPrompt } from '../src/ai/prompt';
 import { allScriptedLines, bankedScriptLines, hasLine, lineText } from '../src/ai/scripted';
 import { INACTIVITY, INACTIVITY_RANGE, LIMITS, Rooms, type Room } from '../src/rooms';
@@ -207,7 +207,7 @@ for (const humanSide of ['out', 'in'] as const) {
 
 // ---------- Gemini is advisory: slow, failing, rate limited ----------
 
-test('Gemini slower than 3 s: the body never waits, and at 3 s the script answers by itself', async (t) => {
+test('Gemini slower than the chat deadline (6 s): the body never waits, and at 6 s the script answers by itself', async (t) => {
   const pass = clock(t);
   const { room, ai, said, logs, bot } = setup('out', ['hang'], { humanOn: FAR });
   await pass(6000); // the greeting and the follow line have been said
@@ -219,10 +219,13 @@ test('Gemini slower than 3 s: the body never waits, and at 3 s the script answer
   assert.ok(said().includes(L('follow.far'))); // the script's lines do not wait for anyone
   assert.ok(!said().includes(L('huh')));
   await pass(600);
-  assert.equal(ai.stats.timeouts, 1); // given up 3 s after the call went out
+  assert.equal(ai.stats.timeouts, 0); // a chat line is given 6 s: an answer at 3 s is not thrown away
+  await pass(3000);
+  assert.equal(ai.stats.timeouts, 1); // given up 6 s after the call went out
   await pass(3000); // its lines are a beat apart
-  assert.ok(said().includes(L('huh')), 'no scripted answer after the 3 s deadline');
-  assert.ok(logs.some((l) => l.includes('no answer after 3000 ms; the script answers')));
+  assert.ok(said().includes(L('huh')), 'no scripted answer after the deadline');
+  assert.ok(logs.some((l) => l.includes('no answer after 6000 ms; the script answers')));
+  assert.ok(logs.some((l) => l.includes('chat: gemini did not answer (why=timeout)')));
   await pass(30_000);
   assert.equal(bot().pose.face, FAR);
   assert.equal(ai.calls, 1); // and it was not tried again
@@ -297,6 +300,8 @@ test('the throttle: one Gemini call per 6 seconds per room, with no backlog', as
   assert.equal(ai.calls, 2);
   assert.equal((ai as unknown as { minThinkMs: number; timeoutMs: number }).minThinkMs, 6000);
   assert.equal((ai as unknown as { minThinkMs: number; timeoutMs: number }).timeoutMs, 3000);
+  assert.equal((ai as unknown as { chatTimeoutMs: number }).chatTimeoutMs, CHAT_TIMEOUT_MS);
+  assert.equal(CHAT_TIMEOUT_MS, 6000);
 });
 
 test('a whole game with a Gemini that hangs, errors and hits the rate limit is still won', { skip: !wholeGame }, async (t) => {
@@ -313,6 +318,135 @@ test('a whole game with a Gemini that hangs, errors and hits the rate limit is s
   assert.equal(room.state.strikes, 0);
   assert.equal(ai.stats.answered, 0);
   assert.ok(ai.stats.timeouts > 0 && ai.stats.errors > 0);
+});
+
+// ---------- free-form chat: Gemini answers it, and when it does not the preset line does ----------
+
+test('free-form chat reaches the Gemini client and its reply is said as a model line; puzzle answers and protocol words never do', async (t) => {
+  const pass = clock(t);
+  const requests: { model: string; contents: unknown }[] = [];
+  const client: GeminiClient = {
+    models: {
+      generateContent: async (params) => {
+        requests.push({ model: params.model, contents: params.contents });
+        return { text: reply('I am a little nervous, but glad you are here.'), candidates: [{ finishReason: 'STOP' }], usageMetadata: { promptTokenCount: 500, totalTokenCount: 520 } };
+      },
+    },
+  };
+  const room = rooms.create('ai');
+  room.sit('out');
+  const spoken: { text: string; scripted: boolean }[] = [];
+  const logs: string[] = [];
+  const ai = new AiPlayer(room, 'in', geminiBrain('test-key', 'gemini-test', 'default', { client }), {
+    log: (l) => logs.push(l),
+    onSay: (m, info) => spoken.push({ text: m.text, scripted: info.scripted }),
+  });
+  t.after(() => ai.stop());
+  await pass(8000);
+  // Puzzle answers, directions and protocol words: the script's, never Gemini's.
+  for (const line of ['4 7 2', 'the code is 3 8 4', 'left 2 then up 1', 'row 1 skip 3 flip 7', 'face 3', 'go', 'wait', 'yes', 'no', 'again', 'red', '2 bushes 3 birds 1 rock']) {
+    assert.ok(room.say('out', line), line);
+    await pass(1100);
+  }
+  assert.equal(requests.length, 0, 'a puzzle answer or a protocol word went to Gemini');
+  await pass(12_000); // "wait" has run out
+  assert.ok(room.say('out', 'hey, how are you feeling in there?'));
+  await pass(600);
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0]!.model, 'gemini-test');
+  assert.equal(JSON.parse(requests[0]!.contents as string).partnerSaid, 'hey, how are you feeling in there?');
+  assert.equal(JSON.parse(requests[0]!.contents as string).event, 'chat');
+  await pass(15_000);
+  // Said in the chat (the caption) and handed to the voice as a model's line (the one that may be bought).
+  assert.deepEqual(spoken.find((x) => x.text.startsWith('I am a little nervous')), { text: 'I am a little nervous, but glad you are here.', scripted: false });
+  assert.ok(!room.chat.some((m) => m.isAI && m.text === L('huh')), 'the preset line was said although Gemini answered');
+  assert.equal(ai.stats.chatMisses, 0);
+});
+
+test('a Gemini reply to chat is said however long it waits behind the script\'s lines', async (t) => {
+  const pass = clock(t);
+  const { room, said, ai } = setup('out', [reply('This place gives me the creeps too.')], { humanOn: FAR });
+  await pass(200); // the greeting is being said: 5 s before the next line
+  room.say('out', 'this cube is kind of creepy is it not');
+  // Lines the script wants to say first, and a slow chat: the reply waits more than STALE_MS.
+  (ai as unknown as { holdMs: number }).holdMs = STALE_MS + 4000;
+  await pass(STALE_MS + 8000);
+  assert.ok(said().includes('This place gives me the creeps too.'), said().join(' | '));
+});
+
+/** Every way a free-form chat line can go unanswered by Gemini: the preset line is the reply, and the log says why. */
+const skew = { ms: 0 };
+const MISSES: { why: string; replies: Reply[] | null; budget?: (b: Budget, code: string) => void; opts?: AiOptions; first?: { text: string; gapMs: number } }[] = [
+  { why: 'off', replies: null }, // no GEMINI_API_KEY, or AI_FAKE=1
+  { why: 'disabled', replies: [], opts: { budget: new Budget({ geminiEnabled: false, log: () => {} }) } }, // GEMINI_ENABLED=false
+  { why: 'day_cap', replies: [], opts: { budget: new Budget({ geminiDailyCap: 0, log: () => {} }) } },
+  { why: 'minute_cap', replies: [], budget: (b) => void Array.from({ length: GEMINI_PER_MINUTE }, () => b.gemini('ELSE', 'chat')) },
+  {
+    why: 'game_cap',
+    replies: [],
+    opts: { budget: new Budget({ now: () => Date.now() + skew.ms, log: () => {} }) },
+    // 25 calls of this game, spread over minutes so the minute cap is not what refuses
+    budget: (b, code) => {
+      for (let i = 0; i < GEMINI_PER_GAME; i++) {
+        if (i % GEMINI_PER_MINUTE === 0) skew.ms += 61_000;
+        b.gemini(code, 'chat');
+      }
+      skew.ms += 61_000;
+    },
+  },
+  { why: 'paused_429', replies: [], budget: (b) => b.geminiQuota('ELSE') },
+  { why: 'timeout', replies: ['hang'] },
+  { why: '429', replies: [Object.assign(new Error('got status: 429 RESOURCE_EXHAUSTED'), { status: 429 })] },
+  { why: 'error', replies: [new Error('503 overloaded')] },
+  { why: 'unusable', replies: ['not json at all'] },
+  { why: 'no_say', replies: [reply(null)] },
+  { why: 'busy', replies: ['hang'], first: { text: 'what is this strange place anyway', gapMs: 1000 } }, // a call is still out
+  { why: 'throttled', replies: [reply('Hello to you too.')], first: { text: 'hello there my friend', gapMs: 2000 } }, // under 6 s since the last call
+  { why: 'backoff', replies: [new Error('503 overloaded')], first: { text: 'hello there my friend', gapMs: 9000 }, opts: { backoffMs: 30_000 } },
+];
+
+for (const miss of MISSES) {
+  test(`free-form chat that Gemini does not answer (${miss.why}): the preset line is the reply, and the log says why`, async (t) => {
+    const pass = clock(t);
+    const blog: string[] = [];
+    const budget = miss.opts?.budget ?? new Budget({ log: (l) => blog.push(l) });
+    const { room, ai, said, logs, lines } = setup('out', miss.replies, { ...miss.opts, budget });
+    await pass(8000); // the greeting has been said
+    if (miss.first) {
+      room.say('out', miss.first.text);
+      await pass(miss.first.gapMs);
+      // the back-off case: its first line already got the preset reply; the 8 s between two of them is over
+      if (miss.why === 'backoff') (ai as unknown as { lastHuhAt: number }).lastHuhAt = -Infinity;
+      lines.length = 0;
+    }
+    miss.budget?.(budget, room.code);
+    const calls = ai.calls;
+    room.say('out', 'tell me a little about yourself');
+    await pass(CHAT_TIMEOUT_MS + 12_000);
+    const made = ['timeout', '429', 'error', 'unusable', 'no_say'].includes(miss.why);
+    assert.equal(ai.calls - calls, made ? 1 : 0);
+    if (miss.first) assert.ok(lines.some((l) => l.key === 'huh'), `silence: ${said().join(' | ')}`);
+    else assert.equal(said().filter((l) => l === L('huh')).length, 1, `not exactly one preset reply: ${said().join(' | ')}`);
+    assert.ok(logs.some((l) => l.includes(`chat: gemini did not answer (why=${miss.why})`)), logs.join('\n'));
+  });
+}
+
+test('a protocol word inside a free-form line still reaches the script when Gemini is off, and a word the body does not act on is not met with silence', async (t) => {
+  const pass = clock(t);
+  // "wait" is acted on and answered by the script ("Okay, waiting"): no preset line on top of it.
+  const a = setup('out', null);
+  await pass(8000);
+  a.room.say('out', 'could you wait a moment, friend');
+  await pass(8000);
+  assert.ok(a.said().includes(L('wait.ok')));
+  assert.ok(!a.said().includes(L('huh')), a.said().join(' | '));
+  // "what" reads as "again", which a face with nothing to repeat says nothing to: the preset line.
+  const b = setup('out', null, { scripts: [], bothOn: FAR });
+  await pass(8000);
+  const before = b.said().length;
+  b.room.say('out', 'what is your favourite colour');
+  await pass(8000);
+  assert.ok(b.said().length > before, 'silence');
 });
 
 // ---------- Gemini is advisory: when it does answer ----------

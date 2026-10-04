@@ -398,9 +398,13 @@ Solo play: PLAY WITH AI on the mode screen (`client/src/scenes/AiPopup.ts` picks
 - **Gemini is advisory** (`gemini.ts`, `prompt.ts`): it rewords small talk, answers
   free-form chat, returns `heard` (the human's message in protocol words) and may suggest
   a move on the current face, walked only if it avoids the script's unsafe tiles and the
-  body is not holding a place. Max one call per 6 s per room, no backlog, 3 s deadline; on
-  timeout, error or 429 the script's own line is said and calls back off (6 s doubling to
-  60 s). No `GEMINI_API_KEY` (or `AI_FAKE=1`) = script alone, silently.
+  body is not holding a place. Max one call per 6 s per room, no backlog, 3 s deadline (6 s
+  for a chat line, `CHAT_TIMEOUT_MS`); on timeout, error or 429 the script's own line is
+  said and calls back off (6 s doubling to 60 s). No `GEMINI_API_KEY` (or `AI_FAKE=1`) =
+  script alone, silently. A free-form chat line Gemini does not answer always gets the
+  preset `huh` line, and the log says why (`[ai CODE] chat: gemini did not answer
+  (why=...)`, `ChatMiss` in `aiPlayer.ts`). One real call to check a key:
+  `npm run gemini:once -w server`.
 - **Words** of every line: `server/src/ai/scripted.ts` (core lines per persona, puzzle
   lines by key). Lines are capped at 80 characters. `AI_PERSONA` (default | tsundere)
   changes tone only.
