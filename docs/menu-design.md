@@ -195,7 +195,7 @@ is blurred. Double clicks: the scene sets a `leaving` flag before anything else.
 | +-----------+          [] 5 ROOFTOP           +-------------+  |
 | | OUTSIDE   |      +------------------+       | clock  x 0  |  |
 | | FACE 1    |  []  |                  |  []   +-------------+  |
-| | MEADOW    |  4   |   160x160 game   |  2    | YOU      ... |  |
+| | GRASS     |  4   |   160x160 game   |  2    | YOU      ... |  |
 | | DRIFT 90  |  F   |   view, same     |  D    | PARTNER |||  |  |
 | |   [5]     |  O   |   pixel scale    |  E    | [MUTE][HOLD V]| |
 | |[4][1][2][3]| R   |                  |  S    +-------------+  |

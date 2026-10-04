@@ -6,7 +6,7 @@ import type { FaceId, Side } from '../types';
 
 export const STRING_MAPS: Record<Side, Record<FaceId, string[]>> = {
   out: {
-    // Meadow. Example puzzle: the door D only opens while the inside player stands on a plate.
+    // Grass. Example puzzle: the door D only opens while the inside player stands on a plate.
     // R is a rose to carry to the pot (U) on face 6.
     1: [
       'T........T',
@@ -33,7 +33,7 @@ export const STRING_MAPS: Record<Side, Record<FaceId, string[]>> = {
       '.......#..',
       '..........',
     ],
-    // Ember
+    // Snow
     3: [
       '..........',
       '..........',
@@ -46,7 +46,7 @@ export const STRING_MAPS: Record<Side, Record<FaceId, string[]>> = {
       '..........',
       '..........',
     ],
-    // Snow
+    // Forest
     4: [
       '..........',
       '.T......T.',
@@ -59,7 +59,7 @@ export const STRING_MAPS: Record<Side, Record<FaceId, string[]>> = {
       '........T.',
       '..........',
     ],
-    // Peaks
+    // Rooftop
     5: [
       '..........',
       '.##....T..',
@@ -72,7 +72,7 @@ export const STRING_MAPS: Record<Side, Record<FaceId, string[]>> = {
       '.......#..',
       '..........',
     ],
-    // Ruins. The portal: both players stand on it once every puzzle is solved.
+    // Cave. The portal: both players stand on it once every puzzle is solved.
     6: [
       '..........',
       '.#......#.',

@@ -42,7 +42,11 @@ export function objectsOn(world: World, side: Side, face: FaceId, type?: string)
   return type ? all.filter((o) => o.type === type) : all;
 }
 
+/**
+ * What each face is called, per side. The one source of names: the HUD, the AI partner's
+ * observation, docs and art all follow this. Outside names are the biome of the face.
+ */
 export const FACE_NAMES: Record<Side, Record<FaceId, string>> = {
-  out: { 1: 'Meadow', 2: 'Desert', 3: 'Ember', 4: 'Snow', 5: 'Peaks', 6: 'Ruins' },
-  in: { 1: 'Plate room', 2: 'Crate room', 3: 'Hot room', 4: 'Echo room', 5: 'Pillars', 6: 'Core' },
+  out: { 1: 'Grass', 2: 'Desert', 3: 'Snow', 4: 'Forest', 5: 'Rooftop', 6: 'Cave' },
+  in: { 1: 'Plate room', 2: 'Crate room', 3: 'Frost room', 4: 'Echo room', 5: 'Pillars', 6: 'Core' },
 };

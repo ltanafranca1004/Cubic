@@ -1,9 +1,8 @@
-import type { FaceId, Side } from '@cubic/shared';
+import type { FaceId } from '@cubic/shared';
 import { createStage, type Stage } from '../scenes/stage';
 import { ITEM_DEFAULT_FRAME, ITEM_FRAMES, asset } from '../style/assets';
 import { uiScale } from '../style/scale';
 import { bindSettings, onSettings, setSetting, settings } from '../style/settings';
-import { FACE_STYLE } from '../style/tokens';
 import { CSS } from './css';
 import type { EdgeLabel, HudState, UIActions, UIHandle, UIHost, UIState } from './hooks';
 import { createSettingsPanel } from './settingsPanel';
@@ -19,9 +18,6 @@ const clock = (ms: number) => {
 
 /** The cube unfolded: grid position (column, row) of each face in the HUD's little net. */
 const NET_CELL: Record<FaceId, [number, number]> = { 5: [2, 1], 4: [1, 2], 1: [2, 2], 2: [3, 2], 3: [4, 2], 6: [2, 3] };
-
-/** Outside faces are named after their biome art; inside rooms keep the game's names. */
-const faceName = (side: Side | null, face: FaceId, fallback: string) => (side === 'out' ? FACE_STYLE[face].name : fallback);
 
 const HTML = `
 <div class="cu-stage" id="cu-stage"></div>
@@ -177,9 +173,9 @@ export const cubicUI: UIHost = {
       if (link) link.textContent = v.mic !== 'on' ? '' : v.muted ? 'muted' : v.link === 'relay' ? 'relayed' : v.link === 'connecting' ? 'connecting' : v.mode === 'push' ? 'hold V' : 'open';
     }
 
-    function renderEdge(id: string, e: EdgeLabel, side: Side | null): void {
+    function renderEdge(id: string, e: EdgeLabel): void {
       const node = $(id);
-      const text = `${e.face} ${faceName(side, e.face, e.name)}`;
+      const text = `${e.face} ${e.name}`;
       if (node.dataset.t !== text + e.solved) {
         node.dataset.t = text + e.solved;
         node.className = `cu-edge ${id.slice(-1)}${e.solved ? ' done' : ''}`;
@@ -191,13 +187,13 @@ export const cubicUI: UIHost = {
     function renderHud(s: UIState, hud: HudState): void {
       $('cu-side').textContent = s.side === 'in' ? 'Inside' : 'Outside';
       $('cu-faceno').textContent = `Face ${hud.face}`;
-      $('cu-face').textContent = faceName(s.side, hud.face, hud.faceName);
+      $('cu-face').textContent = hud.faceName;
       $('cu-drift').textContent = `${hud.drift}`;
       $('cu-compass').style.transform = `rotate(${hud.drift}deg)`;
-      renderEdge('cu-et', hud.edges.up, s.side);
-      renderEdge('cu-eb', hud.edges.down, s.side);
-      renderEdge('cu-el', hud.edges.left, s.side);
-      renderEdge('cu-er', hud.edges.right, s.side);
+      renderEdge('cu-et', hud.edges.up);
+      renderEdge('cu-eb', hud.edges.down);
+      renderEdge('cu-el', hud.edges.left);
+      renderEdge('cu-er', hud.edges.right);
       $('cu-obj').textContent = hud.objective;
       const carry = $('cu-carry');
       const carrySig = hud.carrying?.kind ?? '';

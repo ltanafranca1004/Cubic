@@ -52,12 +52,12 @@ export const mockGameUIState: UIState = {
   ],
   hud: {
     face: 1,
-    faceName: 'Meadow',
+    faceName: 'Grass',
     drift: 90,
     edges: {
-      up: { face: 5, name: 'Peaks', solved: false },
-      down: { face: 6, name: 'Ruins', solved: false },
-      left: { face: 4, name: 'Snow', solved: false },
+      up: { face: 5, name: 'Rooftop', solved: false },
+      down: { face: 6, name: 'Cave', solved: false },
+      left: { face: 4, name: 'Forest', solved: false },
       right: { face: 2, name: 'Desert', solved: true },
     },
     objective: 'A crystal sits behind a sealed door. Its mechanism is somewhere inside.',

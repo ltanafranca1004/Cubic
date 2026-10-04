@@ -119,7 +119,7 @@ function cubes(dir: string): void {
   const TOP = 12;
   const draw = (open: boolean) => {
     const g = new Img(W, H);
-    // top face: meadow
+    // top face: grass
     g.rect(2, 2, W - 4, TOP, C.grass);
     for (const [x, y] of [[6, 5], [14, 9], [21, 4], [30, 10], [38, 6], [42, 11], [10, 12], [26, 7]] as const) g.set(x, y, C.green).set(x + 1, y - 1, C.green);
     g.rect(2, 2, W - 4, 1, C.grassLight);

@@ -60,19 +60,16 @@ floor runes keep the biome's hue, so "the orange one" means the same wall to bot
 
 | Face | Biome | Shown as | Floor | Inside accent |
 | --- | --- | --- | --- | --- |
-| 1 | grass | Meadow | `#91db69` | grass green |
+| 1 | grass | Grass | `#91db69` | grass green |
 | 2 | desert | Desert | `#fbb954` | sand |
 | 3 | snow | Snow | `#ffffff` | ice white and sky blue |
 | 4 | forest | Forest | `#239063` | deep green |
 | 5 | rooftop | Rooftop | `#fdcbb0` | peach terracotta |
 | 6 | cave | Cave | `#7f708a` | grey mauve |
 
-**Known mismatch.** `shared/src/maps` `FACE_NAMES` still says 3 Ember, 4 Snow, 5 Peaks,
-6 Ruins (and the inside names follow them: 3 is "Hot room"). That file belongs to the maps
-owner, so the HUD takes outside names from `FACE_STYLE` in `tokens.ts` and leaves the
-inside names alone. The AI partner's prompt still uses the old names. To settle it, rename
-`FACE_NAMES.out` to Meadow, Desert, Snow, Forest, Rooftop, Cave (and "Hot room" to
-something cold), or tell us the old names win and we swap the tiles of faces 3 to 6.
+The names come from `FACE_NAMES` in `shared/src/maps` (outside: Grass, Desert, Snow, Forest,
+Rooftop, Cave; the room behind the snow face is the "Frost room"). The HUD, the AI
+partner and the docs all use that one table.
 
 ## 3. Type
 

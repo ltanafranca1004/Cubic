@@ -5,12 +5,12 @@ surface of the same wall. 12 maps total, each 10x10 tiles of 16px.
 
 | Face | Outside | Inside |
 | --- | --- | --- |
-| 1 | Meadow | Plate room |
+| 1 | Grass | Plate room |
 | 2 | Desert | Crate room |
-| 3 | Ember | Hot room |
-| 4 | Snow | Echo room |
-| 5 | Peaks | Pillars |
-| 6 | Ruins (portal) | Core (portal) |
+| 3 | Snow | Frost room |
+| 4 | Forest | Echo room |
+| 5 | Rooftop | Pillars |
+| 6 | Cave (portal) | Core (portal) |
 
 ## Two ways to author a map
 

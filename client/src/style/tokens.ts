@@ -88,11 +88,10 @@ export type Biome = 'grass' | 'desert' | 'snow' | 'forest' | 'sky' | 'cave';
 /**
  * One biome per outer face. The inside of the same wall is a dark room that keeps the
  * biome's hue as its accent, so both players can talk about "the orange one".
- * NOTE: shared/src/maps FACE_NAMES still says 3 Ember, 4 Snow, 5 Peaks, 6 Ruins. The art
- * and the HUD follow this table; see docs/style.md.
+ * `name` matches FACE_NAMES.out in shared/src/maps (client/test/faces.test.ts keeps them in step).
  */
 export const FACE_STYLE: Record<1 | 2 | 3 | 4 | 5 | 6, { biome: Biome; name: string; base: string; ramp: Ramp }> = {
-  1: { biome: 'grass', name: 'Meadow', base: C.grass, ramp: { light: C.grassLight, base: C.grass, dark: C.green, deep: C.greenDark } },
+  1: { biome: 'grass', name: 'Grass', base: C.grass, ramp: { light: C.grassLight, base: C.grass, dark: C.green, deep: C.greenDark } },
   2: { biome: 'desert', name: 'Desert', base: C.sand, ramp: { light: C.lemon, base: C.sand, dark: C.sandDark, deep: C.copper } },
   3: { biome: 'snow', name: 'Snow', base: C.white, ramp: { light: C.white, base: C.mist, dark: C.skyLight, deep: C.sky } },
   4: { biome: 'forest', name: 'Forest', base: C.greenDark, ramp: { light: C.green, base: C.greenDark, dark: C.pine, deep: C.tealGrey } },
