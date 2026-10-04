@@ -229,7 +229,7 @@ export function objectiveFor(state: GameState, side: Side, env: GameEnv = defaul
     return `A portal sleeps here. It wakes once every puzzle is solved (${state.solved.length} of ${total}). ${own}`.trim();
   }
   if (!puzzle) return 'Nothing to solve here. Keep walking.';
-  if (!pending) return `Face ${face} is open. Head somewhere else.`;
+  if (!pending) return `Face ${face} completed. Head somewhere else.`;
   return own;
 }
 
