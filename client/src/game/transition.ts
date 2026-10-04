@@ -1,4 +1,5 @@
 import { NORMALS, neg, type FaceId, type Vec } from '@cubic/shared';
+import { CARRY_PX } from './turtle';
 
 // FACE TRANSITIONS, the pure part (no Phaser, no DOM: the tests import this file).
 // Walking over a cube edge is drawn in the walker's own screen space, so the direction of
@@ -152,8 +153,6 @@ export const HOP_LANDING = 0.86;
 export const HOP_SHADOW_H = 4;
 export const HOP_SHADOW_ALPHA = 0.6;
 const SHADOW_ALPHA_APEX = 0.4;
-/** The carried item rides this far above the character's head (as it does standing still). */
-const CARRY_PX = 11;
 
 export interface HopShape {
   /** The character's size standing still (a tile). */

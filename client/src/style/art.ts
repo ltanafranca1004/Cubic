@@ -1,6 +1,7 @@
 import type Phaser from 'phaser';
 import { TILE_PX, defaultEnv, type FaceId, type Side, type TileKind, type Vec } from '@cubic/shared';
 import type { ArtProvider } from '../game/art';
+import { WALK_HOLD_MS, hasFacing, playerFrames, type Facing, type PlayerFrames } from '../game/turtle';
 import { dressed } from '../world/biomes/decor';
 import { dressFace } from '../world/biomes/dress';
 import { asset } from './assets';
@@ -18,16 +19,14 @@ interface Manifest {
   tilesets?: Record<string, { image: string; tiles: Partial<Record<TileKind, number[]>> }>;
   objects?: Record<string, { image: string; frames: Record<string, Frames>; sides?: Partial<Record<Side, Record<string, Frames>>> }>;
   items?: Record<string, { image: string; frame: number }>;
-  players?: Partial<Record<Side, { image: string; idle?: number[]; walk: number[] }>>;
+  /** The characters: frames by direction when the sheet has them (game/turtle.ts PlayerFrames). */
+  players?: Partial<Record<Side, PlayerFrames>>;
   /** The biome layer of the outside faces: see world/biomes. */
   biomes?: { props: { image: string }; water: { image: string } };
 }
 
 const T = TILE_PX;
 const hash = (f: number, x: number, y: number) => ((f * 73856093) ^ (x * 19349663) ^ (y * 83492791)) >>> 0;
-
-/** How long after the last step the player still shows the walk frame. */
-const WALK_HOLD_MS = 260;
 
 export class SheetArt implements ArtProvider {
   private manifest: Manifest | null = null;
@@ -130,7 +129,7 @@ export class SheetArt implements ArtProvider {
     return key ?? this.fallback.item(kind);
   }
 
-  player(side: Side, step: number): string {
+  player(side: Side, step: number, facing: Facing = 'down'): string {
     const entry = this.manifest?.players?.[side];
     if (entry) {
       // The scene only tells us the step count: walk while it changes, breathe when it rests.
@@ -138,12 +137,12 @@ export class SheetArt implements ArtProvider {
       const now = performance.now();
       if (last.step !== step) this.lastStep[side] = { step, at: now };
       const walking = now - this.lastStep[side].at < WALK_HOLD_MS && last.step !== -1;
-      const list = walking || !entry.idle?.length ? entry.walk : entry.idle;
-      const index = walking ? list[step % list.length]! : list[Math.floor(now / TIME.idleFrame) % list.length]!;
-      const key = this.frame(entry.image, index);
+      const list = playerFrames(entry, facing, walking);
+      const index = list[(walking ? step : Math.floor(now / TIME.idleFrame)) % list.length];
+      const key = index === undefined ? null : this.frame(entry.image, index);
       if (key) return key;
     }
-    return this.fallback.player(side, step);
+    return this.fallback.player(side, step, facing);
   }
 
   dress(g: CanvasRenderingContext2D, side: Side, face: FaceId, up: Vec, frame: number): void {
@@ -151,8 +150,17 @@ export class SheetArt implements ArtProvider {
     if (sheets) dressFace(g, sheets, face, up, frame, settings().reduceMotion);
   }
 
-  playerFrame(side: Side, index: number): string | null {
+  playerWalk(side: Side, facing: Facing, tick: number): string | null {
     const entry = this.manifest?.players?.[side];
-    return entry ? this.frame(entry.image, index) : null;
+    if (!entry || !hasFacing(entry)) return null;
+    const list = playerFrames(entry, facing, true);
+    const index = list[tick % list.length];
+    return index === undefined ? null : this.frame(entry.image, index);
+  }
+
+  playerFacing(side: Side): boolean {
+    const entry = this.manifest?.players?.[side];
+    // (no sheet, no directions: the fallback art is drawn instead)
+    return !!entry && hasFacing(entry) && this.sheets.has(entry.image);
   }
 }
