@@ -73,6 +73,47 @@ export function isPortrait(width: number, height: number): boolean {
 }
 
 /**
+ * What a menu scene is laid out from: the canvas in art pixels and its zoom. A scene built
+ * for one key stays right for as long as the key does, however often the browser says
+ * "resize" (scenes/flow.ts).
+ */
+export const sizeKey = (scale: { width: number; height: number; zoom: number }): string => `${scale.width}x${scale.height}@${scale.zoom}`;
+
+// THE PAGE ZOOMED (two fingers, a double tap: iOS Safari allows both whatever the viewport
+// meta says). The visual viewport is then a part of the page, not the page: nothing may be
+// laid out from it as it is.
+
+export interface Size {
+  width: number;
+  height: number;
+}
+
+/** The visual viewport as the browser reports it (window.visualViewport). */
+export interface Seen extends Size {
+  scale: number;
+}
+
+/** Is the page zoomed? (a browser may report 0.999 or 1.001 at rest) */
+export function isZoomed(scale: number | undefined | null): boolean {
+  return typeof scale === 'number' && scale > 0 && Math.abs(scale - 1) >= 0.01;
+}
+
+/**
+ * The visible size to lay out from. Not zoomed: the visual viewport. Zoomed: what it would
+ * be at x1 (its size times its scale), and while that is within two pixels of the `last`
+ * size seen at x1 it IS that size, so a pinch under way (whose numbers round a pixel up
+ * and down) never re-lays the game out. No visual viewport: the layout viewport.
+ */
+export function visibleFrom(seen: Seen | null, last: Size | null, layout: Size): Size {
+  if (!seen || !(seen.width > 0) || !(seen.height > 0) || !(seen.scale > 0)) return layout;
+  if (!isZoomed(seen.scale)) return { width: Math.round(seen.width), height: Math.round(seen.height) };
+  const width = Math.round(seen.width * seen.scale);
+  const height = Math.round(seen.height * seen.scale);
+  if (last && Math.abs(last.width - width) <= 2 && Math.abs(last.height - height) <= 2) return last;
+  return { width, height };
+}
+
+/**
  * Does the full layout fit: the view with the HUD column beside it, both at their smallest
  * scale, and on a touch screen the strip of controls under them as well.
  */

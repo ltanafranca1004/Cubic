@@ -23,7 +23,11 @@ const GAME = '[data-screen="game"]';
 
 const RAW = `
 /* ---------- the page: no zoom, no scroll, no pull to refresh, no long-press menu ---------- */
-html[data-touch], html[data-touch] body { height: 100dvh; overscroll-behavior: none; touch-action: none; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+/* touch-action, three levels: the page and every button never zoom on a double tap
+   (manipulation); the game layer, its canvases and the controls take no browser gesture at
+   all (none); a panel that scrolls scrolls (pan-y). The pinch is cancelled in input/zoom.ts. */
+html[data-touch], html[data-touch] body { height: 100dvh; overscroll-behavior: none; touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+.cu[data-touch] button, .cu[data-touch] .cu-btn, .cu[data-touch] [role="button"]:not(.cu-m-btn) { touch-action: manipulation; }
 html[data-touch] body { position: fixed; inset: 0; }
 /* the strips beside a notch take the colour of the screen they are next to */
 html[data-touch][data-dark] body { background: ${ROLE.ink}; }
@@ -41,6 +45,12 @@ html[data-touch][data-dark] body { background: ${ROLE.ink}; }
 .cu[data-touch] .cu-tabs > span { min-height: 44px; display: flex; align-items: center; }
 .cu[data-touch] input { touch-action: manipulation; -webkit-user-select: text; user-select: text; }
 .cu[data-touch] .cu-log, .cu[data-touch] .cu-modal > .cu-panel { touch-action: pan-y; overscroll-behavior: contain; }
+.cu[data-touch] canvas { touch-action: none; }
+/* zoomed in anyway (iOS Safari can, whatever the page says): let go of everything, so the
+   same two fingers can zoom back out. The canvases step aside too: Phaser cancels every
+   touch it gets, and a cancelled touch cannot pinch. input/zoom.ts is the other half. */
+html[data-zoomed], html[data-zoomed] body, html[data-zoomed] .cu, html[data-zoomed] .cu * { touch-action: auto !important; }
+html[data-zoomed] .cu canvas { pointer-events: none; }
 
 /* ---------- menus and panels under a thumb ---------- */
 /* a panel never leaves the screen: it scrolls inside itself */

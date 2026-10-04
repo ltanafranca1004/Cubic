@@ -1,9 +1,10 @@
 import { QUICK_CHATS } from '@cubic/shared';
 import { isMapHeld } from '../../input/gate';
 import { CODEPAD_EVENT, bindDpad, bindKey, releaseAll, sendTouch, tapKey, type TouchAction } from '../../input/touch';
+import { guardZoom } from '../../input/zoom';
 import { ITEM_DEFAULT_FRAME, ITEM_FRAMES } from '../../style/assets';
 import { compactLayout, TOUCH, wideLayout } from '../../style/fit';
-import { device, layout, onFit, refit, upright as heldUpright, viewport } from '../../style/scale';
+import { device, layout, onFit, refit, upright as heldUpright, viewport, zoomed } from '../../style/scale';
 import { onSettings, settings } from '../../style/settings';
 import { showCaption } from '../captions';
 import type { UIActions, UIHandle, UIHost, UIState } from '../hooks';
@@ -92,6 +93,10 @@ function mountMobile(cu: HTMLElement, actions: UIActions): Mobile {
     // data-touch: fingers (the controls, the page rules). data-layout (set by the UI): compact or full.
     html.toggleAttribute('data-touch', d.touch);
     cu.toggleAttribute('data-touch', d.touch);
+    // zoomed in anyway: the CSS lets go of the page (./css.ts), and no key stays held under the zoom
+    const isZoomed = zoomed();
+    if (isZoomed && !html.hasAttribute('data-zoomed')) releaseAll();
+    html.toggleAttribute('data-zoomed', isZoomed);
     const set = (name: string, px: number) => cu.style.setProperty(name, `${px}px`);
     if (mode === 'compact') {
       const l = compactLayout(width, height, d);
@@ -125,18 +130,23 @@ function mountMobile(cu: HTMLElement, actions: UIActions): Mobile {
         closeChat();
       }
     }
-    code.classList.remove('on'); // the menu is rebuilt on a resize, and its join popup with it
+    // the menu is rebuilt when its size changes, and its join popup with it
+    const size = `${width}x${height}`;
+    if (size !== laidOut) code.classList.remove('on');
+    laidOut = size;
   }
+  /** The size the last layout was for. */
+  let laidOut = '';
   offs.push(onFit(relayout));
 
   // ---------- the page: nothing but the game reacts to a finger ----------
   on(cu, 'contextmenu', (e) => e.preventDefault());
-  on(document, 'gesturestart', (e) => e.preventDefault()); // iOS pinch
+  // no pinch, no double-tap zoom; and a page that zoomed anyway can be zoomed back out (input/zoom.ts)
+  offs.push(guardZoom());
   on(document, 'touchmove', (e) => {
-    // iOS rubber band: only the lists that scroll may move
-    if (!(e.target as HTMLElement).closest?.('.cu-log, .cu-modal > .cu-panel')) e.preventDefault();
+    // iOS rubber band: only the lists that scroll may move (a zoomed page: anything, to look around and get out)
+    if (!zoomed() && !(e.target as HTMLElement).closest?.('.cu-log, .cu-modal > .cu-panel')) e.preventDefault();
   }, { passive: false });
-  // (a second tap is a second tap, never a zoom: touch-action in ./css.ts)
 
   // ---------- the controls ----------
   offs.push(bindDpad($('pad')));
@@ -319,6 +329,7 @@ function mountMobile(cu: HTMLElement, actions: UIActions): Mobile {
       layer.remove();
       style.remove();
       delete html.dataset.touch;
+      html.removeAttribute('data-zoomed');
       html.removeAttribute('data-dark');
       delete cu.dataset.touch;
       delete cu.dataset.drawer;

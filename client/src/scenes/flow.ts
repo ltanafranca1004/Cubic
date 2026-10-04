@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { overlayOwnsInput } from '../input/overlay';
+import { sizeKey } from '../style/fit';
 import { C, TIME, hex } from '../style/tokens';
 import type { UIActions, UIState } from '../ui/hooks';
 import type { CubeBackdropScene } from './CubeBackdropScene';
@@ -226,7 +227,12 @@ export abstract class MenuScene extends Phaser.Scene {
     // ends it, so a resize then only marks the scene, and it is rebuilt once the flow has
     // settled (if it is still the screen being shown: the one we left is stopped instead).
     this.stale = false;
+    // Phaser says "resize" for every resize event of the window, also when the canvas kept
+    // its size (a phone's toolbar, a keyboard, the page settling after a turn). A restart
+    // then would drop the button press under the finger, so only a real change rebuilds.
+    const built = sizeKey(this.scale);
     const rebuild = () => {
+      if (sizeKey(this.scale) === built) return;
       if (this.ctx.flow.moving) this.stale = true;
       else this.scene.restart({ rebuilt: true });
     };

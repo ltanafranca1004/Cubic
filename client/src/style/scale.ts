@@ -1,4 +1,4 @@
-import { DESKTOP, hudScaleFor, isPortrait, layoutMode, uiScaleFor, viewZoomFor, type Device, type LayoutMode } from './fit';
+import { DESKTOP, hudScaleFor, isPortrait, isZoomed, layoutMode, uiScaleFor, viewZoomFor, visibleFrom, type Device, type LayoutMode } from './fit';
 
 // ONE PIXEL GRID. Menus, HUD and the game view all draw at a whole-number scale, so an art
 // pixel is the same size everywhere on screen. The scale is the largest that still leaves
@@ -55,15 +55,29 @@ export function safeInsets(): Insets {
 /**
  * THE ONE SIZE everything is laid out from: the part of the page that can be seen right
  * now. The visual viewport knows about a phone's sliding toolbars and a tablet's split
- * view where window.innerWidth can lag behind; a browser without it, or one zoomed in
- * with two fingers, falls back to the layout viewport, then to the window.
+ * view where window.innerWidth can lag behind; a browser without it falls back to the
+ * layout viewport, then to the window. A page zoomed in with two fingers keeps the size it
+ * had at x1 (fit.ts visibleFrom): the game stays as it was laid out, under the zoom.
  */
 export function visibleSize(): { width: number; height: number } {
   const vv = window.visualViewport;
-  if (vv && Math.abs(vv.scale - 1) < 0.01 && vv.width > 0 && vv.height > 0) return { width: Math.round(vv.width), height: Math.round(vv.height) };
   const el = document.documentElement;
-  if (el.clientWidth > 0 && el.clientHeight > 0) return { width: el.clientWidth, height: el.clientHeight };
-  return { width: window.innerWidth, height: window.innerHeight };
+  const layoutSize = el.clientWidth > 0 && el.clientHeight > 0 ? { width: el.clientWidth, height: el.clientHeight } : { width: window.innerWidth, height: window.innerHeight };
+  const size = visibleFrom(vv ? { width: vv.width, height: vv.height, scale: vv.scale } : null, seenAtRest, layoutSize);
+  if (!vv || !isZoomed(vv.scale)) seenAtRest = size;
+  return size;
+}
+
+/** The last visible size measured with the page at x1. */
+let seenAtRest: { width: number; height: number } | null = null;
+
+/**
+ * The page is zoomed (iOS Safari lets two fingers and a double tap zoom whatever the
+ * viewport meta says). Part of every fit: a pass runs when this flips, and the touch layer
+ * (ui/mobile) then lets go of the page so the same two fingers can zoom back out.
+ */
+export function zoomed(): boolean {
+  return typeof window !== 'undefined' && isZoomed(window.visualViewport?.scale);
 }
 
 let last: { width: number; height: number } | null = null;
@@ -107,7 +121,7 @@ function measureKey(): string {
   found = readDevice();
   const { width, height } = viewport();
   const inset = safeInsets();
-  return [width, height, inset.top, inset.right, inset.bottom, inset.left, found.touch, found.dpr].join();
+  return [width, height, inset.top, inset.right, inset.bottom, inset.left, found.touch, found.dpr, zoomed()].join();
 }
 
 /** Lay everything out again now (after mounting something that changes the layout). */

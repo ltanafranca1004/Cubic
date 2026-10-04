@@ -3,6 +3,7 @@ import { bakeFaces, type CubeArt } from '../cube/faces';
 import { texelFor } from '../cube/layout';
 import { clearTarget, createTarget, drawCube, pack, type CubeFaces, type Target } from '../cube/raster';
 import { SPIN_FPS, frameSize, spinView } from '../cube/spin';
+import { sizeKey } from '../style/fit';
 import { settings } from '../style/settings';
 import { C, EASE, ROLE, hex } from '../style/tokens';
 import { Sky } from './clouds';
@@ -99,7 +100,11 @@ export class CubeBackdropScene extends Phaser.Scene {
     this.shadow = this.add.image(0, 0, this.shadowTexture(this.half));
     this.cube = this.add.image(0, 0, this.spinTexture(this.half));
 
-    const rebuild = () => this.scene.restart();
+    // (only when the canvas really changed: Phaser says "resize" for every resize event of the window)
+    const built = sizeKey(this.scale);
+    const rebuild = () => {
+      if (sizeKey(this.scale) !== built) this.scene.restart();
+    };
     this.scale.on(Phaser.Scale.Events.RESIZE, rebuild);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.scale.off(Phaser.Scale.Events.RESIZE, rebuild);
