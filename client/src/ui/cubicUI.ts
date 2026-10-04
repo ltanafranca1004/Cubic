@@ -518,16 +518,23 @@ export const cubicUI: UIHost = {
         $('cu-leave').hidden = !inGame;
 
         const hud = next.hud;
-        // the seat is held only for a partner whose connection dropped; one who pressed Leave is gone
+        // a held seat counts down to the server's deadline (m:ss); after it the partner is gone
+        const away = next.partnerAway;
+        const secs = away ? Math.max(0, Math.ceil((away.until - Date.now()) / 1000)) : 0;
+        const left = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
         const banner = !inGame
           ? ''
           : !next.online
             ? 'Connection lost. Reconnecting...'
-            : next.status === 'partner-away'
-              ? 'Partner disconnected. Holding their seat...'
-              : next.status === 'partner-left'
-                ? 'Partner left. Anyone with the room code can join.'
-                : '';
+            : away
+              ? away.kind === 'left'
+                ? `Partner left. Seat held ${left}`
+                : `Partner reconnecting... ${left}`
+              : next.status === 'partner-away'
+                ? 'Partner disconnected. Holding their seat...'
+                : next.status === 'partner-left'
+                  ? 'Partner left. Anyone with the room code can join.'
+                  : '';
         $('cu-banner').hidden = !banner;
         $('cu-banner').firstElementChild!.textContent = banner;
         const won = inGame && !!hud?.won;

@@ -132,12 +132,24 @@ export interface MemberInfo {
   ready: boolean;
 }
 
+/**
+ * A held seat: its player is not here, and the place is kept for them until `until`.
+ * reconnecting = their connection dropped, left = they pressed Leave. Both are epoch ms on
+ * the SERVER clock: count down with `until - now`, measured from when the message arrived.
+ */
+export interface SeatAway {
+  kind: 'reconnecting' | 'left';
+  until: number;
+  /** The server's clock when this was sent. */
+  now: number;
+}
+
 export interface RoomInfo {
   code: string;
   mode: RoomMode;
   phase: RoomPhase;
   /** Seat status per side: who holds (or, in the lobby, has picked) it. */
-  seats: Record<Side, { taken: boolean; connected: boolean; isAI: boolean }>;
+  seats: Record<Side, { taken: boolean; connected: boolean; isAI: boolean; away?: SeatAway }>;
   members: Record<Role, MemberInfo | null>;
 }
 
@@ -228,7 +240,8 @@ export type DevCommand =
 
 export interface ClientToServer {
   'room:create': (ack: Ack<Seat>) => void;
-  'room:join': (msg: { code: string }, ack: Ack<Seat>) => void;
+  /** `token`: the one you held in this room. Within the grace window it gets your seat back. */
+  'room:join': (msg: { code: string; token?: string }, ack: Ack<Seat>) => void;
   /** Phase 2: play alone as `side`; an AI takes the other one. */
   'room:createAI': (msg: { side: Side }, ack: Ack<Seat>) => void;
   'room:rejoin': (msg: { code: string; token: string }, ack: Ack<Seat>) => void;

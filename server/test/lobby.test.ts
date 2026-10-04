@@ -165,17 +165,25 @@ test('the last human leaving closes the room', () => {
   assert.equal(rooms.get(room.code), undefined);
 });
 
-test('joining a game that is already running takes the free seat', () => {
-  const { room, host, guest } = lobby();
-  room.pick(host.id, 'in');
-  room.pick(guest.id, 'out');
-  room.setReady(guest.id, true);
-  room.start(host.id);
-  room.leave(guest.id);
-  assert.equal(room.phase, 'playing');
-  const late = room.join();
-  assert.deepEqual([late.role, late.side], ['guest', 'out']);
-  assert.equal(room.state.players.out.connected, true);
+test('joining a game that is already running takes the free seat, once its hold has run out', async () => {
+  const old = LIMITS.seatHoldMs;
+  LIMITS.seatHoldMs = 30;
+  try {
+    const { room, host, guest } = lobby();
+    room.pick(host.id, 'in');
+    room.pick(guest.id, 'out');
+    room.setReady(guest.id, true);
+    room.start(host.id);
+    room.leave(guest.id);
+    assert.equal(room.phase, 'playing');
+    assert.throws(() => room.join(), /full/i); // the seat is held for the one who left
+    await new Promise((r) => setTimeout(r, 80));
+    const late = room.join();
+    assert.deepEqual([late.role, late.side], ['guest', 'out']);
+    assert.equal(room.state.players.out.connected, true);
+  } finally {
+    LIMITS.seatHoldMs = old;
+  }
 });
 
 test('an AI room skips the lobby', () => {

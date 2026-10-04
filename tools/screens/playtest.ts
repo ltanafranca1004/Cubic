@@ -1177,9 +1177,9 @@ async function rejoin(run: Run): Promise<void> {
       await shots(run, `${tag}-refresh-${who}`);
     });
   }
-  await step(run, 'refresh: the partner sees "Partner left" while the other tab is gone', async () => {
+  await step(run, 'refresh: the partner sees "Partner reconnecting... m:ss" while the other tab is gone', async () => {
     await b.goto('about:blank');
-    await until('the banner on A', async () => /Partner left/.test((await text(a, '#cu-banner')) ?? '') && !(await isOn(a, '#cu-banner[hidden]')));
+    await until('the banner on A', async () => /Partner reconnecting\.\.\. \d:\d\d/.test((await text(a, '#cu-banner')) ?? '') && !(await isOn(a, '#cu-banner[hidden]')));
     await shots(run, `${tag}-partner-away`);
     check(await canWalk(a, 'out'), 'A cannot walk while the partner is away');
     await b.goBack();
@@ -1191,7 +1191,8 @@ async function rejoin(run: Run): Promise<void> {
   await step(run, 'leave: the guest leaves with the Leave button; the host keeps playing', async () => {
     await clickDom(b, '#cu-leave');
     await until('B is out of the room, on the mode screen', async () => (await snap(b)).code === null && (await has(b, 'CREATE LOBBY')), 8000);
-    await until('A sees the seat empty', async () => (await snap(a)).room?.seats.in.taken === false);
+    await until('A sees the seat held', async () => (await snap(a)).room?.seats.in.away?.kind === 'left');
+    await until('the banner on A counts down', async () => /Partner left\. Seat held \d:\d\d/.test((await text(a, '#cu-banner')) ?? ''));
     check((await snap(a)).screen === 'game', 'A was thrown out of the game');
     check(await canWalk(a, 'out'), 'A cannot walk after the partner left');
     await synced([a], 'A alone');
@@ -1208,13 +1209,14 @@ async function rejoin(run: Run): Promise<void> {
     check(await canWalk(b, 'in'), 'B cannot walk after rejoining');
     await synced([a, b], 'after B rejoined');
   });
-  await step(run, 'leave: the host leaves from the pause menu; the guest becomes the host and keeps playing', async () => {
+  await step(run, 'leave: the host leaves from the pause menu; the seat is held and the guest keeps playing', async () => {
     await press(a, 'Escape');
     await until('the pause menu', async () => (await snap(a)).modal === 'cu-pause');
     await a.waitForTimeout(300);
     await clickDom(a, '#cu-pause [data-act="leave"]');
     await until('A is out of the room, on the mode screen', async () => (await snap(a)).code === null && (await has(a, 'CREATE LOBBY')), 8000);
-    await until('B is the host now', async () => (await snap(b)).role === 'host');
+    await until('B sees the seat held', async () => (await snap(b)).room?.seats.out.away?.kind === 'left');
+    check((await snap(b)).role === 'guest', 'the host role moved before the window passed');
     check((await snap(a)).modal === null, 'the pause menu is still open on the mode screen');
     check(await canWalk(b, 'in'), 'B cannot walk after the host left');
   });
@@ -1224,7 +1226,7 @@ async function rejoin(run: Run): Promise<void> {
     await joinRoom(a, code);
     await until('A is in the game', async () => (await snap(a)).screen === 'game', 8000);
     const s = await snap(a);
-    check(s.side === 'out' && s.role === 'guest', `A came back as ${s.side} / ${s.role}`);
+    check(s.side === 'out' && s.role === 'host', `A came back as ${s.side} / ${s.role}`);
     check(same(s.state!.players.out.pose, before.pose) && s.state!.players.out.carrying === before.carrying, `A came back at ${at(s.state!.players.out.pose)} carrying ${s.state!.players.out.carrying}`);
     await a.waitForTimeout(1200);
     check(await canWalk(a, 'out'), 'A cannot walk after rejoining');
@@ -1578,7 +1580,7 @@ async function breakIt(run: Run): Promise<void> {
     await until('carrying', async () => (await stateOf(b)).players.out.carrying === lying.id);
     await clickDom(a, '#cu-leave');
     await until('A is out', async () => (await snap(a)).code === null && (await has(a, 'CREATE LOBBY')), 8000);
-    await until('B plays on as host', async () => (await snap(b)).role === 'host' && (await snap(b)).screen === 'game');
+    await until('B plays on, the seat is held', async () => (await snap(b)).room?.seats.out.away?.kind === 'left' && (await snap(b)).screen === 'game');
     await shots(run, `${tag}-10-partner-left-mid-puzzle`);
     check(await canWalk(b, 'in'), 'B cannot walk');
     check((await stateOf(b)).players.out.carrying === lying.id, 'the carried item changed hands when its carrier left');
@@ -1613,21 +1615,23 @@ async function breakIt(run: Run): Promise<void> {
     await b.waitForTimeout(1200);
     check((await snap(b)).side === 'in' && same((await stateOf(b)).players.in.pose, pose), 'B did not get the seat and pose back');
   });
-  await step(run, 'full room: when a player leaves for good the third player takes the seat, and the leaver is refused', async () => {
+  await step(run, 'full room: a player who pressed Leave keeps their seat against the third player, and gets it back with the code', async () => {
     const c = run.pages.get('C')!;
     const pose = (await snap(b)).server!.players.in.pose;
     await clickDom(b, '#cu-leave');
     await until('B is out', async () => (await snap(b)).code === null && (await has(b, 'CREATE LOBBY')), 8000);
+    await until('A sees the seat held', async () => (await snap(a)).room?.seats.in.away?.kind === 'left');
     await click(c, 'JOIN');
-    await until('C is in the game, inside', async () => (await snap(c)).screen === 'game' && (await snap(c)).side === 'in', 8000);
-    await c.waitForTimeout(1200);
-    check(same((await stateOf(c)).players.in.pose, pose), 'C did not start where B stood');
-    check(await canWalk(c, 'in'), 'C cannot walk');
-    await synced([a, c], 'A and C');
+    await until('still "That room is full"', async () => /full/i.test((await snap(c)).error ?? ''));
+    check((await snap(c)).code === null, 'the third player took a held seat');
     await b.waitForTimeout(300);
-    await typeJoin(b, code);
-    await until('B is told the room is full', async () => /full/i.test((await snap(b)).error ?? ''));
-    await shots(run, `${tag}-12-seat-taken-over`);
+    await joinRoom(b, code);
+    await until('B is in the game, inside', async () => (await snap(b)).screen === 'game' && (await snap(b)).side === 'in', 8000);
+    await b.waitForTimeout(1200);
+    check(same((await stateOf(b)).players.in.pose, pose), 'B did not come back where they stood');
+    check(await canWalk(b, 'in'), 'B cannot walk');
+    await synced([a, b], 'A and B');
+    await shots(run, `${tag}-12-seat-held`);
   });
 }
 
