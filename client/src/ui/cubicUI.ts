@@ -16,6 +16,7 @@ import { CSS } from './css';
 import { copyText } from './copy';
 import { focusFirst, modalKey, topModal } from './focus';
 import { chatText, type EdgeLabel, type HudState, type UIActions, type UIHandle, type UIHost, type UIState } from './hooks';
+import { labelSpot, type TileLabel } from './label';
 import { dismissSideCard } from './onboarding';
 import { createPauseMenu } from './pauseMenu';
 import { createSettingsPanel } from './settingsPanel';
@@ -359,7 +360,7 @@ export const cubicUI: UIHost = {
     const over = $('cu-over');
     const marks = new Map<string, HTMLElement>();
     const px = (n: number) => `calc(${n}px * var(--z))`;
-    function renderSignals(view: SignalView): void {
+    function renderSignals(view: SignalView, label: TileLabel | null): void {
       const want = new Set<string>();
       const mark = (key: string, cls: string): HTMLElement => {
         want.add(key);
@@ -378,6 +379,18 @@ export const cubicUI: UIHost = {
         node.style.left = px(Math.min(FACE_SIZE - 1.5, Math.max(1.5, b.sx + 0.5)) * TILE_PX);
         node.style.top = px((b.sy === 0 ? b.sy + 1 : b.sy) * TILE_PX);
         node.textContent = b.text;
+      }
+      // The name of the tile we stand on: the same tag, over our own head. Our own quick
+      // chat is said from the same spot, so while that bubble is up the name waits.
+      if (label && !view.bubbles.some((b) => b.mine)) {
+        // (a new node per tile: stepping from one symbol to the next pops the new name in)
+        const node = mark(`l${label.text}@${label.sx},${label.sy}`, 'cu-label');
+        node.textContent = label.text;
+        // its own size in art pixels, whatever the text size and the zoom are now
+        const z = over.clientWidth / (FACE_SIZE * TILE_PX) || 1;
+        const at = labelSpot(label, { w: Math.ceil(node.offsetWidth / z), h: Math.ceil(node.offsetHeight / z) });
+        node.style.left = px(at.left);
+        node.style.top = px(at.top);
       }
       for (const [key, node] of marks) {
         if (want.has(key)) continue;
@@ -594,7 +607,7 @@ export const cubicUI: UIHost = {
         ending.sync(inGame ? !!hud?.won : null, settings().reduceMotion);
         renderEnding();
         renderSpeaking();
-        renderSignals(inGame ? (next.signals ?? NO_SIGNALS) : NO_SIGNALS);
+        renderSignals(inGame ? (next.signals ?? NO_SIGNALS) : NO_SIGNALS, inGame ? (next.label ?? null) : null);
         if (!inGame || !hud) return;
         renderHud(next, hud);
         renderChat(next);

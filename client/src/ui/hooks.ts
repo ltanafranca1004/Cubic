@@ -1,4 +1,5 @@
 import type { ChatMessage, FaceId, Role, RoomMode, Side, SignalView } from '@cubic/shared';
+import type { TileLabel } from './label';
 import { noteText } from '../net/notes';
 
 // THE UI HOOK INTERFACE.
@@ -162,6 +163,12 @@ export interface UIState {
   voice: VoiceState;
   /** Quick-chat bubbles to draw over the game view, in screen tiles. */
   signals?: SignalView;
+  /**
+   * The name of the thing YOU stand on (a face 5 symbol), drawn over your own turtle. In
+   * screen tiles; `lift` = art pixels to clear above the head (an item carried there).
+   * Yours alone: the partner never gets one. null = nothing to name, or a face transition plays.
+   */
+  label?: TileLabel | null;
 }
 
 /**

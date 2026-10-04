@@ -2,6 +2,7 @@ import type { PuzzleCtx, PuzzleInitCtx, PuzzleModule, VisibleObject } from './ty
 import type { Side } from '../types';
 import { BATTERY_KIND } from './chain';
 import { makeSequence, newSeqShow, seqAdvance, seqLitIndex, seqPress, seqStart, type SeqShow } from './lib/sequence';
+import { SYMBOL_NAMES } from '../symbols';
 import { at, type XY } from './util';
 
 // SEQUENCE LASER (face 5: Rooftop outside, Laser room inside). Needs the battery of face 2.
@@ -24,7 +25,8 @@ import { at, type XY } from './util';
 // Nothing here blocks a tile.
 
 const FACE = 5;
-export const SYMBOLS = ['sun', 'moon', 'star', 'bolt', 'drop', 'leaf', 'eye'] as const;
+/** The seven symbols by name: the shared vocabulary (../symbols.ts), also the AI's words and the label. */
+export const SYMBOLS = SYMBOL_NAMES;
 const EMITTER = 'f5-emitter';
 
 interface State {
