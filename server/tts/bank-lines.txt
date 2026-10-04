@@ -1,6 +1,9 @@
-# Voice bank: short, generic partner lines, pre-generated once into server/.tts-cache by
+# Voice bank, generic lines: short partner lines a model is likely to say as they are.
+# The bank also holds the scripted partner's own puzzle-independent lines
+# (server/src/ai/scripted.ts). All of it is generated once into server/tts/bank by
 #   npm run tts:bank -w server
-# At runtime, a line the AI says that matches one of these (ignoring case and punctuation)
+# and COMMITTED. Running it again only adds lines that are not banked yet.
+# At runtime, a line the AI says that matches a banked line (ignoring case and punctuation)
 # plays the banked audio and costs nothing. One line per row. Lines starting with # are
 # comments. Keep every line at 80 characters or less.
 

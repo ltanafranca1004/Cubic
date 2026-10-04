@@ -451,8 +451,8 @@ async function run(browser: Browser, size: { width: number; height: number }, re
   await a.waitForTimeout(2200);
   await shot(a, '2-mode');
   const labels = (await buttons(a)).map((b) => b.label);
-  if (labels.join('|') !== 'BACK|CREATE LOBBY|JOIN LOBBY') fail(`${tag}: mode screen buttons are [${labels.join(', ')}]`);
-  for (const label of ['CREATE LOBBY', 'JOIN LOBBY']) if (!(await hasPanel(a, label))) fail(`${tag}: "${label}" has no solid panel`);
+  if (labels.join('|') !== 'BACK|CREATE LOBBY|JOIN LOBBY|PLAY WITH AI') fail(`${tag}: mode screen buttons are [${labels.join(', ')}]`);
+  for (const label of ['CREATE LOBBY', 'JOIN LOBBY', 'PLAY WITH AI']) if (!(await hasPanel(a, label))) fail(`${tag}: "${label}" has no solid panel`);
 
   // Back (the button, then Esc) returns to the title; a second press mid-fade must not break anything
   await click(a, 'BACK', tag);
@@ -484,8 +484,8 @@ async function run(browser: Browser, size: { width: number; height: number }, re
   await expect(tag, 'the join popup opens', async () => (await buttons(a)).some((b) => b.label === 'CANCEL'));
   // behind the popup's veil nothing is clickable: the menu buttons are off, and a click
   // where one of them is does nothing
-  const behind = (await buttons(a)).filter((b) => ['CREATE LOBBY', 'JOIN LOBBY', 'BACK'].includes(b.label));
-  if (behind.length !== 3 || behind.some((b) => b.enabled)) fail(`${tag}: buttons behind the join popup are still enabled`);
+  const behind = (await buttons(a)).filter((b) => ['CREATE LOBBY', 'JOIN LOBBY', 'PLAY WITH AI', 'BACK'].includes(b.label));
+  if (behind.length !== 4 || behind.some((b) => b.enabled)) fail(`${tag}: buttons behind the join popup are still enabled`);
   const back = behind.find((b) => b.label === 'BACK');
   if (back) await mouseClick(a, await toWindow(a, back.x + back.width / 2, back.y + back.height / 2));
   await a.waitForTimeout(700);
@@ -659,10 +659,10 @@ async function run(browser: Browser, size: { width: number; height: number }, re
   await a.waitForTimeout(300);
   const beforeLeave = await stage(a);
   await mouseClick(a, await middle(a, '#cu-pause [data-act="leave"]'));
-  await expect(tag, 'Leave in the pause menu goes back to the mode screen', async () => (await labelsOf(a)) === 'BACK|CREATE LOBBY|JOIN LOBBY');
+  await expect(tag, 'Leave in the pause menu goes back to the mode screen', async () => (await labelsOf(a)) === 'BACK|CREATE LOBBY|JOIN LOBBY|PLAY WITH AI');
   await a.waitForTimeout(700);
   if ((await stage(a)).lastDown !== beforeLeave.lastDown) fail(`${tag}: Leave in the pause menu: the click reached the canvas behind`);
-  if ((await labelsOf(a)) !== 'BACK|CREATE LOBBY|JOIN LOBBY' || (await net(a, (c) => c.code))) fail(`${tag}: Leave in the pause menu also pressed something on the mode screen`);
+  if ((await labelsOf(a)) !== 'BACK|CREATE LOBBY|JOIN LOBBY|PLAY WITH AI' || (await net(a, (c) => c.code))) fail(`${tag}: Leave in the pause menu also pressed something on the mode screen`);
 
   await a.close();
   await b.close();

@@ -106,7 +106,9 @@ test('no Gemini key: it plays from the script, silently: it greets, finds the hu
     assert.deepEqual(room.info().seats[other(human)], { taken: true, connected: true, isAI: true });
     await pass(1000);
     assert.ok(bot().steps >= 4 && bot().steps <= 5, `${bot().steps} steps in 1 s`); // one step per 200 ms, no teleport
-    assert.deepEqual(said(), [L(`hello.${other(human)}`), L('follow.far')]);
+    assert.deepEqual(said(), [L(`hello.${other(human)}`)]);
+    await pass(1000);
+    assert.deepEqual(said(), [L(`hello.${other(human)}`), L('follow.far')]); // one line at a time, a beat apart
     await pass(30_000);
     assert.equal(bot().pose.face, FAR);
     assert.equal(ai.calls, 0);
@@ -142,9 +144,10 @@ test('Gemini slower than 3 s: the body never waits, and at 3 s the script says t
   assert.ok(bot().steps >= 10, 'the AI stood still while Gemini was thinking');
   assert.ok(said().includes(L('follow.far'))); // protocol lines do not wait for anyone
   assert.ok(!said().includes(L('hello.in')));
-  await pass(300);
-  assert.ok(said().includes(L('hello.in')), 'no scripted greeting right after the 3 s deadline');
-  assert.equal(ai.stats.timeouts, 1);
+  await pass(400);
+  assert.equal(ai.stats.timeouts, 1); // given up 3 s after the call went out (at 0.2 s)
+  await pass(1500); // its lines are a beat apart
+  assert.ok(said().includes(L('hello.in')), 'no scripted greeting after the 3 s deadline');
   assert.ok(logs.some((l) => l.includes('no answer after 3000 ms; the script answers')));
   await pass(30_000);
   assert.equal(bot().pose.face, FAR);
@@ -154,13 +157,13 @@ test('Gemini errors (503): the script answers that turn at once and the calls ba
   const pass = clock(t);
   const down = new Error('503 overloaded');
   const { room, ai, said, logs, bot } = setup('out', [down, down, down], { humanOn: FAR });
-  await pass(400);
-  assert.ok(said().includes(L('hello.in'))); // no 3 s wait on an error
+  await pass(1900);
+  assert.ok(said().includes(L('hello.in'))); // no 3 s wait on an error: it is the next line said
   assert.equal(ai.stats.errors, 1);
   assert.ok(logs.some((l) => l.includes('503 overloaded') && l.includes('next call in 6s')));
   // While it backs off, free-form chat is answered by the script, not queued for Gemini.
   room.say('out', 'tell me about this place');
-  await pass(600);
+  await pass(3200);
   assert.ok(said().includes(L('huh')));
   assert.equal(ai.calls, 1);
   await pass(6000);
@@ -251,6 +254,7 @@ test('free-form chat: Gemini turns it into protocol words and the script acts on
   room.say('in', 'I wandered away, come find me at the snowy place');
   await pass(6200); // the greeting used the Gemini slot: this one waits for the next
   assert.equal(JSON.parse(prompts.at(-1)!).partnerSaid, 'I wandered away, come find me at the snowy place');
+  await pass(1600);
   assert.ok(said().includes('On my way over.'));
   assert.deepEqual((ai as unknown as { mind: { cands: number[] } }).mind.cands, [target]); // it stopped guessing: it was told
   await pass(20_000);
@@ -346,7 +350,7 @@ test('every line of every registered script has words, in both personas, within 
   for (const key of lineKeys()) assert.ok(hasLine(key), `no words for "${key}" in server/src/ai/scripted.ts`);
   for (const line of allScriptedLines()) {
     assert.ok(line.length <= MAX_SAY_CHARS, `${line.length}: ${line}`);
-    assert.ok(!line.includes('—'), line);
+    assert.ok(!line.includes('\u2014'), line);
   }
   // A script registered without words does not crash the bot: it says it does not know this one.
   assert.equal(lineText('default', 'brand-new-puzzle.hello'), L('unknown'));

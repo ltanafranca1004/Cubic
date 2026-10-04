@@ -112,23 +112,33 @@ from face 1 to the pot on face 6.
 
 ## Play with the AI
 
-No second player? A Gemini-powered partner takes the other side. It sees only its own
-side of the cube, like a human would, and you solve puzzles by chatting with it.
+No second player? An AI partner takes the other side. It sees only its own side of the
+cube, like a human would, and you play by chatting with it.
 
-1. Get a key at https://aistudio.google.com/apikey and put it in `server/.env`:
-   `GEMINI_API_KEY=...` (optional `GEMINI_MODEL`, default `gemini-3.5-flash`).
-2. `npm run dev`, open the app, press **Play**, then **Play Outside with AI** or
-   **Play Inside with AI**.
-3. Type to it (Enter). Tell it what you see and ask what it sees. It walks at human speed
-   and can be wrong. Its lines are 80 characters at most.
+1. `npm run dev`, open the app, press **Play**, then **Play with AI** and pick your side.
+   No key is needed: without one the scripted partner plays alone.
+2. Optional: a key from https://aistudio.google.com/apikey in `server/.env` as
+   `GEMINI_API_KEY=...` (optional `GEMINI_MODEL`, default `gemini-3.5-flash`) gives it
+   natural lines and lets it read free-form chat.
+3. Type to it (Enter). Short words work best: `go`, `wait`, `yes`, `no`, `face 3`, and
+   whatever its own lines ask for. Quick chat (keys 1 to 4) counts. It walks at human
+   speed. Its lines are 80 characters at most and show as captions.
 
+How it is built:
+
+- **The script drives.** A rule-based partner (`shared/src/bot/partner.ts`) decides every
+  step from what its side can see and what you typed. It finds you by voice, stays on your
+  wall, keeps off tiles that are not safe, and walks into the portal at the end. Each
+  puzzle it can play is one small file in `shared/src/bot/scripts` (see the README
+  there); on a puzzle it has no script for it says so and keeps its hands off.
+- **Gemini advises.** It rewords small talk, answers free-form chat, turns it into the
+  words the script understands, and may suggest a move, which is only walked if the script
+  calls it safe. One call per 6 seconds per room, no backlog. A call that takes more than
+  3 seconds, fails or hits the rate limit is dropped and the script's own line is said:
+  the partner never waits for the API.
 - **Personality:** `AI_PERSONA=default` or `AI_PERSONA=tsundere` (annoyed on the surface,
-  secretly helpful). Tone only: it still knows just what its own side shows.
-- **Rate limit:** one Gemini call per 6 seconds per room. If Gemini fails (429, 503,
-  timeout) the server backs off and a small scripted partner plays that turn, so the game
-  never stalls.
-- **No key at hand, or a demo emergency:** `AI_FAKE=1 npm run dev` runs the scripted
-  partner alone. No keys, no network.
+  secretly helpful). Tone only.
+- `AI_FAKE=1` switches Gemini off even if there is a key.
 
 Keys stay on the server and are never sent to the browser.
 
@@ -137,16 +147,21 @@ Keys stay on the server and are never sent to the browser.
 `TTS_MODE=browser` (default outside production) speaks the AI's lines with the browser's
 free `speechSynthesis`. `TTS_MODE=elevenlabs` (default in production) uses ElevenLabs
 (`ELEVENLABS_API_KEY`, optional `ELEVENLABS_VOICE_ID`, `ELEVENLABS_MODEL_ID` default
-`eleven_flash_v2_5`). If the key is missing or a call fails, that line falls back to the
-browser voice.
+`eleven_flash_v2_5`). The game never waits for a clip.
 
 To keep ElevenLabs cheap:
-- Every clip is cached in `server/.tts-cache` (not in git), keyed by voice + model + text.
-- `npm run tts:bank -w server` pre-generates the lines in `server/tts/bank-lines.txt`
-  (about 70 short lines, both personas, about 2,000 characters once). At runtime a line
-  that matches a bank line, ignoring case and punctuation, plays the banked clip for free.
-  Cached and banked clips are also used in browser mode.
-- The server logs the characters sent to ElevenLabs per room and in total.
+- **The voice bank is in the repo** (`server/tts/bank`, one MP3 per line, `index.json`
+  says which is which). It holds the script's puzzle-independent lines for both personas
+  and the generic lines in `server/tts/bank-lines.txt`. A line that matches a banked one,
+  ignoring case and punctuation, plays that clip in either mode, with no key and after
+  any redeploy. `npm run tts:bank -w server` adds what is missing and nothing else
+  (lines already banked are skipped; a clip in the local cache is copied, not bought).
+- The script's own lines are never bought at runtime: banked, or read by the browser.
+- Gemini's lines are generated on demand and cached in `server/.tts-cache` (not in git).
+  At most `TTS_SESSION_LINES` (default 15) per room; after that, and on any miss or
+  failure, the browser voice takes over.
+- Characters sent to ElevenLabs are logged per room and in total (`[tts ROOM] ...`), and
+  Gemini calls and tokens per room (`[ai ROOM] ...`).
 
 ## Test on two laptops
 

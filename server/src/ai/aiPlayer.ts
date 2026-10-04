@@ -64,6 +64,8 @@ const HUH_EVERY_MS = 8000;
 const OUTBOX_MAX = 6;
 /** An AI whose own code has thrown this many times is stopped: it is broken, not unlucky. */
 const MAX_FAULTS = 3;
+/** Time between two of its lines, so each one can be heard and read (one caption shows at a time). */
+const LINE_GAP_MS = 1500;
 
 export interface ParsedReply {
   say: string | null;
@@ -92,7 +94,7 @@ export function parseReply(text: string): ParsedReply | null {
   const r = raw as Record<string, unknown>;
   if (!('say' in r) && !('action' in r) && !('heard' in r)) return null;
   if (r.say != null && typeof r.say !== 'string') return null;
-  const say = typeof r.say === 'string' && r.say.trim() ? clip(r.say.replace(/\s*—\s*/g, ', ').trim()) : null;
+  const say = typeof r.say === 'string' && r.say.trim() ? clip(r.say.replace(/\s*\u2014\s*/g, ', ').trim()) : null;
   const heard = typeof r.heard === 'string' && r.heard.trim() ? r.heard.trim().slice(0, 60) : null;
   const action = r.action == null ? null : parseAction(r.action);
   return { say, heard, action };
@@ -122,6 +124,7 @@ export class AiPlayer {
   private nextThinkAt = 0;
   private failures = 0;
   private lastHuhAt = -Infinity;
+  private lastSaidAt = -Infinity;
   private stopped = false;
   /** Times this AI's own code has thrown (see fault). */
   private faults = 0;
@@ -263,17 +266,17 @@ export class AiPlayer {
     if (this.outbox.length > OUTBOX_MAX) this.outbox.shift();
   }
 
-  /** Say what is waiting, as far as the chat rate limit lets us. The rest goes next tick. */
+  /** Say the next waiting line, one at a time, a beat apart. The rest goes on a later tick. */
   private flush(): void {
-    while (this.outbox.length) {
-      const line = this.outbox[0]!;
-      const msg = this.room.say(this.side, line.text);
-      if (!msg) return;
-      this.outbox.shift();
-      if (line.scripted) this.stats.scriptedLines++;
-      else this.stats.modelLines++;
-      this.opts.onSay?.(msg, { scripted: line.scripted });
-    }
+    const line = this.outbox[0];
+    if (!line || Date.now() - this.lastSaidAt < LINE_GAP_MS) return;
+    const msg = this.room.say(this.side, line.text);
+    if (!msg) return; // the chat rate limit: try again next tick
+    this.lastSaidAt = Date.now();
+    this.outbox.shift();
+    if (line.scripted) this.stats.scriptedLines++;
+    else this.stats.modelLines++;
+    this.opts.onSay?.(msg, { scripted: line.scripted });
   }
 
   private huh(now: number): void {
