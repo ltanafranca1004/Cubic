@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { FACE_SIZE, TILE_PX, canonToScreen, itemsOn, screenToCanon, tileAt, visibleObjects, defaultEnv, type FaceId, type GameEvent, type GameState, type Side, type Vec } from '@cubic/shared';
+import { FACE_SIZE, TILE_PX, brightFace, canonToScreen, itemsOn, linesOn, screenToCanon, tileAt, visibleObjects, defaultEnv, type FaceId, type GameEvent, type GameState, type Side, type Vec } from '@cubic/shared';
 import { inputPaused } from '../input/gate';
 import { settings } from '../style/settings';
 import { CodeArt, type ArtProvider } from './art';
@@ -23,8 +23,6 @@ const ANIM_MS = 250;
 const LIGHT_NEAR = 1.5;
 const LIGHT_FAR = FACE_SIZE * 0.55;
 const DARK_MAX = 0.92;
-/** Inside: how much of the darkness is left while a skylight is held (a `beam` object that is on). */
-const SKYLIGHT_DARK = 0.3;
 const BG = '#2e222f';
 /** Inside: the wall between two rooms, seen while hopping over it. */
 const WALL_PX = 10;
@@ -113,7 +111,7 @@ export class GameScene extends Phaser.Scene {
     if (import.meta.env.DEV) Object.assign(window, { __cubicFace: () => this.face.canvas });
     this.shadow = this.add.rectangle(0, 0, 10, 2, 0x000000, 0.25).setOrigin(0, 0).setVisible(false);
     this.hero = this.add.image(0, 0, this.art.player('out', 0)).setOrigin(0, 0).setVisible(false);
-    this.carried = this.add.image(0, 0, this.art.item('rose')).setOrigin(0, 0).setVisible(false);
+    this.carried = this.add.image(0, 0, this.art.item('default')).setOrigin(0, 0).setVisible(false);
     const down = (e: KeyboardEvent) => this.keyDown(e);
     const up = (e: KeyboardEvent) => this.keyUp(e);
     const blur = () => this.releaseAll();
@@ -258,14 +256,13 @@ export class GameScene extends Phaser.Scene {
       put(this.art.item(it.kind), sx, sy);
     }
 
-    if (me === 'in') {
-      // The inside is dark: light falls off by tile distance from the player. Daylight
-      // through a held skylight lifts most of it, for the whole room.
-      const lift = objects.some((o) => o.type === 'beam' && o.state === 'on') ? SKYLIGHT_DARK : 1;
+    if (me === 'in' && !brightFace(face)) {
+      // The inside is dark: light falls off by tile distance from the player. A room whose
+      // puzzle is `bright` is drawn fully lit instead.
       for (let sy = 0; sy < FACE_SIZE; sy++) {
         for (let sx = 0; sx < FACE_SIZE; sx++) {
           const d = Math.hypot(sx - at.sx, sy - at.sy);
-          const dark = Phaser.Math.Clamp((d - LIGHT_NEAR) / (LIGHT_FAR - LIGHT_NEAR), 0, 1) * DARK_MAX * lift;
+          const dark = Phaser.Math.Clamp((d - LIGHT_NEAR) / (LIGHT_FAR - LIGHT_NEAR), 0, 1) * DARK_MAX;
           if (dark <= 0) continue;
           g.fillStyle = `rgba(46, 34, 47, ${dark})`;
           g.fillRect(sx * T, sy * T, T, T);
@@ -273,6 +270,31 @@ export class GameScene extends Phaser.Scene {
       }
       g.fillStyle = 'rgba(249, 194, 43, 0.12)';
       g.fillRect(at.sx * T - 4, at.sy * T - 4, T + 8, T + 8);
+    }
+
+    // The puzzle's lines (laser beams), from tile centre to tile centre: one pixel wide,
+    // whole pixels, over the darkness (a beam is its own light).
+    for (const line of linesOn(state, me, face)) {
+      const centre = ([x, y]: readonly [number, number]) => canonToScreen(me, face, up, x, y).map((c) => Math.floor(c * T + T / 2)) as [number, number];
+      let [x, y] = centre(line.from);
+      const [x1, y1] = centre(line.to);
+      const dx = Math.abs(x1 - x);
+      const dy = -Math.abs(y1 - y);
+      let err = dx + dy;
+      g.fillStyle = line.colour;
+      for (;;) {
+        g.fillRect(x, y, 1, 1);
+        if (x === x1 && y === y1) break;
+        const e2 = 2 * err;
+        if (e2 >= dy) {
+          err += dy;
+          x += x1 > x ? 1 : -1;
+        }
+        if (e2 <= dx) {
+          err += dx;
+          y += y1 > y ? 1 : -1;
+        }
+      }
     }
   }
 

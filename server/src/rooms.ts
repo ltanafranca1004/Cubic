@@ -7,6 +7,7 @@ import {
   applyInteract,
   applyMove,
   createGame,
+  defaultEnv,
   needsTick,
   quickIndex,
   tick,
@@ -82,6 +83,9 @@ export interface RoomListener {
   onClosed?(): void;
 }
 
+/** A fresh seed per game: what the puzzles draw their codes, sequences and paths from. */
+const newSeed = (): number => randomBytes(4).readUInt32LE();
+
 export class Room {
   state: GameState;
   readonly chat: ChatMessage[] = [];
@@ -99,7 +103,7 @@ export class Room {
     private readonly onEmpty: (room: Room) => void,
     private readonly now: () => number = Date.now,
   ) {
-    this.state = createGame(this.now());
+    this.state = createGame(this.now(), defaultEnv, newSeed());
     // An AI game has nothing to wait for: the human chose a side with the button.
     this.phase = mode === 'ai' ? 'playing' : 'lobby';
     if (needsTick()) {
@@ -267,7 +271,7 @@ export class Room {
     const blocker = this.startBlocker();
     if (blocker) throw new Error(blocker);
     this.phase = 'playing';
-    this.state = createGame(this.now());
+    this.state = createGame(this.now(), defaultEnv, newSeed());
     for (const x of this.members) this.seatPlayer(x);
     this.emitRoom();
     this.emitState([]);
@@ -421,7 +425,7 @@ export class Room {
   /** New game in the same room (after a win). Everyone keeps their side. */
   restart(): void {
     if (this.phase !== 'playing' || this.state.wonAt === null) return;
-    this.state = createGame(this.now());
+    this.state = createGame(this.now(), defaultEnv, newSeed());
     for (const m of this.members) this.seatPlayer(m);
     this.emitState([]);
   }

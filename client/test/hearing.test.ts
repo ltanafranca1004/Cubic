@@ -69,6 +69,16 @@ test('ding: your own face change plays, wherever the partner is', () => {
   }
 });
 
+test('use and push: your own always, those of the partner only through the shared wall', () => {
+  for (const type of ['use', 'push'] as const) {
+    for (const theirs of FACES) {
+      const state = game({ out: 1, in: theirs });
+      assert.deepEqual(heardSfx([{ type, side: 'out' }], 'out', state, known), [type]);
+      assert.deepEqual(heardSfx([{ type, side: 'in' }], 'out', state, known), theirs === 1 ? [type] : [], `${type}, partner on ${theirs}`);
+    }
+  }
+});
+
 test('a mixed batch keeps its order and drops only what the wall hides', () => {
   const state = game({ out: 1, in: 4 });
   const events: GameEvent[] = [
@@ -85,7 +95,7 @@ test('a mixed batch keeps its order and drops only what the wall hides', () => {
 
 test('everything else is heard as before', () => {
   const state = game({ out: 1, in: 3 });
-  for (const type of ['bump', 'push', 'strike'] as const) assert.deepEqual(heardSfx([{ type, side: 'in' }], 'out', state, known), [type]);
+  for (const type of ['bump', 'strike'] as const) assert.deepEqual(heardSfx([{ type, side: 'in' }], 'out', state, known), [type]);
   assert.deepEqual(heardSfx([{ type: 'pickup', side: 'in', item: 'rose' }, { type: 'win' }], 'out', state, known), ['pickup', 'win']);
   // A puzzle event without a sound of its own gets the generic blip; the solve sting is a sample.
   assert.equal(sfxFor({ type: 'puzzle', puzzle: 'x', name: 'no-such-sound' }, known), 'puzzle');

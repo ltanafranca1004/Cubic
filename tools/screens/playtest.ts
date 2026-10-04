@@ -40,7 +40,6 @@ import {
   compassDrift,
   defaultEnv,
   findPath,
-  isBlocked,
   neighbours,
   objectsOn,
   visibleObjects,
