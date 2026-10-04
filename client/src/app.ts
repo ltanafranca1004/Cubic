@@ -26,6 +26,7 @@ import { sfx } from './game/sfx';
 import { Net } from './net/client';
 import { setPartnerLevel, showCaption } from './ui/captions';
 import type { HudState, LobbyState, UIActions, UIHandle, UIHost, UIState } from './ui/hooks';
+import { mountOnboarding } from './ui/onboarding';
 import { Voice } from './voice/voice';
 
 // Glue: Net (server + prediction) -> UIState for the UI and GameState for the Phaser view;
@@ -211,6 +212,7 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
     onTalk: (down) => voice.setTalkKey(down),
   });
   handle = ui.mount(root, actions);
+  mountOnboarding(root, net); // hints, the side intro card and the narrator's captions (ui/onboarding)
   // Dev only: lets tests and the console inspect the client state.
   if (import.meta.env.DEV) Object.assign(window, { __cubic: net, __cubicVoice: voice, __cubicAudio: audio });
   Object.assign(devHooks, { net, render });
