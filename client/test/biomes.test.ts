@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { FACES, FACE_SIZE, createGame, defaultEnv, visibleObjects, type FaceId } from '@cubic/shared';
+import { FACES, FACE_SIZE, createGame, defaultEnv, onRing, visibleObjects, type FaceId } from '@cubic/shared';
 import { DECOR, DECOR_LEGEND, TREES, WIND_STEPS, decorAt, decorSpots, dressed, dripPoints, isTall, overhangTiles, propAt, propCell, shoreMask, skinAt, wadeAt, windStep } from '../src/world/biomes/decor';
 import { PROPS, PROP_CELLS, PROP_COLS, PROP_H, PROP_LIST, PROP_SHEET, PROP_VEIL, PROP_W, TALL, WATER_CELL, WATER_FRAMES, WATER_MASKS, WATER_SHEET, type PropName } from '../src/world/biomes/sheet';
 
@@ -67,6 +67,27 @@ test('a tall prop never hangs over a puzzle object, whichever way the face is tu
   }
 });
 
+test('the edge rule: nothing solid or tall stands on the outer ring of an outside face', () => {
+  // a player crossing in from the next face can always step in, and sees where they land
+  for (const face of FACES) {
+    const { tiles } = out(face);
+    for (let y = 0; y < FACE_SIZE; y++)
+      for (let x = 0; x < FACE_SIZE; x++) {
+        if (!onRing(x, y)) continue;
+        const where = `face ${face} at ${x},${y}`;
+        const prop = propAt(tiles, face, x, y);
+        assert.ok(!prop || !isTall(prop), `${where}: tall ${prop} on the ring`);
+        assert.equal(skinAt(tiles, face, x, y), null, `${where}: a tree or landmark skin on the ring`);
+        assert.notEqual(decorAt(face, x, y)?.entry.on, 'solid', `${where}: a landmark on the ring`);
+      }
+    for (let y = 0; y < FACE_SIZE; y++)
+      for (let x = 0; x < FACE_SIZE; x++) {
+        const ch = DECOR[face][y]![x]!;
+        if (DECOR_LEGEND[ch]?.on === 'solid') assert.ok(!onRing(x, y), `face ${face}: landmark "${ch}" at ${x},${y} is on the ring`);
+      }
+  }
+});
+
 test('the forest clearing is left to the stepping stones: no decor in it, no tree beside it', () => {
   // the stones mirror the floor of the inside room: every tile inside its walls
   const room = defaultEnv.world.in[4].tiles;
@@ -118,9 +139,13 @@ test('each biome has what was asked for, and one thing to remember it by', () =>
   // desert: cacti, and an oasis with palms
   assert.ok(props(2).filter((p) => p.startsWith('cactus')).length >= 3);
   assert.ok(water(2) >= 4 && props(2).includes('palm'));
-  // snow: snowy pines and exactly one snowman
+  // snow: snowy pines and exactly one snowman, wherever the `*` of the decor map puts it (on a solid tile)
   assert.ok(props(3).some((p) => p.startsWith('pine')));
   assert.equal(props(3).filter((p) => p === 'snowman').length, 1);
+  const stars = decorSpots(3).filter((s) => s.ch === '*');
+  assert.equal(stars.length, 1);
+  assert.equal(propAt(out(3).tiles, 3, stars[0]!.x, stars[0]!.y), 'snowman');
+  assert.ok(['wall', 'tree'].includes(out(3).tiles[stars[0]!.y]![stars[0]!.x]!));
   // forest: trees, all of them swaying
   const oaks = props(4).filter((p) => p.startsWith('oak'));
   assert.ok(oaks.length >= 12);
