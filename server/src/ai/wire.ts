@@ -5,7 +5,7 @@ import { Budget } from './budget';
 import { DEFAULT_GEMINI_MODEL, geminiBrain, type Brain } from './gemini';
 import { parsePersona, type Persona } from './prompt';
 import { RELAY_GAP_MS, relayPieces } from './relay';
-import { DEFAULT_TTS_MODEL, createTts, parseTtsMode, type Tts, type TtsMode, type TtsOptions } from './tts';
+import { createTts, parseTtsMode, ttsModels, type Tts, type TtsMode, type TtsOptions } from './tts';
 
 // The AI partner as the server wires it up from the environment: the one Gemini advisor,
 // the one voice and the one budget, shared by every solo room. It is only ever reached
@@ -51,12 +51,12 @@ export function createAiPartner(env: Record<string, string | undefined>, deps: A
   const budget = deps.budget ?? Budget.fromEnv(env, { log });
   // The scripted partner always plays. Gemini only talks, when there is a key (and the budget allows each call).
   const advisor = !fake && env.GEMINI_API_KEY ? (deps.brain ?? geminiBrain)(env.GEMINI_API_KEY, model, persona) : null;
-  const ttsModel = env.ELEVENLABS_MODEL_ID || DEFAULT_TTS_MODEL;
+  const { modelId: ttsModel, bankModelId } = ttsModels(env);
   // browser = the client's free speechSynthesis. elevenlabs needs a key; without one we
   // stay on the browser voice so the AI is never silent.
   const ttsWanted = parseTtsMode(env.TTS_MODE, env.NODE_ENV);
   const ttsMode: TtsMode = ttsWanted === 'elevenlabs' && !env.ELEVENLABS_API_KEY ? 'browser' : ttsWanted;
-  const tts = createTts({ apiKey: env.ELEVENLABS_API_KEY, voiceId: env.ELEVENLABS_VOICE_ID, modelId: ttsModel, budget, log, ...(deps.fetchFn ? { fetchFn: deps.fetchFn } : {}), ...deps.tts });
+  const tts = createTts({ apiKey: env.ELEVENLABS_API_KEY, voiceId: env.ELEVENLABS_VOICE_ID, modelId: ttsModel, bankModelId, budget, log, ...(deps.fetchFn ? { fetchFn: deps.fetchFn } : {}), ...deps.tts });
 
   /** Speak one line of the AI. The game never waits for it. */
   function voice(room: Room, send: Send, msg: ChatMessage, info: { scripted: boolean; line?: Say }): void {

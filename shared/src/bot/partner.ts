@@ -60,6 +60,8 @@ export interface Decision {
   allow: Cell[];
   /** The partner depends on the body staying exactly here (a plate, a pane): nothing may move it. */
   hold: boolean;
+  /** Lines said earlier that are out of date now (a question that was just answered): do not say them if they still wait. */
+  cancel: LineKey[];
   /** One line on what it is doing, for the model and the logs. */
   status: string;
 }
@@ -76,12 +78,18 @@ export interface Mind {
   pauseUntil: number;
   /** Each puzzle script's own memory, by puzzle id. */
   scripts: Record<string, unknown>;
+  /** How many faces were solved when "there is more to solve" was last said: once per solve. */
+  nextAt: number;
+  /** Since when the partner is only faintly heard (a next face, which one unknown), or null. */
+  faintSince: number | null;
 }
 
-export const newMind = (): Mind => ({ face: null, strikes: 0, solved: [], cands: [], said: {}, greeted: false, pauseUntil: 0, scripts: {} });
+export const newMind = (): Mind => ({ face: null, strikes: 0, solved: [], cands: [], said: {}, greeted: false, pauseUntil: 0, scripts: {}, nextAt: -1, faintSince: null });
 
 const RESAY_MS = 25_000;
 const PAUSE_MS = 10_000;
+/** Heard only faintly for this long with more than one face to try: it really does not know where the partner is, and asks. */
+export const LOST_MS = 8_000;
 
 /**
  * One decision. `heard` is what the human said since the last call, one entry per chat line,
@@ -90,6 +98,7 @@ const PAUSE_MS = 10_000;
  */
 export function decide(mind: Mind, o: Observation, heard: readonly Heard[], now: number, scripts: readonly AnyScript[] = PUZZLE_SCRIPTS): Decision {
   const says: Say[] = [];
+  const cancelled: LineKey[] = [];
   const say = (key: LineKey, opts: { every?: number; force?: boolean; flavor?: boolean; args?: LineArgs } = {}): boolean => {
     // A line with other args is another line: "the code is 4 7 2" is said again when the code changes.
     const id = opts.args ? `${key}#${JSON.stringify(opts.args)}` : key;
@@ -106,7 +115,7 @@ export function decide(mind: Mind, o: Observation, heard: readonly Heard[], now:
     mind.strikes = o.strikes;
     mind.solved = [...o.solvedFaces];
     mind.face = o.face;
-    return { say: says, action: null, avoid: [], soft: false, allow: [], hold: false, ...decision };
+    return { say: says, action: null, avoid: [], soft: false, allow: [], hold: false, cancel: cancelled, ...decision };
   };
 
   // Only scripts for puzzles that are really in this game count.
@@ -122,6 +131,7 @@ export function decide(mind: Mind, o: Observation, heard: readonly Heard[], now:
     struck,
     objs: (type) => o.objects.filter((x) => x.type === type),
     say: (key, opts) => (s.lines.includes(key) ? say(key, opts) : false),
+    cancel: (...keys) => void cancelled.push(...keys.filter((k) => s.lines.includes(k))),
   });
 
   const newlySolved = o.solvedFaces.filter((f) => !mind.solved.includes(f));
@@ -130,7 +140,7 @@ export function decide(mind: Mind, o: Observation, heard: readonly Heard[], now:
     if (here) mind.scripts[here.id] = here.init();
     for (const id of Object.keys(mind.said)) {
       const key = id.split('#')[0]!;
-      if (key === 'next' || key === 'unknown' || here?.lines.includes(key)) delete mind.said[id];
+      if (key === 'unknown' || here?.lines.includes(key)) delete mind.said[id];
     }
   }
 
@@ -175,11 +185,13 @@ export function decide(mind: Mind, o: Observation, heard: readonly Heard[], now:
   if (now < mind.pauseUntil) return done({ avoid: avoiding(), soft, hold: true, status: 'waiting, as asked' });
 
   // ---- not on the partner's wall: go and find them ----
+  mind.faintSince = heardDistance === 1 ? (mind.faintSince ?? now) : null;
   if (heardDistance > 0) {
     const open = (f: FaceId) => o.puzzleList.some((p) => p.face === f) && !o.solvedFaces.includes(f);
     const target = [...mind.cands].sort((a, b) => Number(open(b)) - Number(open(a)) || a - b)[0]!;
     if (heardDistance === 2) say('follow.far', { every: RESAY_MS });
-    else if (mind.cands.length > 1) say('follow.where', { every: RESAY_MS });
+    // Faint: it follows its best guess first, and only asks when that did not find them.
+    else if (mind.cands.length > 1 && now - mind.faintSince! >= LOST_MS) say('follow.where', { every: RESAY_MS });
     return done({ action: { type: 'go_face', face: target }, avoid: avoiding(), soft, status: `looking for the partner, trying face ${target}` });
   }
 
@@ -191,7 +203,11 @@ export function decide(mind: Mind, o: Observation, heard: readonly Heard[], now:
     }
     const play = here.play(ctxFor(here));
     if (play) return from(play);
-  } else if (o.puzzleList.some((p) => !o.solvedFaces.includes(p.face))) say('next', { every: RESAY_MS * 2 });
+  } else if (o.puzzleList.some((p) => !o.solvedFaces.includes(p.face)) && mind.nextAt !== o.solvedFaces.length) {
+    // once per solve, not on every solved face it walks over behind the partner
+    mind.nextAt = o.solvedFaces.length;
+    say('next', { force: true });
+  }
   return done({ avoid: avoiding(), soft, status: 'nothing to do on this face: staying with the partner' });
 }
 

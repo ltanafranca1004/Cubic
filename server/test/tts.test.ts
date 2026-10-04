@@ -5,9 +5,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 import { MAX_SAY_CHARS } from '../src/ai/prompt';
-import { bankedScriptLines } from '../src/ai/scripted';
+import { bankedScriptLines, lineText } from '../src/ai/scripted';
 import { VOCAB } from '@cubic/shared';
-import { DEFAULT_TTS_MODEL, TTS_BANK_DIR, bankFileName, bankLines, clipFileName, createTts, loadBank, normalizeLine, parseBank, parseTtsMode } from '../src/ai/tts';
+import { TRIM_KEEP_S, TRIM_THRESHOLD_DB, trimCommand } from '../src/ai/bank';
+import { DEFAULT_BANK_MODEL, DEFAULT_TTS_MODEL, DEFAULT_VOICE_ID, TTS_BANK_DIR, bankFileName, bankLines, clipFileName, createTts, normalizeLine, parseBank, parseTtsMode, ttsModels } from '../src/ai/tts';
 
 const dirs: string[] = [];
 const tmp = () => {
@@ -39,6 +40,27 @@ test('request shape: endpoint, voice id, key header, model id', async () => {
   assert.equal(api.calls[0]!.key, 'k');
   assert.deepEqual(api.calls[0]!.body, { text: 'Hello there.', model_id: 'eleven_flash_v2_5' });
   assert.equal(DEFAULT_TTS_MODEL, 'eleven_flash_v2_5');
+});
+
+test('one voice, two models: banked clips are made with the bank model, live lines with the fast one', async () => {
+  assert.deepEqual([DEFAULT_VOICE_ID, DEFAULT_BANK_MODEL, DEFAULT_TTS_MODEL], ['r1KmysJdVYZjJCm4mL3b', 'eleven_v4', 'eleven_flash_v2_5']);
+  assert.deepEqual(ttsModels({}), { modelId: 'eleven_flash_v2_5', bankModelId: 'eleven_v4' });
+  assert.deepEqual(ttsModels({ ELEVENLABS_MODEL: 'live', ELEVENLABS_BANK_MODEL: 'best' }), { modelId: 'live', bankModelId: 'best' });
+  assert.deepEqual(ttsModels({ ELEVENLABS_MODEL_ID: 'older-name' }).modelId, 'older-name');
+  const api = fakeApi();
+  const tts = make(api);
+  await tts.bank('four');
+  await tts.speak('A line by Gemini.', 'ROOM');
+  // the same voice for both, the default one
+  assert.deepEqual(api.calls.map((c) => [c.url.split('/').at(-1)!.split('?')[0], c.body.model_id]), [['r1KmysJdVYZjJCm4mL3b', 'eleven_v4'], ['r1KmysJdVYZjJCm4mL3b', 'eleven_flash_v2_5']]);
+  assert.equal(tts.fileName('four'), clipFileName('r1KmysJdVYZjJCm4mL3b', 'eleven_v4', 'four'));
+  assert.equal(tts.bankSize, 1); // "four" is a vocabulary piece of this voice and model
+});
+
+test('the silence trim: the ffmpeg command cuts both ends and writes another file', () => {
+  const cut = `silenceremove=start_periods=1:start_threshold=${TRIM_THRESHOLD_DB}dB:start_silence=${TRIM_KEEP_S}`;
+  assert.deepEqual(trimCommand('/bank/a.mp3', '/bank/a.mp3.trim.mp3'), ['-hide_banner', '-loglevel', 'error', '-y', '-i', '/bank/a.mp3', '-af', `${cut},areverse,${cut},areverse`, '-codec:a', 'libmp3lame', '-b:a', '64k', '-ar', '44100', '/bank/a.mp3.trim.mp3']);
+  assert.ok(TRIM_THRESHOLD_DB < -30 && TRIM_KEEP_S > 0 && TRIM_KEEP_S < 0.2);
 });
 
 test('disk cache: checked before every call, survives a restart, keyed by voice + model + text', async () => {
@@ -77,7 +99,7 @@ test('voice bank: banking writes into the bank directory, and any spelling of a 
   assert.equal(api.calls.length, 2);
   // a new clip is named by voice + model + exact text
   assert.deepEqual(readdirSync(bankDir).sort(), ['Got it.', "I can't hear you. Come closer."].map((l) => tts.fileName(l)).sort());
-  assert.equal(tts.fileName('Got it.'), clipFileName('21m00Tcm4TlvDq8ikWAM', 'eleven_flash_v2_5', 'Got it.'));
+  assert.equal(tts.fileName('Got it.'), clipFileName(DEFAULT_VOICE_ID, DEFAULT_BANK_MODEL, 'Got it.'));
   assert.notEqual(tts.fileName('Got it.'), tts.fileName('got it'));
   assert.equal((await tts.speak('Got it.', 'ROOM'))!.source, 'bank');
   assert.equal(api.calls.length, 2);
@@ -88,16 +110,18 @@ test('voice bank: banking writes into the bank directory, and any spelling of a 
     assert.equal((await fresh.speak(said, 'ROOM', { cacheOnly: true }))!.source, 'bank', said);
   }
   assert.equal(api.calls.length, 2);
-  assert.equal(fresh.bankSize, 2);
+  assert.equal(readdirSync(bankDir).length, 2);
   // Another voice or model is another clip: it is not served the old one, and not bought behind your back.
-  assert.equal(await createTts({ voiceId: 'another', modelId: 'other', cacheDir: tmp(), bankDir, log: () => {} }).speak('Got it.', 'R'), null);
-  // The clips bought before (named by normalized text only) still play, in any spelling and with any voice setting.
+  assert.equal(await createTts({ voiceId: 'another', cacheDir: tmp(), bankDir, log: () => {} }).speak('Got it.', 'R'), null);
+  assert.equal(await createTts({ bankModelId: 'other', cacheDir: tmp(), bankDir, log: () => {} }).speak('Got it.', 'R'), null);
+  // The clips of the OLD voice (named by normalized text only) no longer play: one voice in a game, never two.
   const old = tmp();
   writeFileSync(join(old, bankFileName('It worked!')), new Uint8Array([9]));
-  const legacy = createTts({ voiceId: 'another', cacheDir: tmp(), bankDir: old, fetchFn: api.fetchFn, apiKey: 'k', log: () => {} });
-  for (const said of ['It worked!', 'it worked', ' IT  WORKED!! ']) assert.equal((await legacy.speak(said, 'R'))!.source, 'bank', said);
-  assert.equal(await legacy.bank('It worked!'), 'banked'); // and they are never bought again
-  assert.equal(api.calls.length, 2);
+  const legacy = createTts({ cacheDir: tmp(), bankDir: old, fetchFn: api.fetchFn, apiKey: 'k', log: () => {} });
+  for (const said of ['It worked!', 'it worked']) assert.equal(await legacy.speak(said, 'R', { cacheOnly: true }), null, said);
+  assert.deepEqual([legacy.where('It worked!'), legacy.bankSize], [null, 0]);
+  assert.equal(await legacy.bank('It worked!'), 'new'); // the line is bought again, in the new voice
+  assert.equal(api.calls.length, 3);
   assert.equal(normalizeLine("I can't HEAR you... Come closer!"), 'i cant hear you come closer');
 });
 
@@ -105,10 +129,13 @@ test('banking copies a clip that is already in the local cache instead of buying
   const cacheDir = tmp();
   const bankDir = tmp();
   const api = fakeApi();
-  const tts = createTts({ apiKey: 'k', cacheDir, bankDir, fetchFn: api.fetchFn, log: () => {} });
+  // the cache holds live-model clips: it is only a copy when the bank is made with that same model
+  const tts = createTts({ apiKey: 'k', modelId: 'm', bankModelId: 'm', cacheDir, bankDir, fetchFn: api.fetchFn, log: () => {} });
   await tts.speak('Nice one!', 'R');
   assert.equal(await tts.bank('Nice one!'), 'copied');
   assert.equal(api.calls.length, 1);
+  assert.equal(await createTts({ apiKey: 'k', modelId: 'm', bankModelId: 'best', cacheDir, bankDir, fetchFn: api.fetchFn, log: () => {} }).bank('Nice one!'), 'new');
+  assert.equal(api.calls[1]!.body.model_id, 'best');
   assert.equal(await createTts({ cacheDir: tmp(), bankDir: tmp(), log: () => {} }).bank('No key, no cache.'), null);
 });
 
@@ -146,12 +173,15 @@ test('TTS_MODE: browser unless production, explicit value wins', () => {
 
 // ---------- the committed bank ----------
 
-test('the bank list: every fixed line of both personas, the generic file and every vocabulary piece, no duplicates', () => {
+test('the bank list: every fixed line of the active persona and every vocabulary piece, nothing else, no duplicates', () => {
   const lines = bankLines();
   assert.ok(lines.every((l) => l.length <= MAX_SAY_CHARS), lines.filter((l) => l.length > MAX_SAY_CHARS).join(' | '));
   assert.equal(new Set(lines.map(normalizeLine)).size, lines.length);
   const banked = new Set(lines.map(normalizeLine));
-  for (const l of [...bankedScriptLines(), ...loadBank(), ...VOCAB]) assert.ok(banked.has(normalizeLine(l)), l);
+  for (const l of [...bankedScriptLines(), ...VOCAB]) assert.ok(banked.has(normalizeLine(l)), l);
+  assert.equal(lines.length, new Set([...bankedScriptLines('default'), ...VOCAB]).size);
+  // the other persona is not bought, unless it is the active one
+  assert.ok(!lines.includes(lineText('tsundere', 'win')) && bankLines('tsundere').includes(lineText('tsundere', 'win')));
   assert.ok(lines.every((l) => !l.includes('{')), 'a relay line with a placeholder is never a whole clip');
   assert.deepEqual(parseBank('# note\n\nHi!\nhi\n  Got it.  \n'), ['Hi!', 'Got it.']);
 });
@@ -161,7 +191,6 @@ test('the committed bank: every clip is a real MP3, listed in the index, tracked
   // dry run lists them); until then the browser voice reads them. What IS there must be right.
   const prod = createTts({ cacheDir: tmp(), fetchFn: (() => assert.fail('the bank must not call the API')) as unknown as typeof fetch, log: () => {} });
   const lines = bankLines().filter((l) => prod.where(l)?.source === 'bank');
-  assert.ok(lines.length >= 70, `${lines.length} banked lines`);
   const index = JSON.parse(readFileSync(join(TTS_BANK_DIR, 'index.json'), 'utf8')) as { lines: { file: string; text: string }[] };
   const indexed = new Set(index.lines.map((l) => l.file));
   for (const l of lines) {
@@ -175,12 +204,14 @@ test('the committed bank: every clip is a real MP3, listed in the index, tracked
   // No stray clip: every file is in the index with its text (a retired line's clip too: clips are never deleted).
   assert.deepEqual(readdirSync(TTS_BANK_DIR).filter((f) => f.endsWith('.mp3') && !indexed.has(f)), []);
   for (const l of index.lines) assert.ok(existsSync(join(TTS_BANK_DIR, l.file)), l.text);
-  // The core lines were banked before this change and must keep resolving.
-  for (const l of ['It worked!', 'We did it!', 'Okay, waiting. Say go when you are ready.']) assert.equal(prod.where(l)?.source, 'bank', l);
+  // The clips of the old voice are still in the folder, and no line resolves to one of them.
+  const mine = new Set(lines.map((l) => prod.where(l)!.file));
+  for (const l of index.lines.filter((x) => !mine.has(x.file))) assert.equal(prod.banked(l.text), null, l.text);
+  assert.equal(prod.bankSize, lines.length);
   // Not ignored: the clips are part of the repo, so a deploy has them.
   const ignored = (() => {
     try {
-      return execFileSync('git', ['check-ignore', join(TTS_BANK_DIR, bankFileName(lines[0]!))], { encoding: 'utf8' }).trim();
+      return execFileSync('git', ['check-ignore', join(TTS_BANK_DIR, prod.fileName('four'))], { encoding: 'utf8' }).trim();
     } catch {
       return ''; // exit 1 = not ignored
     }

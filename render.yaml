@@ -35,14 +35,16 @@ services:
         value: elevenlabs
       - key: ELEVENLABS_ENABLED # kill switch: false = banked clips + browser voice only
         sync: false
-      - key: ELEVENLABS_DAILY_CHARS # characters per UTC day over all solo rooms (default 2000)
+      - key: ELEVENLABS_DAILY_CHARS # characters per UTC day over all solo rooms (default 20000)
         sync: false
       - key: ELEVENLABS_API_KEY
         sync: false
       - key: ELEVENLABS_VOICE_ID
         sync: false
-      - key: ELEVENLABS_MODEL_ID
+      - key: ELEVENLABS_MODEL # live lines (the older name ELEVENLABS_MODEL_ID is still read)
         value: eleven_flash_v2_5
+      - key: ELEVENLABS_BANK_MODEL # banked clips: must be the model the committed bank was bought with
+        value: eleven_v4
       # --- Voice: TURN relay for calls that cannot connect directly (optional, see README)
       - key: TURN_URLS # comma-separated turn:/turns: URLs
         sync: false

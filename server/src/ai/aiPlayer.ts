@@ -2,6 +2,7 @@ import {
   CHAT_MAX_LEN,
   PUZZLE_SCRIPTS,
   decide,
+  isPuzzleLine,
   newMind,
   nextStep,
   observe,
@@ -18,7 +19,7 @@ import type { Room } from '../rooms';
 import type { Budget, GeminiReason } from './budget';
 import { isQuotaError, type Brain } from './gemini';
 import { MAX_SAY_CHARS, turnPrompt, type Persona } from './prompt';
-import { eventLine, lineText } from './scripted';
+import { eventLine, humanSays, lineText } from './scripted';
 
 // The AI partner. Two parts:
 //
@@ -71,11 +72,21 @@ const BACKOFF_MAX_MS = 60_000;
 export const STUCK_MS = 60_000;
 /** "I did not get that" at most this often. */
 const HUH_EVERY_MS = 8000;
+/** Lines waiting to be said. Over it, small talk goes first; a puzzle line (an answer, a question) is never dropped. */
 const OUTBOX_MAX = 6;
+/** Small talk that has waited this long behind other lines is no longer worth saying. */
+export const STALE_MS = 10_000;
 /** An AI whose own code has thrown this many times is stopped: it is broken, not unlucky. */
 const MAX_FAULTS = 3;
-/** Time between two of its lines, so each one can be heard and read (one caption shows at a time). */
-const LINE_GAP_MS = 1500;
+/**
+ * Time between two of its lines, so each one can be heard and read (one caption shows at a
+ * time, and the next line replaces it): at least LINE_GAP_MS, and the time it takes to say
+ * the line, about LINE_MS_PER_CHAR per character.
+ */
+export const LINE_GAP_MS = 1500;
+export const LINE_MS_PER_CHAR = 65;
+/** How long a line is given before the next one may be sent. */
+export const lineHoldMs = (text: string): number => Math.max(LINE_GAP_MS, text.length * LINE_MS_PER_CHAR);
 
 export interface ParsedReply {
   say: string | null;
@@ -110,10 +121,13 @@ export function parseReply(text: string): ParsedReply | null {
 }
 
 /** Why a call is made: a line of the script to reword (solved, strike, stuck), or a human message to read. */
-type Ask = { kind: 'line'; reason: Exclude<GeminiReason, 'chat'>; line: string } | { kind: 'chat'; text: string; read: Heard };
+type Ask = { kind: 'line'; reason: Exclude<GeminiReason, 'chat'>; line: string; key: string } | { kind: 'chat'; text: string; read: Heard };
 const reasonOf = (ask: Ask): GeminiReason => (ask.kind === 'chat' ? 'chat' : ask.reason);
 /** The core's small-talk lines that Gemini may reword. The greeting is not one: it is always the script's. */
 const REWORDED = new Set(['solved', 'win']);
+
+/** A line of a puzzle script: an answer (a relay line) or a question the script waits on. Never dropped from the queue. */
+const essential = (l: { line?: Say }): boolean => !!l.line && isPuzzleLine(l.line.key) && !l.line.key.startsWith('event.');
 
 export class AiPlayer {
   private mind = newMind();
@@ -122,7 +136,9 @@ export class AiPlayer {
   /** What the script hears on its next decision. */
   private heard: Heard[] = [];
   /** Lines waiting for the chat rate limit. */
-  private outbox: { text: string; scripted: boolean; line?: Say }[] = [];
+  private outbox: { text: string; scripted: boolean; line?: Say; at: number }[] = [];
+  /** How long the line said last is given before the next one (lineHoldMs). */
+  private holdMs = 0;
   private last: Decision | null = null;
   /** Strikes and solves seen so far, and when the game was last anything but quiet (see STUCK_MS). */
   private strikes = 0;
@@ -261,9 +277,11 @@ export class AiPlayer {
     // 3. Talk. Lines are said as written, now; only "solved" and "win" may be reworded by Gemini.
     for (const s of d.say) {
       const text = lineText(this.persona, s.key, s.args);
-      if (s.flavor && REWORDED.has(s.key) && this.may('solved', now)) this.consult({ kind: 'line', reason: 'solved', line: text }, now);
+      if (s.flavor && REWORDED.has(s.key) && this.may('solved', now)) this.consult({ kind: 'line', reason: 'solved', line: text, key: s.key }, now);
       else this.queue(text, true, s);
     }
+    // A question that was answered while it waited its turn is not asked after the answer.
+    if (d.cancel.length) this.outbox = this.outbox.filter((l) => !l.line || !d.cancel.includes(l.line.key));
     // The two events the script has no line of its own for: a strike, and a quiet minute.
     if (room.state.solved.length !== this.solved) {
       this.solved = room.state.solved.length;
@@ -295,24 +313,34 @@ export class AiPlayer {
 
   /** A strike or a quiet minute: Gemini's line if it may be asked, else the script's. */
   private event(reason: 'strike' | 'stuck', now: number): void {
-    const ask: Ask = { kind: 'line', reason, line: eventLine(this.persona, reason) };
+    const ask: Ask = { kind: 'line', reason, line: eventLine(this.persona, reason), key: `event.${reason}` };
     if (this.may(reason, now)) this.consult(ask, now);
     else this.scripted(ask);
   }
 
   private queue(text: string, scripted: boolean, line?: Say): void {
     if (this.outbox.some((l) => l.text === text)) return;
-    this.outbox.push(line ? { text, scripted, line } : { text, scripted });
-    if (this.outbox.length > OUTBOX_MAX) this.outbox.shift();
+    this.outbox.push(line ? { text, scripted, line, at: Date.now() } : { text, scripted, at: Date.now() });
+    // Bounded: the oldest small talk gives way. Puzzle lines are few and each is said once.
+    while (this.outbox.length > OUTBOX_MAX) {
+      const i = this.outbox.findIndex((l) => !essential(l));
+      if (i < 0) break;
+      this.outbox.splice(i, 1);
+    }
   }
 
   /** Say the next waiting line, one at a time, a beat apart. The rest goes on a later tick. */
   private flush(): void {
+    const now = Date.now();
+    if (now - this.lastSaidAt < this.holdMs) return;
+    // small talk that waited too long behind other lines is stale: skip it
+    while (this.outbox[0] && !essential(this.outbox[0]) && now - this.outbox[0].at > STALE_MS) this.outbox.shift();
     const line = this.outbox[0];
-    if (!line || Date.now() - this.lastSaidAt < LINE_GAP_MS) return;
-    const msg = this.room.say(this.side, line.text);
+    if (!line) return;
+    const msg = this.room.say(this.side, line.text, line.line?.key);
     if (!msg) return; // the chat rate limit: try again next tick
-    this.lastSaidAt = Date.now();
+    this.lastSaidAt = now;
+    this.holdMs = lineHoldMs(msg.text);
     this.outbox.shift();
     if (line.scripted) this.stats.scriptedLines++;
     else this.stats.modelLines++;
@@ -322,12 +350,12 @@ export class AiPlayer {
   private huh(now: number): void {
     if (now - this.lastHuhAt < HUH_EVERY_MS) return;
     this.lastHuhAt = now;
-    this.queue(lineText(this.persona, 'huh'), true);
+    this.queue(lineText(this.persona, 'huh'), true, { key: 'huh' });
   }
 
   /** The script's own answer to a turn Gemini did not take. */
   private scripted(ask: Ask): void {
-    if (ask.kind === 'line') return this.queue(ask.line, true);
+    if (ask.kind === 'line') return this.queue(ask.line, true, { key: ask.key });
     this.heard.push(ask.read);
     if (!ask.read.tokens.length) this.huh(Date.now());
   }
@@ -348,6 +376,7 @@ export class AiPlayer {
       planner: this.last?.status ?? 'starting',
       scriptLine: ask.kind === 'line' ? ask.line : null,
       partnerSaid: ask.kind === 'chat' ? ask.text : null,
+      partnerSays: humanSays(observe(this.room.state, this.side).puzzleId, this.side),
       chat: this.room.chat,
     });
     const abort = (this.abort = new AbortController());

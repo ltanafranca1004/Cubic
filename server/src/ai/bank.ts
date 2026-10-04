@@ -12,6 +12,21 @@ import type { Tts } from './tts';
 
 /** `--buy` refuses to spend more than this in one run. */
 export const BUY_LIMIT_CHARS = 4000;
+/** `--buy` stops after this many failed clips in a row (a wrong model id, a bad key, no credits): the rest is not tried. */
+export const BUY_MAX_FAILS = 3;
+
+/**
+ * The ffmpeg arguments that cut the silence off both ends of a clip (`from` -> `to`, another
+ * file). A one-word clip comes back about 0.9 s long with padding, which makes a chained
+ * answer sluggish. The clip is trimmed at the front, turned round, trimmed again, turned
+ * back: TRIM_KEEP_S of quiet stays on each end so no word is clipped.
+ */
+export const TRIM_THRESHOLD_DB = -45;
+export const TRIM_KEEP_S = 0.03;
+export function trimCommand(from: string, to: string): string[] {
+  const cut = `silenceremove=start_periods=1:start_threshold=${TRIM_THRESHOLD_DB}dB:start_silence=${TRIM_KEEP_S}`;
+  return ['-hide_banner', '-loglevel', 'error', '-y', '-i', from, '-af', `${cut},areverse,${cut},areverse`, '-codec:a', 'libmp3lame', '-b:a', '64k', '-ar', '44100', to];
+}
 
 export interface BankPlan {
   /** Lines with a clip in the bank. */
@@ -71,7 +86,10 @@ export interface BankRun {
   hasKey: boolean;
   bankDir: string;
   voiceId: string;
+  /** The model the banked clips are made with (ELEVENLABS_BANK_MODEL). */
   modelId: string;
+  /** Local only: trims the silence off a clip that was just bought (ffmpeg). Absent = clips stay as bought. */
+  trim?: (file: string) => boolean;
   out: (line: string) => void;
 }
 
@@ -82,7 +100,7 @@ export async function runBank(run: BankRun): Promise<number> {
   const plan = planBank(lines, tts);
   out(`voice bank: ${lines.length} clips wanted, voice ${run.voiceId}, model ${run.modelId}: ${plan.banked.length} banked, ${plan.cached.length} in the local cache (free), ${plan.missing.length} missing`);
   for (const line of plan.missing) out(`  missing ${String(line.length).padStart(3)} chars  ${line}`);
-  out(`total to buy: ${plan.chars} characters in ${plan.missing.length} clips (limit per run: ${BUY_LIMIT_CHARS})`);
+  out(`total to buy with ${run.modelId}: ${plan.chars} characters in ${plan.missing.length} clips (limit per run: ${BUY_LIMIT_CHARS})`);
   if (!buy) {
     out('dry run: nothing was bought and nothing was written. To buy the missing clips: npm run tts:bank -w server -- --buy');
     return 0;
@@ -97,15 +115,33 @@ export async function runBank(run: BankRun): Promise<number> {
   }
   const count = { banked: 0, copied: 0, new: 0, failed: 0 };
   let bought = 0;
+  let trimmed = 0;
+  /** What ElevenLabs said it charged, summed; `unknown` = clips it sent no cost for. */
+  let credits = 0;
+  let unknown = 0;
+  let failsInARow = 0;
   for (const line of [...plan.cached, ...plan.missing]) {
     const res = await tts.bank(line);
     count[res ?? 'failed']++;
-    if (res === 'new') bought += line.length;
-    out(`  ${(res ?? 'FAILED').padEnd(7)} ${line}`);
+    failsInARow = res ? 0 : failsInARow + 1;
+    let cost = '';
+    if (res === 'new') {
+      bought += line.length;
+      const charged = tts.cost(line);
+      if (charged === null) unknown++;
+      else credits += charged;
+      cost = `${String(line.length).padStart(3)} chars  ${charged === null ? 'credits n/a' : `${charged} credits`}  `;
+      if (run.trim?.(join(run.bankDir, tts.fileName(line)))) trimmed++;
+    }
+    out(`  ${(res ?? 'FAILED').padEnd(7)} ${cost}${line}`);
+    if (failsInARow >= BUY_MAX_FAILS) {
+      out(`STOPPED: ${BUY_MAX_FAILS} clips failed in a row (see the warnings above: the model id, the key, the credits). The rest was not tried.`);
+      break;
+    }
   }
   writeIndex(run.bankDir, lines, tts, run.voiceId, run.modelId);
   const clips = readdirSync(run.bankDir).filter((f) => f.endsWith('.mp3'));
   const bytes = clips.reduce((n, f) => n + statSync(join(run.bankDir, f)).size, 0);
-  out(`done: ${count.new} bought (${bought} characters sent to ElevenLabs), ${count.copied} copied from the cache, ${count.failed} failed. Bank: ${clips.length} clips, ${(bytes / 1024).toFixed(0)} KB. ${run.bankDir}`);
+  out(`done: ${count.new} bought (${bought} characters sent to ElevenLabs, ${credits} credits charged by its own count${unknown ? `, ${unknown} clips with no cost reported` : ''}), ${count.copied} copied from the cache, ${count.failed} failed, ${trimmed} trimmed of silence. Bank: ${clips.length} clips, ${(bytes / 1024).toFixed(0)} KB. ${run.bankDir}`);
   return count.failed ? 1 : 0;
 }

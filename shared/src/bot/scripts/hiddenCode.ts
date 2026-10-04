@@ -61,6 +61,7 @@ function inside(ctx: ScriptCtx<Mem>): Play | null {
     const digits = digitsIn(h.text);
     if (!digits) continue;
     heard = true;
+    ctx.cancel('hidden-code.ask.first', 'hidden-code.ask.next');
     // All three at once replace everything; fewer are the next ones.
     const joined = digits.length >= CODE_DIGITS ? digits : mem.code + digits;
     mem.code = joined.length > CODE_DIGITS ? digits.slice(0, CODE_DIGITS) : joined;

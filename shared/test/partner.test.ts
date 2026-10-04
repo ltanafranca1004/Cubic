@@ -40,6 +40,7 @@ import {
   type Side,
   type World,
 } from '../src/index';
+import { LOST_MS } from '../src/bot/partner';
 import { readCode } from '../src/puzzles/hiddenCode';
 import { safePath } from '../src/puzzles/laserPath';
 import { play, type HumanScript } from './partnerSim';
@@ -160,6 +161,33 @@ test('it says who it is once, and where the human went when it loses them', () =
   devTeleport(out.state, 'in', FACES.find((f) => faceDistance(1, f) === 2)!, T0, env);
   out.go(2);
   assert.deepEqual(out.lines, ['hello.out', 'follow.far']);
+});
+
+test('"there is more to solve" is said once per solve, and "tell me your face" only when it really lost the human', () => {
+  const state = createGame(T0);
+  const mind = newMind();
+  const keys = (at: number) => decide(mind, observe(state, 'in'), [], at, []).say.map((s) => s.key);
+  const both = (face: FaceId) => (['out', 'in'] as const).forEach((side) => devTeleport(state, side, face, T0));
+  devSolve(state, 1, T0);
+  devSolve(state, 2, T0);
+  assert.ok(keys(T0).includes('next'));
+  // behind the human over another solved face, and back, a minute later: not again
+  both(2);
+  assert.ok(!keys(T0 + 3000).includes('next'));
+  both(1);
+  assert.ok(!keys(T0 + 60_000).includes('next'));
+  // the next solve: once more
+  devSolve(state, 3, T0);
+  assert.ok(keys(T0 + 61_000).includes('next'));
+  assert.ok(!keys(T0 + 120_000).includes('next'));
+  // The human walks to a next face: it is heard faintly. It follows its best guess and says nothing ...
+  const t = T0 + 200_000;
+  devTeleport(state, 'out', 2, T0);
+  assert.deepEqual(keys(t), []);
+  assert.deepEqual(keys(t + LOST_MS - 200), []);
+  // ... and asks only when that has not found them
+  assert.deepEqual(keys(t + LOST_MS), ['follow.where']);
+  assert.deepEqual(keys(t + LOST_MS + 5000), []);
 });
 
 // ---------- the end of the game ----------

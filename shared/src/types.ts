@@ -160,6 +160,8 @@ export interface ChatMessage {
   text: string;
   /** Epoch ms. */
   at: number;
+  /** An AI line said as the script wrote it: its line key (e.g. "laser-path.in.tile"). Tools match on it, never on the words. */
+  key?: string;
 }
 
 export const CHAT_MAX_LEN = 200;

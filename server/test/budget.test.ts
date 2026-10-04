@@ -4,13 +4,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test, type TestContext } from 'node:test';
 import { CHAT_MAX_LEN, FACES, VOCAB, createGame, defaultEnv, devSolve, devTeleport, observe, relayText, type ChatMessage } from '@cubic/shared';
+import { PUZZLE_SCRIPTS } from '@cubic/shared';
 import { AiPlayer, STUCK_MS } from '../src/ai/aiPlayer';
-import { BUY_LIMIT_CHARS, planBank, runBank } from '../src/ai/bank';
+import { BUY_LIMIT_CHARS, BUY_MAX_FAILS, planBank, runBank } from '../src/ai/bank';
 import { Budget, DEFAULT_ELEVEN_DAILY_CHARS, DEFAULT_GEMINI_DAILY_CAP, ELEVEN_PER_GAME, FALLBACK_LOG_MS, GEMINI_PAUSE_MS, GEMINI_PER_GAME, GEMINI_PER_MINUTE, parseCap, parseEnabled, utcDay } from '../src/ai/budget';
 import { DEFAULT_GEMINI_MODEL, MAX_OUTPUT_TOKENS, geminiBrain, isQuotaError, thinkingConfig, type Brain, type GeminiClient } from '../src/ai/gemini';
-import { CHAT_LINES, REPLY_SCHEMA, estimateTokens, systemPrompt, turnPrompt } from '../src/ai/prompt';
+import { CHAT_LINES, PARTNER_SAYS_CHARS, REPLY_SCHEMA, estimateTokens, systemPrompt, turnPrompt } from '../src/ai/prompt';
 import { RELAY_GAP_MS, relayPieces } from '../src/ai/relay';
-import { eventLine, fixedLines, lineText } from '../src/ai/scripted';
+import { eventLine, fixedLines, humanSays, lineText } from '../src/ai/scripted';
 import { bankFileName, bankLines, createTts } from '../src/ai/tts';
 import { createAiPartner, type Send } from '../src/ai/wire';
 import { LIMITS, Rooms } from '../src/rooms';
@@ -51,12 +52,14 @@ function clock(t: TestContext, now = DAY) {
 }
 /** A fake ElevenLabs that records what it was asked. */
 function fakeApi() {
-  const calls: string[] = [];
-  const fetchFn = (async (_url: string, init: RequestInit) => {
-    calls.push((JSON.parse(init.body as string) as { text: string }).text);
-    return new Response(new Uint8Array([1, 2, 3]));
+  const api = { calls: [] as string[], fail: false, fetchFn: undefined as unknown as typeof fetch };
+  api.fetchFn = (async (_url: string, init: RequestInit) => {
+    const { text } = JSON.parse(init.body as string) as { text: string };
+    api.calls.push(text);
+    // like ElevenLabs: the credits it charged are in a response header (here: two a character)
+    return api.fail ? new Response('model not found', { status: 400 }) : new Response(new Uint8Array([1, 2, 3]), { headers: { 'character-cost': String(text.length * 2) } });
   }) as unknown as typeof fetch;
-  return { calls, fetchFn };
+  return api;
 }
 const reply = (say: string | null, heard: string | null = null) => JSON.stringify({ say, heard });
 
@@ -67,8 +70,8 @@ test('env: both APIs are on unless switched off, and the caps have defaults', ()
   for (const on of [undefined, '', 'true', '1', 'yes']) assert.equal(parseEnabled(on), true, String(on));
   assert.deepEqual([parseCap(undefined, 200), parseCap('', 200), parseCap('50', 200), parseCap('0', 200), parseCap('-3', 200), parseCap('lots', 200)], [200, 200, 50, 0, 200, 200]);
   const d = Budget.fromEnv({}, { file: null, log: () => {} });
-  assert.deepEqual([d.geminiEnabled, d.geminiDailyCap, d.elevenEnabled, d.elevenDailyChars], [true, 200, true, 2000]);
-  assert.deepEqual([DEFAULT_GEMINI_DAILY_CAP, DEFAULT_ELEVEN_DAILY_CHARS, GEMINI_PER_MINUTE, GEMINI_PER_GAME, ELEVEN_PER_GAME, GEMINI_PAUSE_MS], [200, 2000, 8, 25, 5, 600_000]);
+  assert.deepEqual([d.geminiEnabled, d.geminiDailyCap, d.elevenEnabled, d.elevenDailyChars], [true, 200, true, 20_000]);
+  assert.deepEqual([DEFAULT_GEMINI_DAILY_CAP, DEFAULT_ELEVEN_DAILY_CHARS, GEMINI_PER_MINUTE, GEMINI_PER_GAME, ELEVEN_PER_GAME, GEMINI_PAUSE_MS], [200, 20_000, 8, 25, 20, 600_000]);
   const e = Budget.fromEnv({ GEMINI_ENABLED: 'false', GEMINI_DAILY_CAP: '40', ELEVENLABS_ENABLED: 'false', ELEVENLABS_DAILY_CHARS: '500' }, { file: null, log: () => {} });
   assert.deepEqual([e.geminiEnabled, e.geminiDailyCap, e.elevenEnabled, e.elevenDailyChars], [false, 40, false, 500]);
 });
@@ -150,16 +153,16 @@ test('kill switches: GEMINI_ENABLED=false and ELEVENLABS_ENABLED=false refuse ev
 
 // ---------- ElevenLabs caps ----------
 
-test('ElevenLabs: 5 bought lines per game and a daily number of characters for the whole server', () => {
+test('ElevenLabs: 20 bought lines per game and a daily number of characters for the whole server', () => {
   const { budget, logs } = budgetAt({ elevenDailyChars: 300 });
-  for (let i = 0; i < 5; i++) assert.equal(budget.eleven('ABCD', 20), null);
+  for (let i = 0; i < 20; i++) assert.equal(budget.eleven('ABCD', 5), null);
   assert.equal(budget.eleven('ABCD', 20), 'game_cap');
-  assert.equal(logs[1], '[eleven] room=ABCD chars=20 day=40/300 game=2/5');
+  assert.equal(logs[1], '[eleven] room=ABCD chars=5 day=10/300 game=2/20');
   for (let i = 0; i < 3; i++) assert.equal(budget.eleven('WXYZ', 60), null); // 100 + 180 = 280
   assert.equal(budget.eleven('WXYZ', 21), 'day_cap'); // 301 would be over
   assert.equal(budget.eleven('WXYZ', 20), null); // exactly 300 is not
   assert.equal(budget.eleven('NEW1', 1), 'day_cap');
-  assert.deepEqual([budget.summary().elevenCalls, budget.summary().elevenChars], [9, 300]);
+  assert.deepEqual([budget.summary().elevenCalls, budget.summary().elevenChars], [24, 300]);
   budget.newGame('ABCD');
   assert.equal(budget.eleven('ABCD', 1), 'day_cap'); // a new game does not reset the day
   assert.ok(logs.includes('[eleven] fallback room=ABCD chars=20 why=game_cap'));
@@ -223,7 +226,7 @@ test('logging: one grep-friendly line per Gemini call and per ElevenLabs call, w
   budget.geminiDone('WXYZ', 'stuck', undefined, 'timeout');
   assert.equal(logs.at(-1), '[gemini] room=WXYZ reason=stuck in=0 out=0 day=5/200 min=4/8 game=1/25 error=timeout');
   budget.eleven('ABCD', 64);
-  assert.equal(logs.at(-1), '[eleven] room=ABCD chars=64 day=64/2000 game=1/5');
+  assert.equal(logs.at(-1), '[eleven] room=ABCD chars=64 day=64/20000 game=1/20');
   assert.ok(logs.every((l) => !l.includes('\n') && /^\[(gemini|eleven)\] /.test(l)));
 });
 
@@ -234,11 +237,11 @@ test('the usage summary: what was used today, and the hourly report only when so
   budget.geminiDone('ABCD', 'chat', { input: 300, output: 40 });
   budget.eleven('ABCD', 64);
   assert.deepEqual(budget.summary(), { day: '2026-10-04', geminiCalls: 1, tokensIn: 300, tokensOut: 40, elevenCalls: 1, elevenChars: 64 });
-  assert.equal(budget.report(), '[usage] day=2026-10-04 gemini_calls=1/200 tokens_in=300 tokens_out=40 eleven_calls=1 eleven_chars=64/2000');
+  assert.equal(budget.report(), '[usage] day=2026-10-04 gemini_calls=1/200 tokens_in=300 tokens_out=40 eleven_calls=1 eleven_chars=64/20000');
   assert.equal(budget.report(), null);
   budget.eleven('ABCD', 1);
-  assert.match(budget.report()!, /eleven_chars=65\/2000/);
-  assert.equal(budget.summaryLine(), '[usage] day=2026-10-04 gemini_calls=1/200 tokens_in=300 tokens_out=40 eleven_calls=2 eleven_chars=65/2000');
+  assert.match(budget.report()!, /eleven_chars=65\/20000/);
+  assert.equal(budget.summaryLine(), '[usage] day=2026-10-04 gemini_calls=1/200 tokens_in=300 tokens_out=40 eleven_calls=2 eleven_chars=65/20000');
 });
 
 // ---------- the Gemini client ----------
@@ -323,13 +326,24 @@ test('the prompt stays under 800 input tokens in the worst case (chars / 3), and
         state.strikes = 99;
         const observation = { ...observe(state, side), objective: 'O'.repeat(400), faceName: 'N'.repeat(60) };
         for (const event of ['chat', 'solved', 'strike', 'stuck'] as const) {
-          const turn = turnPrompt({ side, event, observation, planner: 'P'.repeat(300), scriptLine: event === 'chat' ? null : 'S'.repeat(80), partnerSaid: event === 'chat' ? long : null, chat });
+          const turn = turnPrompt({ side, event, observation, planner: 'P'.repeat(300), scriptLine: event === 'chat' ? null : 'S'.repeat(80), partnerSaid: event === 'chat' ? long : null, partnerSays: 'H'.repeat(400), chat });
           worst = Math.max(worst, estimateTokens(systemPrompt(persona), turn, JSON.stringify(REPLY_SCHEMA)));
           assert.equal((JSON.parse(turn) as { chat: string[] }).chat.length, CHAT_LINES);
         }
       }
   assert.ok(worst < 800, `${worst} tokens`);
   assert.equal(CHAT_LINES, 3);
+  // What the human is expected to say on the puzzle: there for every script and side, short, and sent with the turn.
+  for (const s of PUZZLE_SCRIPTS)
+    for (const side of ['out', 'in'] as const) {
+      const says = humanSays(s.id, side);
+      assert.ok(says && says.length <= PARTNER_SAYS_CHARS, `${s.id} ${side}: ${says?.length}`);
+      const turn = JSON.parse(turnPrompt({ side, event: 'chat', observation: observe(state, side), planner: '', scriptLine: null, partnerSaid: 'hm?', partnerSays: says, chat: [] })) as { partnerSays: string };
+      assert.equal(turn.partnerSays, says);
+    }
+  assert.equal(humanSays(null, 'in'), null);
+  assert.equal(humanSays('no-such-puzzle', 'in'), null);
+  assert.match(systemPrompt('default'), /"partnerSays" \(what your partner must say here: never contradict it\)/);
   // A real turn is far smaller.
   const real = turnPrompt({ side: 'in', event: 'chat', observation: observe(createGame(DAY), 'in'), planner: 'waiting with the human', scriptLine: null, partnerSaid: 'what do you see?', chat: [] });
   assert.ok(estimateTokens(systemPrompt('default'), real, JSON.stringify(REPLY_SCHEMA)) < 700);
@@ -440,7 +454,7 @@ test('stuck, strike: with no Gemini the script says its own line', async (t) => 
   await pass(3000);
   assert.ok(said().includes(eventLine('default', 'strike')));
   assert.equal(ai.calls, 0);
-  for (const p of ['default', 'tsundere'] as const) for (const k of ['strike', 'stuck'] as const) assert.ok(fixedLines().includes(eventLine(p, k)) && eventLine(p, k).length <= 80);
+  for (const p of ['default', 'tsundere'] as const) for (const k of ['strike', 'stuck'] as const) assert.ok(fixedLines(p).includes(eventLine(p, k)) && eventLine(p, k).length <= 80);
 });
 
 test('strike: a puzzle script that speaks on the strike replaces the generic strike line, and its Gemini call', async (t) => {
@@ -487,7 +501,7 @@ test('per game: after 25 Gemini calls the rest of the game is scripted; a restar
 
 test('live ElevenLabs: only through the budget, and the same text is never bought twice', async () => {
   const api = fakeApi();
-  const { budget, logs } = budgetAt({ elevenDailyChars: 100 });
+  const { budget, logs } = budgetAt({ elevenDailyChars: 400 });
   const cacheDir = tmp();
   const tts = createTts({ apiKey: 'fake-key', cacheDir, bankDir: tmp(), fetchFn: api.fetchFn, budget, log: () => {} });
   assert.equal((await tts.speak('A line by Gemini.', 'ABCD'))!.source, 'api');
@@ -496,22 +510,22 @@ test('live ElevenLabs: only through the budget, and the same text is never bough
   assert.equal((await createTts({ apiKey: 'fake-key', cacheDir, bankDir: tmp(), fetchFn: api.fetchFn, budget, log: () => {} }).speak('A line by Gemini.', 'ABCD'))!.source, 'cache');
   assert.deepEqual(api.calls, ['A line by Gemini.']);
   assert.deepEqual([budget.summary().elevenCalls, budget.summary().elevenChars], [1, 17]);
-  assert.deepEqual(logs, ['[eleven] room=ABCD chars=17 day=17/100 game=1/5']);
-  // 5 per game, then the browser voice (null); cached lines stay free after the cap
-  for (let i = 2; i <= 5; i++) assert.equal((await tts.speak(`Line ${i}.`, 'ABCD'))!.source, 'api');
-  assert.equal(await tts.speak('Line 6.', 'ABCD'), null);
+  assert.deepEqual(logs, ['[eleven] room=ABCD chars=17 day=17/400 game=1/20']);
+  // 20 per game, then the browser voice (null); cached lines stay free after the cap
+  for (let i = 2; i <= ELEVEN_PER_GAME; i++) assert.equal((await tts.speak(`Line ${i}.`, 'ABCD'))!.source, 'api');
+  assert.equal(await tts.speak('Line 21.', 'ABCD'), null);
   assert.equal((await tts.speak('Line 3.', 'ABCD'))!.source, 'cache');
-  // the daily characters: 17 + 4 x 7 = 45 used, 100 allowed
-  assert.equal(await tts.speak('x'.repeat(56), 'WXYZ'), null);
-  assert.equal((await tts.speak('x'.repeat(55), 'WXYZ'))!.source, 'api');
+  // the daily characters: 17 + 8 x 7 + 11 x 8 = 161 used, 400 allowed
+  assert.equal(await tts.speak('x'.repeat(240), 'WXYZ'), null);
+  assert.equal((await tts.speak('x'.repeat(239), 'WXYZ'))!.source, 'api');
   assert.equal(await tts.speak('y', 'WXYZ'), null);
-  assert.equal(api.calls.length, 6);
-  assert.equal(budget.summary().elevenChars, 100);
+  assert.equal(api.calls.length, 21);
+  assert.equal(budget.summary().elevenChars, 400);
   // ELEVENLABS_ENABLED=false: nothing is bought, cached and banked clips still play
   const off = createTts({ apiKey: 'fake-key', cacheDir, bankDir: tmp(), fetchFn: api.fetchFn, budget: budgetAt({ elevenEnabled: false }).budget, log: () => {} });
   assert.equal(await off.speak('Something new.', 'ABCD'), null);
   assert.equal((await off.speak('Line 3.', 'ABCD'))!.source, 'cache');
-  assert.equal(api.calls.length, 6);
+  assert.equal(api.calls.length, 21);
 });
 
 test('relay lines: a line built from vocabulary pieces is taken apart again, piece by piece', () => {
@@ -573,7 +587,7 @@ test('a relay line is played as a chain of banked piece clips, with no ElevenLab
 function bankRun(lines: string[], argv: string[], bankDir = tmp(), key = true) {
   const api = fakeApi();
   const out: string[] = [];
-  const tts = createTts({ ...(key ? { apiKey: 'fake-key' } : {}), voiceId: 'V', modelId: 'M', bankDir, cacheDir: tmp(), fetchFn: api.fetchFn, log: () => {} });
+  const tts = createTts({ ...(key ? { apiKey: 'fake-key' } : {}), voiceId: 'V', modelId: 'LIVE', bankModelId: 'M', bankDir, cacheDir: tmp(), fetchFn: api.fetchFn, log: () => {} });
   const run = () => runBank({ argv, lines, tts, hasKey: key, bankDir, voiceId: 'V', modelId: 'M', out: (l) => out.push(l) });
   return { api, out, run, bankDir, tts };
 }
@@ -584,8 +598,10 @@ test('tts:bank: the default is a dry run: every missing clip, the exact total, n
   assert.equal(await b.run(), 0);
   assert.deepEqual(b.api.calls, []);
   assert.deepEqual(readdirSync(b.bankDir), []);
-  assert.ok(b.out.includes('total to buy: 25 characters in 3 clips (limit per run: 4000)'));
-  for (const l of lines) assert.ok(b.out.some((o) => o.includes('missing') && o.endsWith(l)), l);
+  assert.ok(b.out.includes('total to buy with M: 25 characters in 3 clips (limit per run: 4000)'));
+  // per clip: its characters and its text
+  for (const l of lines) assert.ok(b.out.includes(`  missing ${String(l.length).padStart(3)} chars  ${l}`), l);
+  assert.ok(b.out[0]!.includes('voice V, model M'));
   assert.ok(b.out.at(-1)!.startsWith('dry run: nothing was bought'));
   assert.deepEqual(planBank(lines, b.tts), { banked: [], cached: [], missing: lines, chars: 25 });
 });
@@ -595,6 +611,9 @@ test('tts:bank --buy: buys only what is missing, never a clip twice, and refuses
   const first = bankRun(['It worked!', 'four'], ['--buy'], dir);
   assert.equal(await first.run(), 0);
   assert.deepEqual(first.api.calls, ['It worked!', 'four']);
+  // per clip: its characters and what the API says it charged; and both totals
+  assert.ok(first.out.includes('  new      10 chars  20 credits  It worked!') && first.out.includes('  new       4 chars  8 credits  four'), first.out.join('\n'));
+  assert.ok(first.out.at(-1)!.startsWith('done: 2 bought (14 characters sent to ElevenLabs, 28 credits charged by its own count), 0 copied'), first.out.at(-1));
   // again, with one line more: only that one is bought
   const second = bankRun(['It worked!', 'four', 'the code is'], ['--buy'], dir);
   assert.equal(await second.run(), 0);
@@ -605,12 +624,18 @@ test('tts:bank --buy: buys only what is missing, never a clip twice, and refuses
   const index = JSON.parse(readFileSync(join(dir, 'index.json'), 'utf8')) as { lines: { file: string; text: string; chars: number; voiceId: string; modelId: string }[] };
   assert.deepEqual(index.lines.map((l) => [l.text, l.chars, l.voiceId, l.modelId]), [['It worked!', 10, 'V', 'M'], ['four', 4, 'V', 'M'], ['the code is', 11, 'V', 'M']]);
   assert.deepEqual(readdirSync(dir).filter((f) => f.endsWith('.mp3')).sort(), index.lines.map((l) => l.file).sort());
-  // a clip from before the new names (normalized text only) counts as banked
+  // a clip of the old voice (named by its normalized text only) does not count: the line is bought in the new voice
   const old = tmp();
   writeFileSync(join(old, bankFileName('We did it!')), 'x');
   const legacy = bankRun(['We did it!'], ['--buy'], old);
   assert.equal(await legacy.run(), 0);
-  assert.deepEqual(legacy.api.calls, []);
+  assert.deepEqual(legacy.api.calls, ['We did it!']);
+  // the optional local step: each clip that was just bought is handed to the trimmer, once
+  const trimmed: string[] = [];
+  const t = bankRun(['four', 'five'], ['--buy']);
+  assert.equal(await runBank({ argv: ['--buy'], lines: ['four', 'five'], tts: t.tts, hasKey: true, bankDir: t.bankDir, voiceId: 'V', modelId: 'M', trim: (f) => trimmed.push(f) > 0, out: (l) => t.out.push(l) }), 0);
+  assert.deepEqual(trimmed, ['four', 'five'].map((l) => join(t.bankDir, t.tts.fileName(l))));
+  assert.ok(t.out.at(-1)!.includes('2 trimmed of silence'));
   // over the limit: exit 1, the number is printed, nothing is bought
   const big = Array.from({ length: 51 }, (_, i) => `${String(i).padStart(2, '0')} ${'x'.repeat(77)}`); // 51 x 80 = 4080
   const over = bankRun(big, ['--buy']);
@@ -621,6 +646,13 @@ test('tts:bank --buy: buys only what is missing, never a clip twice, and refuses
   assert.equal(BUY_LIMIT_CHARS, 4000);
   // exactly at the limit is allowed; and --buy without a key buys nothing
   assert.equal(await bankRun(big.slice(0, 50), ['--buy']).run(), 0);
+  // a wrong model id, a bad key: it stops after three failures in a row instead of trying every clip
+  const down = bankRun(['a', 'b', 'c', 'd', 'e'], ['--buy']);
+  down.api.fail = true;
+  assert.equal(await down.run(), 1);
+  assert.equal(down.api.calls.length, BUY_MAX_FAILS);
+  assert.ok(down.out.some((l) => l.startsWith('STOPPED: 3 clips failed in a row')));
+  assert.deepEqual(readdirSync(down.bankDir).filter((f) => f.endsWith('.mp3')), []);
   const nokey = bankRun(['four'], ['--buy'], tmp(), false);
   assert.equal(await nokey.run(), 1);
   assert.deepEqual(nokey.api.calls, []);

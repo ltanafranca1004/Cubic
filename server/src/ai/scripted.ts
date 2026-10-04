@@ -10,9 +10,10 @@ import type { Persona } from './prompt';
 //  - PUZZLE lines belong to one puzzle script (keys start with the puzzle's id). A new
 //    script adds its lines to PUZZLE below.
 //
-// Every FIXED line of all three goes into the committed voice bank (server/tts/bank): the
-// bank script reads fixedLines() at run time, so a new line only needs `npm run tts:bank
-// -w server` (a dry run that lists what is missing) and then `-- --buy`.
+// Every FIXED line of all three, in the ACTIVE persona (AI_PERSONA, default "default"),
+// goes into the committed voice bank (server/tts/bank): the bank script reads fixedLines()
+// at run time, so a new line only needs `npm run tts:bank -w server` (a dry run that lists
+// what is missing) and then `-- --buy`. The other persona's lines are not bought.
 //
 // Lines that carry protocol words (a sign, a direction, what to type) are the same in
 // every persona: the persona changes tone, never the instructions. A RELAY line (its words
@@ -22,16 +23,16 @@ import type { Persona } from './prompt';
 type CoreKey = (typeof CORE_LINES)[number];
 
 const CORE: Record<CoreKey, string> = {
-  'hello.out': 'Hi! I am outside the cube. I will tell you what I see. Short words work best.',
-  'hello.in': 'Hi! I am inside the cube. I will tell you what I see. Short words work best.',
+  'hello.out': "Hi! I'm outside the cube. I'll tell you what I see. Short words work best.",
+  'hello.in': "Hi! I'm inside the cube. I'll tell you what I see. Short words work best.",
   solved: 'It worked!',
   win: 'We did it!',
-  huh: 'Sorry, I did not get that. Short words work best: go, wait, yes, no.',
-  'wait.ok': 'Okay, waiting. Say go when you are ready.',
+  huh: "Sorry, I didn't get that. Short words work best: go, wait, yes, no.",
+  'wait.ok': "Okay, waiting. Say go when you're ready.",
   'follow.where': 'I can barely hear you. Tell me your face, like: face 3.',
-  'follow.far': 'I cannot hear you at all. I am coming around to your side.',
-  next: 'There is more to solve. Lead the way, I will follow.',
-  unknown: 'I do not know this puzzle yet. I will stay close and keep my hands off.',
+  'follow.far': "I can't hear you at all. I'm coming around to your side.",
+  next: "There's more to solve. Lead the way, I'll follow.",
+  unknown: "I don't know this puzzle yet. I'll stay close and keep my hands off.",
 };
 
 const CORE_TSUNDERE: Partial<Record<CoreKey, string>> = {
@@ -48,7 +49,7 @@ const CORE_TSUNDERE: Partial<Record<CoreKey, string>> = {
 export type EventKey = 'strike' | 'stuck';
 const EVENT: Record<EventKey, string> = {
   strike: 'Oops, that was a strike. Slow and steady.',
-  stuck: 'You have gone quiet. Tell me what you see.',
+  stuck: "You've gone quiet. Tell me what you see.",
 };
 const EVENT_TSUNDERE: Record<EventKey, string> = {
   strike: 'That was a strike. Careful. Not that I am worried.',
@@ -69,7 +70,7 @@ const PUZZLE: Record<string, string> = {
   'hidden-code.ask.first': "What's the first digit?",
   'hidden-code.ask.next': "What's the next digit?",
   'hidden-code.wrong': 'That code was wrong. Tell me the three digits again.',
-  'equation-safe.out.intro': 'I will count for you: the bushes, the birds and the rocks I see.',
+  'equation-safe.out.intro': "I'll count for you: the bushes, the birds and the rocks I see.",
   'equation-safe.relay': '{words}',
   'equation-safe.ask.bushes': 'How many bushes do you see?',
   'equation-safe.ask.birds': 'How many birds do you see?',
@@ -79,7 +80,7 @@ const PUZZLE: Record<string, string> = {
   'mirrored-glyph.relay': '{words}',
   'mirrored-glyph.out.done': 'That was the last row. Say row and a number to hear one again.',
   'mirrored-glyph.in.ask': 'Upright, count from your left. Tell me a row like: row 1 skip 3 flip 7.',
-  'mirrored-glyph.in.next': 'Row done. What is the next row?',
+  'mirrored-glyph.in.next': "Row done. What's the next row?",
   'mirrored-glyph.in.cleared': 'All tiles are off. Start again from row 1.',
   // ---- end faces 1-3 ----
   // ---- faces 4-6 (scripts-b) ----
@@ -87,41 +88,41 @@ const PUZZLE: Record<string, string> = {
   'botanical-mirror.relay': '{words}',
   'botanical-mirror.out.ask': 'Which pot? Say row and column. Rows from the face 5 edge, columns from face 3.',
   'botanical-mirror.out.nopot': 'I see no pot there. Rows count from the face 5 edge, columns from face 3.',
-  'botanical-mirror.out.strike': 'That was the wrong pot. I have the flower back. Which row and column?',
+  'botanical-mirror.out.strike': "That was the wrong pot. I've got the flower back. Which row and column?",
   'botanical-mirror.in.ask': 'What colour is your flower? Red, blue, yellow, pink or white?',
   'botanical-mirror.in.how': 'Rows count from the edge by face 5, columns from the edge by face 3.',
   'botanical-mirror.in.strike': 'That was the wrong pot. Count from the edges by face 5 and face 3.',
   // face 5, sequence-laser
   'sequence-laser.relay': '{words}',
-  'sequence-laser.in.battery': 'The laser is dead. I am getting the battery from the vault on face 2.',
+  'sequence-laser.in.battery': "The laser is dead. I'm getting the battery from the vault on face 2.",
   'sequence-laser.in.how': 'The laser has power. Tell me the symbols in the order they light up.',
-  'sequence-laser.in.first': 'What is the first symbol?',
-  'sequence-laser.in.next': 'What is next?',
+  'sequence-laser.in.first': "What's the first symbol?",
+  'sequence-laser.in.next': "What's next?",
   'sequence-laser.in.strike': 'That one was wrong, it all went dark. Tell me the order again from the start.',
   'sequence-laser.out.dark': 'The symbols are dark. The laser on your side needs the battery from face 2.',
   'sequence-laser.out.how': 'I watched the symbols light up. Say again to hear the order once more.',
   'sequence-laser.out.strike': 'That one was wrong. Start over, from the first symbol.',
   // face 6, laser-path. Directions are always on the walker's own screen.
   'laser-path.relay': '{words}',
-  'laser-path.out.mirrors': 'I am pushing the mirrors to burn the crate. Stay on the ring, the lava is hot.',
+  'laser-path.out.mirrors': "I'm pushing the mirrors to burn the crate. Stay on the ring, the lava is hot.",
   'laser-path.out.side.1': 'I see the path. It starts from the side of the ring next to face 1. Go there.',
   'laser-path.out.side.2': 'I see the path. It starts from the side of the ring next to face 2. Go there.',
   'laser-path.out.side.3': 'I see the path. It starts from the side of the ring next to face 3. Go there.',
   'laser-path.out.side.4': 'I see the path. It starts from the side of the ring next to face 4. Go there.',
   'laser-path.out.lava': 'On that side, which way is the lava from you? Say up, down, left or right.',
   'laser-path.out.tile': 'Now the tile to start from. Rows count from your top, columns from your left.',
-  'laser-path.out.ready': 'Say yes when you are there, and yes after each part. Say again to hear it.',
-  'laser-path.out.fell': 'You fell in. You are back on the ring, right beside the start of the path.',
-  'laser-path.in.side': 'I am staying on the ring. Which face does the path start next to? Say face 4.',
-  'laser-path.in.lava.up': 'I am on that side of the ring. On my screen the lava is up.',
-  'laser-path.in.lava.down': 'I am on that side of the ring. On my screen the lava is down.',
-  'laser-path.in.lava.left': 'I am on that side of the ring. On my screen the lava is left.',
-  'laser-path.in.lava.right': 'I am on that side of the ring. On my screen the lava is right.',
+  'laser-path.out.ready': "Say yes when you're there, and yes after each part. Say again to hear it.",
+  'laser-path.out.fell': "You fell in. You're back on the ring, right beside the start of the path.",
+  'laser-path.in.side': "I'm on the ring. Which face does the path start next to? Say the face number.",
+  'laser-path.in.lava.up': "I'm on that side of the ring. On my screen the lava is up.",
+  'laser-path.in.lava.down': "I'm on that side of the ring. On my screen the lava is down.",
+  'laser-path.in.lava.left': "I'm on that side of the ring. On my screen the lava is left.",
+  'laser-path.in.lava.right': "I'm on that side of the ring. On my screen the lava is right.",
   'laser-path.in.tile': 'Which tile do I start from? Say row or column and a number, on my screen.',
-  'laser-path.in.ready': 'I am on that tile. Which way now? Say it like: right 2 then up 1.',
+  'laser-path.in.ready': "I'm on that tile. Which way now? Say it like: right 2 then up 1.",
   'laser-path.in.done': 'Done. Which way now?',
   'laser-path.in.ask': 'Which way now?',
-  'laser-path.in.fell': 'I fell in the lava. I am back beside the start of the path. Which way from here?',
+  'laser-path.in.fell': "I fell in the lava. I'm back beside the start of the path. Which way from here?",
   // ---- end faces 4-6 ----
 };
 
@@ -138,17 +139,36 @@ export function lineText(persona: Persona, key: LineKey, args?: LineArgs): strin
 export const hasLine = (key: LineKey): boolean => key in CORE || key in PUZZLE;
 
 const PERSONAS: Persona[] = ['default', 'tsundere'];
-const textsOf = (keys: readonly LineKey[]) => [...new Set(PERSONAS.flatMap((p) => keys.map((k) => lineText(p, k))))];
+const EVENTS = ['strike', 'stuck'] as const;
 
 /** Every distinct line the scripted partner can say, all personas. */
-export const allScriptedLines = (): string[] => textsOf(lineKeys());
+export const allScriptedLines = (): string[] => [...new Set(PERSONAS.flatMap((p) => lineKeys().map((k) => lineText(p, k))))];
 
 /**
- * Every FIXED line the partner can say, all personas: the core, the event lines and the
- * puzzle lines that have no {placeholder}. This is what the voice bank holds as whole
- * clips. Read at run time, so lines added to PUZZLE later are picked up by themselves.
+ * Every FIXED line of one persona, by key: the core, the event lines ("event.strike",
+ * "event.stuck") and the puzzle lines that have no {placeholder}. This is what the voice
+ * bank holds as whole clips. Read at run time, so lines added to PUZZLE later are picked up
+ * by themselves.
  */
-export const fixedLines = (): string[] => [...new Set([...allScriptedLines(), ...PERSONAS.flatMap((p) => (['strike', 'stuck'] as const).map((k) => eventLine(p, k)))])].filter((l) => !/\{\w+\}/.test(l));
+export const fixedLineList = (persona: Persona = 'default'): { key: string; text: string }[] =>
+  [...lineKeys().map((key) => ({ key, text: lineText(persona, key) })), ...EVENTS.map((k) => ({ key: `event.${k}`, text: eventLine(persona, k) }))].filter((l) => !/\{\w+\}/.test(l.text));
+
+/** The texts of fixedLineList(), no duplicates: the whole clips the bank holds for this persona. */
+export const fixedLines = (persona: Persona = 'default'): string[] => [...new Set(fixedLineList(persona).map((l) => l.text))];
 
 /** The old name of fixedLines(). */
 export const bankedScriptLines = fixedLines;
+
+// What the human is expected to SAY on each puzzle, by the side the AI is on: the
+// conventions of the scripts' own ask lines above, in two short lines. Gemini is given the
+// one for the face it is on, so that what it says never contradicts the script.
+const HUMAN_SAYS: Record<string, { out: string; in: string }> = {
+  'hidden-code': { out: 'Nothing: they type the code you read out. "again" repeats it.', in: 'The three digits of the code they see, in order.' },
+  'equation-safe': { out: 'Nothing: they type the answer. "again" repeats the counts.', in: 'How many bushes, birds and rocks they see, each with its kind.' },
+  'mirrored-glyph': { out: '"next" for the next row, "again", or "row" and a number to hear that row.', in: 'One row per line, upright, from their left, like "row 1 skip 3 flip 7". "clear" starts over.' },
+  'botanical-mirror': { out: 'The pot as a row and a column. Rows from the face 5 edge, columns from face 3.', in: 'The colour of their flower: red, blue, yellow, pink or white.' },
+  'sequence-laser': { out: '"again" to hear the order once more.', in: 'They press REPLAY (E on its tile), then say the symbols in the order they light up.' },
+  'laser-path': { out: 'Which way the lava is (up, down, left, right), then "yes" after each part. "again" repeats.', in: '"face" and the number the path starts by, a row or column, then steps like "right 2 then up 1".' },
+};
+/** What the human is expected to say on this puzzle when the AI is on `aiSide`, or null (no puzzle here, or no script). */
+export const humanSays = (puzzleId: string | null, aiSide: 'out' | 'in'): string | null => (puzzleId ? (HUMAN_SAYS[puzzleId]?.[aiSide] ?? null) : null);

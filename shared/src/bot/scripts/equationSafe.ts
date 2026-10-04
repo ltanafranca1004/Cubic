@@ -118,6 +118,7 @@ function inside(ctx: ScriptCtx<Mem>): Play | null {
     if (!countsIn(h.text, mem.counts, mem.asked)) continue;
     heard = true;
     mem.asked = null;
+    ctx.cancel(...KINDS.map((k) => `equation-safe.ask.${k}`));
   }
   const next = missing(mem.counts);
   if (next) {

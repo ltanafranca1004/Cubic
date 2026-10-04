@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createGame, isVocab, mirroredGlyphScript, observe, parseHuman, parseRow, rowPieces, visibleObjects, type Side, type Vec } from '../src/index';
+import { createGame, decide, devTeleport, isVocab, mirroredGlyphScript, newMind, observe, parseHuman, parseRow, rowPieces, visibleObjects, type Side, type Vec } from '../src/index';
+import { EMPTY_ROW_WAIT_MS } from '../src/bot/scripts/mirroredGlyph';
 import { GLYPH, GLYPH_TILES } from '../src/puzzles/mirroredGlyph';
 import { mirroredGlyphHuman } from './humans/mirroredGlyph';
 import { play, STEP_MS, type HumanScript, type Played } from './partnerSim';
@@ -124,4 +125,23 @@ test('AI inside: CLEAR only when the human says "clear", then it starts over', (
   assert.ok(clears.length > 0);
   const plain = run('in', mirroredGlyphHuman());
   assert.ok(plain.decisions.every((d) => !(d.action?.type === 'use' && d.action.object === 'clear')));
+});
+
+test('AI inside: after an empty row it says nothing, unless the human waits for it', () => {
+  const T = 1_700_000_000_000;
+  const state = createGame(T);
+  devTeleport(state, 'out', FACE, T);
+  devTeleport(state, 'in', FACE, T);
+  const mind = newMind();
+  const keys = (heard: string[], at: number) => decide(mind, observe(state, 'in'), heard.map(parseHuman), at, [mirroredGlyphScript]).say.map((s) => s.key);
+  keys([], T);
+  // an empty row: nothing to flip, nothing to say
+  assert.ok(!keys(['row 1 skip'], T + 200).includes('mirrored-glyph.in.next'));
+  assert.ok(!keys([], T + 400).includes('mirrored-glyph.in.next'));
+  // the human goes straight on to the next empty row: still nothing
+  assert.ok(!keys(['row 2 skip'], T + 1000).includes('mirrored-glyph.in.next'));
+  assert.ok(!keys([], T + 1000 + EMPTY_ROW_WAIT_MS - 200).includes('mirrored-glyph.in.next'));
+  // they wait: now it says the row is done, once
+  assert.ok(keys([], T + 1000 + EMPTY_ROW_WAIT_MS).includes('mirrored-glyph.in.next'));
+  assert.ok(!keys([], T + 1200 + EMPTY_ROW_WAIT_MS).includes('mirrored-glyph.in.next'));
 });

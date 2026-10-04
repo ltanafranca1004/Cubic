@@ -43,6 +43,11 @@ export interface ScriptCtx<M> {
    * Returns whether it was said.
    */
   say(key: string, opts?: { every?: number; force?: boolean; args?: LineArgs }): boolean;
+  /**
+   * These lines of the script are out of date (a question the human has just answered): if
+   * one of them is still waiting to be said, it is not said.
+   */
+  cancel(...keys: string[]): void;
 }
 
 /** What a script wants the body to do right now. */

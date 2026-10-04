@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 //
 //  Gemini:      GEMINI_ENABLED (kill switch), 8 calls a minute and GEMINI_DAILY_CAP calls a
 //               day over all rooms, 25 calls per game, and a 10 minute pause after a 429.
-//  ElevenLabs:  ELEVENLABS_ENABLED (kill switch), 5 bought lines per game and
+//  ElevenLabs:  ELEVENLABS_ENABLED (kill switch), 20 bought lines per game and
 //               ELEVENLABS_DAILY_CHARS characters a day over all rooms.
 //
 // The daily counters are kept in a small JSON file so a restart within the same UTC day
@@ -20,8 +20,8 @@ export const GEMINI_PER_MINUTE = 8;
 export const GEMINI_PER_GAME = 25;
 export const DEFAULT_GEMINI_DAILY_CAP = 200;
 export const GEMINI_PAUSE_MS = 10 * 60_000;
-export const ELEVEN_PER_GAME = 5;
-export const DEFAULT_ELEVEN_DAILY_CHARS = 2000;
+export const ELEVEN_PER_GAME = 20;
+export const DEFAULT_ELEVEN_DAILY_CHARS = 20_000;
 /** The same fallback reason is logged at most this often (with how many it stands for). */
 export const FALLBACK_LOG_MS = 60_000;
 /** Gitignored. The daily counters of both APIs. */

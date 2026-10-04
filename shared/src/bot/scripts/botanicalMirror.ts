@@ -87,6 +87,7 @@ export const botanicalMirrorScript: PuzzleScript<Mem> = {
       if (named) {
         const cell = cellOf(o, { x: named.column! - 1, y: named.row! - 1 });
         mem.since = now;
+        ctx.cancel(`${ID}.out.ask`);
         mem.pot = pots.find((p) => same(p, cell)) ?? null;
         if (!mem.pot) say(`${ID}.out.nopot`, { force: true });
       } else if (has('again')) tellColour();
@@ -101,7 +102,10 @@ export const botanicalMirrorScript: PuzzleScript<Mem> = {
 
     // ---- inside: name the pot that holds the flower's colour ----
     const colour = heard.map((h) => colourIn(h.text)).filter((c) => c !== null).at(-1) ?? null;
-    if (colour) Object.assign(mem, { colour, since: now });
+    if (colour) {
+      Object.assign(mem, { colour, since: now });
+      ctx.cancel(`${ID}.in.ask`);
+    }
     const pot = objs('f4-flowerpot').find((p) => p.state === mem.colour);
     if (!pot) {
       say(`${ID}.in.ask`);

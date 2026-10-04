@@ -210,9 +210,14 @@ function inside(ctx: ScriptCtx<Mem>): Play | null {
   }
 
   if (mem.phase === 'side' || mem.phase === 'lava') {
-    const face = tokens.flatMap((t) => (t.t === 'face' ? [t.face] : [])).at(-1);
+    // "face 4", or just the number: the question asks for the face number
+    const bare = mem.edge ? undefined : heard.map((h) => /^\s*([1-6])\s*$/.exec(h.text)?.[1]).filter((n) => n !== undefined).at(-1);
+    const face = tokens.flatMap((t) => (t.t === 'face' ? [t.face] : [])).at(-1) ?? (bare === undefined ? undefined : Number(bare));
     const edge = DIRS.find((d) => o.edges[d].face === face);
-    if (edge) Object.assign(mem, { edge, phase: 'lava', since: now });
+    if (edge) {
+      Object.assign(mem, { edge, phase: 'lava', since: now });
+      ctx.cancel(`${ID}.in.side`);
+    }
     if (!mem.edge) {
       say(`${ID}.in.side`);
       ask(`${ID}.in.side`);
@@ -230,6 +235,7 @@ function inside(ctx: ScriptCtx<Mem>): Play | null {
     if (n !== undefined) {
       mem.going = sideTile(mem.edge!, n - 1);
       mem.since = now;
+      ctx.cancel(`${ID}.in.tile`); // answered: the question must not come after the answer
     }
     if (mem.going) {
       if (!same(o.position, mem.going)) return { action: { type: 'goto', col: mem.going.col, row: mem.going.row }, status: 'walking along the ring to the start tile' };
@@ -242,10 +248,14 @@ function inside(ctx: ScriptCtx<Mem>): Play | null {
       return { action: null, status: 'waiting to hear which tile to start from' };
     }
     mem.phase = 'steps'; // steps straight away: the human steers from here
+    ctx.cancel(`${ID}.in.tile`);
   }
 
   // ---- steps: one at a time, only where I was told ----
-  if (steps.length) mem.queue.push(...steps);
+  if (steps.length) {
+    mem.queue.push(...steps);
+    ctx.cancel(`${ID}.in.ask`, `${ID}.in.ready`);
+  }
   if (mem.going && same(o.position, mem.going)) {
     mem.queue.shift();
     mem.going = null;

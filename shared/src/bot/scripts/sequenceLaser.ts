@@ -81,7 +81,10 @@ export const sequenceLaserScript: PuzzleScript<Mem> = {
       }
       say(`${ID}.in.how`);
       const named = heard.flatMap((h) => symbolsIn(h.text));
-      if (named.length) mem.queue.push(...named);
+      if (named.length) {
+        mem.queue.push(...named);
+        ctx.cancel(`${ID}.in.first`, `${ID}.in.next`);
+      }
       if (struck) {
         // a wrong press: the buttons went dark, and what I was told may be wrong too
         mem.queue = [];

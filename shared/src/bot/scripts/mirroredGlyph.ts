@@ -94,8 +94,13 @@ interface Mem {
   next: number;
   /** Inside: the human said "clear" and the tiles are not all off yet. */
   clearing: boolean;
+  /** Inside: an empty row was taken in silence; say "row done" only if the human waits for it. */
+  owed: boolean;
   since: number | null;
 }
+
+/** After an empty row (nothing to flip) it says nothing, unless the human says nothing either for this long. */
+export const EMPTY_ROW_WAIT_MS = 5_000;
 
 const LINES = ['mirrored-glyph.out.intro', 'mirrored-glyph.relay', 'mirrored-glyph.out.done', 'mirrored-glyph.in.ask', 'mirrored-glyph.in.next', 'mirrored-glyph.in.cleared'] as const;
 
@@ -126,13 +131,15 @@ function inside(ctx: ScriptCtx<Mem>): Play | null {
   for (const h of ctx.heard) {
     if (h.tokens.some((t) => t.t === 'face')) continue;
     if (wordsOf(h.text).some((w) => w === 'clear' || w === 'reset')) {
-      Object.assign(mem, { rows: {}, pending: [], next: 0, clearing: true });
+      Object.assign(mem, { rows: {}, pending: [], next: 0, clearing: true, owed: false });
       heard = true;
       continue;
     }
     const row = parseRow(h.text, mem.next < FACE_SIZE ? mem.next : null);
     if (!row) continue;
     heard = true;
+    mem.owed = false;
+    ctx.cancel('mirrored-glyph.in.ask');
     mem.rows[row.y] = row.xs;
     if (!mem.pending.includes(row.y)) mem.pending.push(row.y);
     mem.next = row.y + 1;
@@ -157,9 +164,19 @@ function inside(ctx: ScriptCtx<Mem>): Play | null {
     return { action: { type: 'use', col: target.col, row: target.row }, status: `flipping row ${y + 1}: ${wrong.length} tiles to go` };
   }
   if (mem.pending.length) {
+    // An empty row took no work: the human is already on the next one, so nothing is said.
+    const empty = mem.pending.every((y) => (mem.rows[y] ?? []).length === 0);
     mem.pending = [];
     mem.since = ctx.now;
-    ctx.say('mirrored-glyph.in.next', { force: true });
+    if (empty) mem.owed = true;
+    else ctx.say('mirrored-glyph.in.next', { force: true });
+  } else if (mem.owed && !heard) {
+    // ... unless they wait for it
+    if (ctx.now - (mem.since ?? ctx.now) >= EMPTY_ROW_WAIT_MS) {
+      mem.owed = false;
+      mem.since = ctx.now;
+      ctx.say('mirrored-glyph.in.next', { force: true });
+    }
   } else if (silent(mem, ctx.now, heard)) ctx.say('mirrored-glyph.in.ask', { force: true });
   return { action: null, status: 'waiting for the partner to describe a row' };
 }
@@ -167,6 +184,6 @@ function inside(ctx: ScriptCtx<Mem>): Play | null {
 export const mirroredGlyphScript: PuzzleScript<Mem> = {
   id: 'mirrored-glyph',
   lines: LINES,
-  init: () => ({ row: -1, rows: {}, pending: [], next: 0, clearing: false, since: null }),
+  init: () => ({ row: -1, rows: {}, pending: [], next: 0, clearing: false, owed: false, since: null }),
   play: (ctx) => (ctx.o.you === 'out' ? outside(ctx) : inside(ctx)),
 };

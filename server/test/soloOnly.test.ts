@@ -176,7 +176,8 @@ test('a solo room with GEMINI_ENABLED=false and ELEVENLABS_ENABLED=false makes z
   assert.ok(said.length >= 4, said.map((m) => m.text).join(' | '));
   assert.equal(sent.length, said.length);
   assert.ok(sent.every((x) => x.event === 'tts' || x.event === 'tts:chain' || x.event === 'speak'));
-  assert.ok(sent.some((x) => x.event === 'tts'), 'banked clips still play with the switch off');
+  // Banked clips still play with the switch off, once the bank holds this voice's clips (until it is bought: the browser voice).
+  assert.equal(sent.some((x) => x.event === 'tts'), w.ai.tts.bankSize > 0);
   // The switch is the logged reason, and it does not flood.
   assert.ok(w.logs.some((l) => l.startsWith('[gemini] fallback') && l.endsWith('why=disabled')));
   assert.ok(w.logs.filter((l) => l.includes('fallback')).length <= 4);
