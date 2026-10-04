@@ -1,20 +1,23 @@
-import { CORE_LINES, isPuzzleLine, lineKeys, type LineArgs, type LineKey } from '@cubic/shared';
+import { CORE_LINES, lineKeys, type LineArgs, type LineKey } from '@cubic/shared';
 import type { Persona } from './prompt';
 
 // The words of the scripted partner (shared/src/bot/partner.ts and its puzzle scripts).
 // The bot picks a line by key; this file is what it sounds like.
 //
-//  - CORE lines are not about any puzzle. They are in the committed voice bank
-//    (server/tts/bank), so they are spoken for free.
+//  - CORE lines are not about any puzzle.
+//  - EVENT lines are said by the server itself on a strike and on a quiet minute, when
+//    Gemini is not asked (no key, a cap, the kill switch).
 //  - PUZZLE lines belong to one puzzle script (keys start with the puzzle's id). A new
-//    script adds its lines to PUZZLE below. They are not banked while the puzzles are
-//    still changing: until then they are read by the browser voice. To bank them later,
-//    add them to bankedScriptLines() and run `npm run tts:bank -w server` (only the new
-//    clips are generated).
+//    script adds its lines to PUZZLE below.
+//
+// Every FIXED line of all three goes into the committed voice bank (server/tts/bank): the
+// bank script reads fixedLines() at run time, so a new line only needs `npm run tts:bank
+// -w server` (a dry run that lists what is missing) and then `-- --buy`.
 //
 // Lines that carry protocol words (a sign, a direction, what to type) are the same in
-// every persona: the persona changes tone, never the instructions. A relay line (with
-// {placeholders}) is never in the bank: its words change, so the browser voice reads it.
+// every persona: the persona changes tone, never the instructions. A RELAY line (its words
+// are {placeholders}) is never banked as a whole: it is built from the pieces of
+// shared/src/bot/vocab.ts, each banked once, and played as a chain (relay.ts).
 
 type CoreKey = (typeof CORE_LINES)[number];
 
@@ -40,6 +43,18 @@ const CORE_TSUNDERE: Partial<Record<CoreKey, string>> = {
   'wait.ok': 'Fine, I am waiting. Say go. Not that I mind.',
   unknown: 'No idea what this one is. I am not touching it. You figure it out.',
 };
+
+/** What the server says by itself on a strike and on a quiet minute (see aiPlayer.ts). */
+export type EventKey = 'strike' | 'stuck';
+const EVENT: Record<EventKey, string> = {
+  strike: 'Oops, that was a strike. Slow and steady.',
+  stuck: 'You have gone quiet. Tell me what you see.',
+};
+const EVENT_TSUNDERE: Record<EventKey, string> = {
+  strike: 'That was a strike. Careful. Not that I am worried.',
+  stuck: 'Hello? Say something. Tell me what you see.',
+};
+export const eventLine = (persona: Persona, key: EventKey): string => (persona === 'tsundere' ? EVENT_TSUNDERE : EVENT)[key];
 
 /**
  * The lines of the puzzle scripts, by key. One block per script. A RELAY line has
@@ -87,5 +102,12 @@ const textsOf = (keys: readonly LineKey[]) => [...new Set(PERSONAS.flatMap((p) =
 /** Every distinct line the scripted partner can say, all personas. */
 export const allScriptedLines = (): string[] => textsOf(lineKeys());
 
-/** The scripted lines that go into the committed voice bank: the core, not the puzzles (yet). */
-export const bankedScriptLines = (): string[] => textsOf(lineKeys().filter((k) => !isPuzzleLine(k)));
+/**
+ * Every FIXED line the partner can say, all personas: the core, the event lines and the
+ * puzzle lines that have no {placeholder}. This is what the voice bank holds as whole
+ * clips. Read at run time, so lines added to PUZZLE later are picked up by themselves.
+ */
+export const fixedLines = (): string[] => [...new Set([...allScriptedLines(), ...PERSONAS.flatMap((p) => (['strike', 'stuck'] as const).map((k) => eventLine(p, k)))])].filter((l) => !/\{\w+\}/.test(l));
+
+/** The old name of fixedLines(). */
+export const bankedScriptLines = fixedLines;

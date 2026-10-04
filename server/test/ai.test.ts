@@ -1,15 +1,17 @@
 import assert from 'node:assert/strict';
 import { after, test, type TestContext } from 'node:test';
-import { CORE_LINES, FACES, PUZZLE_SCRIPTS, defaultEnv, devTeleport, faceDistance, lineKeys, observe, visibleObjects, type FaceId, type Say, type Side } from '@cubic/shared';
+import { CORE_LINES, FACES, PUZZLE_SCRIPTS, defaultEnv, devSolve, devTeleport, faceDistance, lineKeys, visibleObjects, type FaceId, type Say, type Side } from '@cubic/shared';
 import { HUMAN_SCRIPTS, SimHuman, type HumanOptions } from '../../shared/test/partnerSim';
 import { AiPlayer, parseReply, type AiOptions } from '../src/ai/aiPlayer';
+import { Budget, GEMINI_PAUSE_MS } from '../src/ai/budget';
 import type { Brain } from '../src/ai/gemini';
-import { MAX_SAY_CHARS, parsePersona, systemPrompt } from '../src/ai/prompt';
+import { MAX_SAY_CHARS, REPLY_SCHEMA, parsePersona, systemPrompt } from '../src/ai/prompt';
 import { allScriptedLines, bankedScriptLines, hasLine, lineText } from '../src/ai/scripted';
 import { LIMITS, Rooms, type Room } from '../src/rooms';
 
 // The AI partner on a real Room. The clock is fake and the timings are the real ones:
-// a step every 200 ms, one Gemini call per 6 s, a 3 s deadline.
+// a step every 200 ms, one Gemini call per 6 s, a 3 s deadline. Gemini is only asked on
+// events (here: a free-form chat line, a solve); budget.test.ts has the caps and the rest.
 //
 // Everything here except the two whole-game tests is independent of the puzzles: the bot is
 // only asked to find the human, talk and stay safe. The whole-game tests run only once every
@@ -163,69 +165,94 @@ for (const humanSide of ['out', 'in'] as const) {
 
 // ---------- Gemini is advisory: slow, failing, rate limited ----------
 
-test('Gemini slower than 3 s: the body never waits, and at 3 s the script says the line itself', async (t) => {
+test('Gemini slower than 3 s: the body never waits, and at 3 s the script answers by itself', async (t) => {
   const pass = clock(t);
-  const { ai, said, logs, bot } = setup('out', ['hang'], { humanOn: FAR });
-  await pass(2900);
-  assert.equal(ai.calls, 1); // the greeting went to Gemini to be reworded
-  assert.ok(bot().steps >= 10, 'the AI stood still while Gemini was thinking');
-  assert.ok(said().includes(L('follow.far'))); // protocol lines do not wait for anyone
-  assert.ok(!said().includes(L('hello.in')));
+  const { room, ai, said, logs, bot } = setup('out', ['hang'], { humanOn: FAR });
   await pass(400);
-  assert.equal(ai.stats.timeouts, 1); // given up 3 s after the call went out (at 0.2 s)
-  await pass(1500); // its lines are a beat apart
-  assert.ok(said().includes(L('hello.in')), 'no scripted greeting after the 3 s deadline');
+  assert.equal(ai.calls, 0); // the greeting is the script's own line: no call
+  room.say('out', 'tell me about this place');
+  await pass(2800);
+  assert.equal(ai.calls, 1);
+  assert.ok(bot().steps >= 10, 'the AI stood still while Gemini was thinking');
+  assert.ok(said().includes(L('follow.far'))); // the script's lines do not wait for anyone
+  assert.ok(!said().includes(L('huh')));
+  await pass(600);
+  assert.equal(ai.stats.timeouts, 1); // given up 3 s after the call went out
+  await pass(3000); // its lines are a beat apart
+  assert.ok(said().includes(L('huh')), 'no scripted answer after the 3 s deadline');
   assert.ok(logs.some((l) => l.includes('no answer after 3000 ms; the script answers')));
   await pass(30_000);
   assert.equal(bot().pose.face, FAR);
+  assert.equal(ai.calls, 1); // and it was not tried again
 });
 
-test('Gemini errors (503): the script answers that turn at once and the calls back off 6 s, 12 s, ...', async (t) => {
+test('Gemini errors (503): the script answers that turn at once, nothing is retried, and the calls back off 6 s, 12 s, ...', async (t) => {
   const pass = clock(t);
   const down = new Error('503 overloaded');
   const { room, ai, said, logs, bot } = setup('out', [down, down, down], { humanOn: FAR });
-  await pass(1900);
-  assert.ok(said().includes(L('hello.in'))); // no 3 s wait on an error: it is the next line said
-  assert.equal(ai.stats.errors, 1);
-  assert.ok(logs.some((l) => l.includes('503 overloaded') && l.includes('next call in 6s')));
-  // While it backs off, free-form chat is answered by the script, not queued for Gemini.
+  await pass(400);
   room.say('out', 'tell me about this place');
-  await pass(3200);
-  assert.ok(said().includes(L('huh')));
+  await pass(3500);
+  assert.ok(said().includes(L('huh'))); // no 3 s wait on an error
+  assert.deepEqual([ai.calls, ai.stats.errors], [1, 1]);
+  assert.ok(logs.some((l) => l.includes('503 overloaded') && l.includes('next call in 6s')));
+  // While it backs off, free-form chat is answered by the script, and it does not wait for a later call.
+  room.say('out', 'and what about that thing over there');
+  await pass(8000);
   assert.equal(ai.calls, 1);
-  await pass(6000);
   room.say('out', 'tell me something about yourself');
   await pass(600);
   assert.equal(ai.calls, 2);
   assert.ok(logs.some((l) => l.includes('next call in 12s')));
+  await pass(20_000);
   assert.equal(bot().pose.face, FAR); // the body walked to the human all the while
 });
 
-test('rate limit (429): same as any error, and the game goes on', async (t) => {
+test('rate limit (429): no retry, the script answers, and NO room calls Gemini for the next 10 minutes', async (t) => {
   const pass = clock(t);
-  const quota = Object.assign(new Error('429 RESOURCE_EXHAUSTED'), { status: 429 });
-  const { ai, said, logs, bot } = setup('out', [quota, quota], { humanOn: FAR });
-  await pass(30_000);
-  assert.equal(bot().pose.face, FAR);
-  assert.ok(said().includes(L('hello.in')) && said().includes(L('follow.far')));
-  assert.ok(logs.some((l) => l.includes('429') && l.includes('the script answers')));
-  assert.equal(ai.calls, 1);
+  const quota = Object.assign(new Error('got status: 429 RESOURCE_EXHAUSTED'), { status: 429 });
+  const blog: string[] = [];
+  const budget = new Budget({ log: (l) => blog.push(l) });
+  const a = setup('out', [quota, reply('never')], { humanOn: FAR, budget });
+  const b = setup('in', [reply('Hello over there.')], { budget, scripts: [] });
+  await pass(400);
+  a.room.say('out', 'tell me about this place');
+  await pass(600);
+  assert.equal(a.ai.calls, 1);
+  assert.ok(blog.some((l) => l.startsWith('[gemini] room=') && l.includes('error=429')));
+  assert.ok(blog.some((l) => l.includes('[gemini] 429') && l.includes('10 minutes')));
+  b.room.say('in', 'hello there, how are you doing');
+  await pass(3000);
+  assert.equal(b.ai.calls, 0); // another room, same pause
+  assert.ok(b.said().includes(L('huh')), b.said().join(' | '));
+  assert.ok(blog.some((l) => l.includes('fallback') && l.includes('why=paused_429')));
+  await pass(GEMINI_PAUSE_MS - 10_000, 1000);
+  a.room.say('out', 'are you still there, partner of mine');
+  await pass(600);
+  assert.deepEqual([a.ai.calls, b.ai.calls], [1, 0]);
+  await pass(10_000, 1000);
+  b.room.say('in', 'hello again, how are you doing');
+  await pass(2000);
+  assert.equal(b.ai.calls, 1); // the pause is over
+  assert.ok(b.said().includes('Hello over there.'));
+  assert.equal(a.bot().pose.face, FAR); // the game went on
 });
 
 test('the throttle: one Gemini call per 6 seconds per room, with no backlog', async (t) => {
   const pass = clock(t);
   const { room, ai } = setup('out', []);
   await pass(400);
-  assert.equal(ai.calls, 1); // the greeting
+  assert.equal(ai.calls, 0); // no call for the greeting
   for (let i = 0; i < 4; i++) {
     room.say('out', `this is a long free form message number ${i}`);
     await pass(1000);
   }
-  assert.equal(ai.calls, 1); // inside the window: nothing
-  await pass(2400);
-  assert.equal(ai.calls, 2); // only the latest message is asked about
+  assert.equal(ai.calls, 1); // the first one; the three inside the window went to the script
   await pass(12_000);
-  assert.equal(ai.calls, 2); // and the three before it are not replayed
+  assert.equal(ai.calls, 1); // and they are not replayed later
+  room.say('out', 'one more free form message for you');
+  await pass(400);
+  assert.equal(ai.calls, 2);
   assert.equal((ai as unknown as { minThinkMs: number; timeoutMs: number }).minThinkMs, 6000);
   assert.equal((ai as unknown as { minThinkMs: number; timeoutMs: number }).timeoutMs, 3000);
 });
@@ -248,19 +275,22 @@ test('a whole game with a Gemini that hangs, errors and hits the rate limit is s
 
 // ---------- Gemini is advisory: when it does answer ----------
 
-test('small talk is reworded by Gemini; protocol lines are said exactly as written', async (t) => {
+test('a solve is reworded by Gemini; the greeting and protocol lines are said exactly as written', async (t) => {
   const pass = clock(t);
   const said_: { text: string; scripted: boolean }[] = [];
-  const { said, prompts, ai } = setup('out', [reply('Hey, hello from in here! Keep it short and I will keep up.')], { humanOn: FAR, onSay: (m, info) => said_.push({ text: m.text, scripted: info.scripted }) });
-  await pass(6000);
-  assert.ok(said().includes('Hey, hello from in here! Keep it short and I will keep up.'));
-  assert.ok(!said().includes(L('hello.in')));
-  assert.ok(said().includes(L('follow.far')));
-  assert.equal(JSON.parse(prompts[0]!).scriptLine, L('hello.in'));
-  assert.deepEqual([ai.stats.answered, ai.stats.modelLines], [1, 1]);
+  const { room, said, prompts, ai } = setup('out', [reply('Yes! That did it. What is next?')], { humanOn: FAR, onSay: (m, info) => said_.push({ text: m.text, scripted: info.scripted }) });
+  await pass(4000);
+  assert.ok(said().includes(L('hello.in')) && said().includes(L('follow.far')));
+  assert.equal(ai.calls, 0);
+  room.devApply((state, now) => devSolve(state, defaultEnv.puzzles[0]!.face, now));
+  await pass(3000);
+  assert.ok(said().includes('Yes! That did it. What is next?'));
+  assert.ok(!said().includes(L('solved')));
+  assert.deepEqual([JSON.parse(prompts[0]!).event, JSON.parse(prompts[0]!).scriptLine], ['solved', L('solved')]);
+  assert.deepEqual([ai.calls, ai.stats.answered, ai.stats.modelLines], [1, 1, 1]);
   // The voice is told which lines are the script's own (banked) and which are a model's.
   assert.deepEqual(said_.map((x) => x.scripted), said_.map((x) => keyOfLine.has(x.text)));
-  assert.equal(said_.find((x) => x.text.startsWith('Hey, hello'))!.scripted, false);
+  assert.equal(said_.find((x) => x.text.startsWith('Yes!'))!.scripted, false);
 });
 
 test('free-form chat: Gemini turns it into protocol words and the script acts on them', async (t) => {
@@ -274,99 +304,92 @@ test('free-form chat: Gemini turns it into protocol words and the script acts on
   const target = NEXT.find((f) => f !== firstGuess)!;
   control.ai.stop();
 
-  const { room, said, prompts, bot, ai } = setup('in', [reply('Hi!'), reply('On my way over.', `face ${target}`)], { humanOn: target });
+  const { room, said, prompts, bot, ai } = setup('in', [reply('On my way over.', `face ${target}`)], { humanOn: target });
   const visited = new Set<number>();
   room.listen({ onState: () => visited.add(bot().pose.face) });
   await pass(200);
   room.say('in', 'I wandered away, come find me at the snowy place');
-  await pass(6200); // the greeting used the Gemini slot: this one waits for the next
+  await pass(600);
   assert.equal(JSON.parse(prompts.at(-1)!).partnerSaid, 'I wandered away, come find me at the snowy place');
-  await pass(1600);
+  await pass(3200);
   assert.ok(said().includes('On my way over.'));
   assert.deepEqual((ai as unknown as { mind: { cands: number[] } }).mind.cands, [target]); // it stopped guessing: it was told
   await pass(20_000);
   assert.equal(bot().pose.face, target);
   assert.ok(visited.has(target));
   // A model that invents words outside the protocol changes nothing.
-  const junk = setup('in', [reply('Hi!'), reply(null, 'teleport to the crystal and win')], { humanOn: FAR });
+  const junk = setup('in', [reply(null, 'teleport to the crystal and win')], { humanOn: FAR });
   await pass(200);
   junk.room.say('in', 'do something clever please');
   await pass(7000);
   assert.ok(junk.said().includes(L('huh')));
 });
 
-test('a suggested move is walked only if the script calls it safe', async (t) => {
+test('Gemini never moves the body and never presses anything: whatever a reply asks for', async (t) => {
   const pass = clock(t);
-  const calm = FACES.find((f) => !defaultEnv.puzzles.some((p) => p.face === f));
-  if (calm === undefined) return t.skip('every face has a puzzle');
-  const ask = async (s: ReturnType<typeof setup>, text: string) => {
-    await pass(6500);
-    s.room.say('in', text);
-    await pass(6000);
-  };
-  // Idle on a face with nothing to solve: a suggestion on this face is fine.
-  const a = setup('in', [reply('Hi!'), reply('Coming over.', null, { type: 'goto', col: 1, row: 1 })], { bothOn: calm });
-  await ask(a, 'could you walk over to the top left corner for a moment');
-  const o = observe(a.room.state, 'out');
-  assert.deepEqual(o.position, { col: 1, row: 1 });
-  assert.equal(a.ai.stats.refusedActions, 0);
-
-  // Leaving the face, or anything that is not a plain walk, is not a model's call.
-  const b = setup('in', [reply('Hi!'), reply(null, null, { type: 'go_face', face: FAR }), reply(null, null, { type: 'move', dir: 'up', steps: 24 })], { bothOn: calm });
-  await ask(b, 'go and have a look at the far side would you');
-  await ask(b, 'or just keep walking up until you fall off');
-  assert.equal(b.bot().pose.face, calm);
-  assert.equal(b.ai.stats.refusedActions, 2);
-
-  // Told to wait, the body holds its place: nothing may pull it away.
-  const c = setup('in', [reply('Hi!'), reply('Sure.', null, { type: 'goto', col: 1, row: 1 })], { bothOn: calm });
-  await pass(6500);
-  const before = { ...c.bot().pose };
-  c.room.say('in', 'wait');
-  await pass(400);
-  c.room.say('in', 'could you walk over to the top left corner for a moment');
-  await pass(3000);
-  assert.deepEqual(c.bot().pose, before);
-  assert.ok(c.logs.some((l) => l.includes('refused, the body is holding its place')));
-});
-
-test('a puzzle it has no script for: it says so and no suggestion gets it to touch what it sees there', async (t) => {
-  const pass = clock(t);
-  // Any puzzle face where the bot's side sees something. No scripts at all: every puzzle is unknown.
+  // A puzzle face where the bot's side sees something it could walk onto or press. No
+  // scripts at all, so the body has nothing to do by itself: any step would be Gemini's.
   const spot = defaultEnv.puzzles.flatMap((p) => (['out', 'in'] as const).map((side) => ({ face: p.face, side, thing: visibleObjects(rooms.create('ai').state, side, p.face)[0] }))).find((x) => x.thing);
   if (!spot) return t.skip('no puzzle shows anything');
-  const s = setup(other(spot.side), [reply('Hi!'), reply('On it!', null, { type: 'step_on', object: spot.thing!.type })], { bothOn: spot.face, scripts: [] });
-  await pass(6500);
+  const human = other(spot.side);
+  const wants = [
+    { type: 'goto', col: 1, row: 1 },
+    { type: 'step_on', object: spot.thing!.type },
+    { type: 'use', object: spot.thing!.type },
+    { type: 'move', dir: 'up', steps: 3 },
+    { type: 'go_face', face: FAR },
+    { type: 'pick_up' },
+  ];
+  const s = setup(human, wants.map((action, i) => JSON.stringify({ say: `Sure, doing it ${i}.`, heard: null, action, press: true, move: 'up' })), { bothOn: spot.face, scripts: [], minThinkMs: 1000 });
+  await pass(4000);
   assert.ok(s.said().includes(L('unknown')));
+  const acts: string[] = [];
+  for (const what of ['move', 'interact'] as const) {
+    const real = s.room[what].bind(s.room) as (...args: unknown[]) => never;
+    (s.room as unknown as Record<string, unknown>)[what] = (...args: unknown[]) => {
+      if (args[0] === spot.side) acts.push(what);
+      return real(...args);
+    };
+  }
   const before = { ...s.bot().pose };
-  s.room.say(other(spot.side), 'just walk over and stand on that thing for me');
-  await pass(6000);
+  for (const [i] of wants.entries()) {
+    s.room.say(human, `please just walk over and deal with that thing for me, try ${i}`);
+    await pass(3000);
+  }
+  assert.deepEqual([s.ai.calls, s.ai.stats.answered], [wants.length, wants.length]);
+  assert.ok(s.said().includes('Sure, doing it 5.')); // it talks
+  assert.deepEqual(acts, []); // and that is all it does
   assert.deepEqual(s.bot().pose, before);
-  assert.equal(s.ai.stats.refusedActions, 1);
-  assert.ok(s.logs.some((l) => l.includes('refused')));
   assert.equal(s.room.state.strikes, 0);
+  assert.equal(s.room.state.players[spot.side].carrying ?? null, null);
+  // The reply format has no action, and one that is sent anyway is not read.
+  assert.deepEqual(Object.keys(REPLY_SCHEMA.properties), ['say', 'heard']);
+  assert.deepEqual(parseReply('{"say":"ok","heard":null,"action":{"type":"goto","col":1,"row":1}}'), { say: 'ok', heard: null });
 });
 
-test('the prompt only contains the AI side of the world, and no puzzle ids', async (t) => {
+test('the prompt is a short summary of the AI side: no grid, no objects, no puzzle ids, the last 3 chat lines', async (t) => {
   const pass = clock(t);
   const { prompts, room } = setup('out', []);
   await pass(400);
+  for (const line of ['one', 'two', 'three']) room.say('out', line);
+  room.say('out', 'what can you see in there?');
+  await pass(400);
   assert.equal(prompts.length, 1);
   const turn = JSON.parse(prompts[0]!);
-  for (const hidden of ['players', '"pose"', '"x"', '"y"', 'puzzleList', 'puzzleId']) assert.ok(!prompts[0]!.includes(hidden), hidden);
-  // Whatever only the human's side shows on this face is not in it.
-  const mine = new Set(visibleObjects(room.state, 'in', 1).map((o) => o.type));
-  for (const o of visibleObjects(room.state, 'out', 1)) if (!mine.has(o.type)) assert.ok(!JSON.stringify(turn.observation.objects).includes(`"${o.type}"`), o.type);
-  assert.equal(typeof turn.planner, 'string');
+  for (const hidden of ['players', '"pose"', '"x"', '"y"', 'puzzleList', 'puzzleId', 'grid', 'objects', 'items']) assert.ok(!prompts[0]!.includes(hidden), hidden);
+  // Nothing either side sees on this face is in it.
+  for (const side of ['in', 'out'] as const) for (const o of visibleObjects(room.state, side, 1)) assert.ok(!prompts[0]!.includes(`"${o.type}"`), o.type);
+  assert.equal(typeof turn.body, 'string');
   assert.equal(turn.youAre, 'the INSIDE player');
+  assert.deepEqual([turn.event, turn.face, turn.partnerSaid], ['chat', 1, 'what can you see in there?']);
+  assert.deepEqual(turn.chat, ['partner: two', 'partner: three', 'partner: what can you see in there?']);
 });
 
 // ---------- small things ----------
 
 test('parseReply: validates the JSON shape', () => {
-  assert.deepEqual(parseReply('{"say":"hi","heard":null,"action":null}'), { say: 'hi', heard: null, action: null });
-  assert.deepEqual(parseReply('```json\n{"say":null,"heard":"moon","action":{"type":"step_on","object":"plate"}}\n```'), { say: null, heard: 'moon', action: { type: 'step_on', object: 'plate' } });
-  assert.deepEqual(parseReply('{"say":"ok","action":{"type":"teleport","face":3}}'), { say: 'ok', heard: null, action: null }); // bad action dropped
+  assert.deepEqual(parseReply('{"say":"hi","heard":null}'), { say: 'hi', heard: null });
+  assert.deepEqual(parseReply('```json\n{"say":null,"heard":"moon","action":{"type":"step_on","object":"plate"}}\n```'), { say: null, heard: 'moon' }); // an action is not read
   for (const bad of ['', 'not json', '[]', '"hi"', '{}', '{"say":5,"action":null}', '{"say": "unterminated']) assert.equal(parseReply(bad), null, bad);
   assert.equal(parseReply(JSON.stringify({ say: 'x'.repeat(900), action: null }))!.say!.length, 80);
   const long = parseReply(JSON.stringify({ say: 'There is a plate on my floor near the top left corner and a pillar right below it, I think', action: null }))!.say!;
@@ -384,8 +407,8 @@ test('every line of every registered script has words, in both personas, within 
   // The persona changes tone only: every line of a puzzle script is the same in both.
   for (const key of lineKeys()) if (!(CORE_LINES as readonly string[]).includes(key)) assert.equal(lineText('tsundere', key), lineText('default', key), key);
   assert.notEqual(lineText('tsundere', 'win'), lineText('default', 'win'));
-  // Only the core is banked for now.
-  assert.ok(bankedScriptLines().length >= CORE_LINES.length && bankedScriptLines().length <= CORE_LINES.length * 2);
+  // Every fixed line is in the bank list; a relay line (with a {placeholder}) never is.
+  for (const key of lineKeys()) for (const p of ['default', 'tsundere'] as const) assert.equal(bankedScriptLines().includes(lineText(p, key)), !/\{\w+\}/.test(lineText(p, key)), key);
 });
 
 test('persona changes the tone, not the rules or what the bot knows', () => {
@@ -398,8 +421,9 @@ test('persona changes the tone, not the rules or what the bot knows', () => {
   assert.match(b, /tsundere/i);
   for (const p of [a, b]) {
     assert.match(p, /at most 80 characters/);
-    assert.match(p, /only know what your own observation shows/);
-    assert.match(p, /YOUR OWN frame of reference/);
+    assert.match(p, /Never claim to see your partner's side/);
+    assert.match(p, /Never promise to move or press anything/);
+    assert.match(p, /one or two short sentences/);
     assert.match(p, /sun, moon, star, drop, bolt, ring/);
   }
 });

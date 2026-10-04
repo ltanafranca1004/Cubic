@@ -20,6 +20,7 @@ import {
   type ServerInfo,
   type ServerToClient,
   type Side,
+  type TtsChain,
   type TtsClip,
   type VoiceChunk,
 } from '@cubic/shared';
@@ -81,6 +82,8 @@ export interface NetHandlers {
   onVoiceSignal(data: unknown): void;
   onVoiceChunk(chunk: VoiceChunk): void;
   onTts(clip: TtsClip): void;
+  /** A relay line as a chain of clips, one per vocabulary piece. */
+  onTtsChain?(chain: TtsChain): void;
   /** Say an AI line with the browser's own voice. */
   onSpeak(text: string): void;
 }
@@ -196,6 +199,7 @@ export class Net {
     socket.on('voice:signal', (m) => this.h.onVoiceSignal(m.data));
     socket.on('voice:chunk', (c) => this.h.onVoiceChunk(c));
     socket.on('tts', (c) => this.h.onTts(c));
+    socket.on('tts:chain', (c) => this.h.onTtsChain?.(c));
     socket.on('speak', (m) => this.h.onSpeak(m.text));
   }
 

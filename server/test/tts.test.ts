@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 import { MAX_SAY_CHARS } from '../src/ai/prompt';
 import { bankedScriptLines } from '../src/ai/scripted';
-import { DEFAULT_SESSION_LINES, DEFAULT_TTS_MODEL, TTS_BANK_DIR, bankFileName, bankLines, createTts, loadBank, normalizeLine, parseBank, parseSessionLines, parseTtsMode } from '../src/ai/tts';
+import { VOCAB } from '@cubic/shared';
+import { DEFAULT_TTS_MODEL, TTS_BANK_DIR, bankFileName, bankLines, clipFileName, createTts, loadBank, normalizeLine, parseBank, parseTtsMode } from '../src/ai/tts';
 
 const dirs: string[] = [];
 const tmp = () => {
@@ -74,18 +75,30 @@ test('voice bank: banking writes into the bank directory, and any spelling of a 
   assert.equal(await tts.bank("I can't hear you. Come closer."), 'new');
   assert.equal(await tts.bank('Got it.'), 'banked'); // running the script again buys nothing
   assert.equal(api.calls.length, 2);
-  assert.deepEqual(readdirSync(bankDir).sort(), [bankFileName('Got it.'), bankFileName("I can't hear you. Come closer.")].sort());
+  // a new clip is named by voice + model + exact text
+  assert.deepEqual(readdirSync(bankDir).sort(), ['Got it.', "I can't hear you. Come closer."].map((l) => tts.fileName(l)).sort());
+  assert.equal(tts.fileName('Got it.'), clipFileName('21m00Tcm4TlvDq8ikWAM', 'eleven_flash_v2_5', 'Got it.'));
+  assert.notEqual(tts.fileName('Got it.'), tts.fileName('got it'));
+  assert.equal((await tts.speak('Got it.', 'ROOM'))!.source, 'bank');
+  assert.equal(api.calls.length, 2);
   // A server with NO key and an empty cache (a fresh deploy) still plays them.
   const fresh = createTts({ cacheDir: tmp(), bankDir, fetchFn: api.fetchFn, log: () => {} });
-  for (const said of ['got it', 'GOT IT!!', '  Got   it. ', 'I cant hear you, come closer']) {
+  for (const said of ['Got it.', "I can't hear you. Come closer."]) {
     assert.equal((await fresh.speak(said, 'ROOM'))!.source, 'bank', said);
     assert.equal((await fresh.speak(said, 'ROOM', { cacheOnly: true }))!.source, 'bank', said);
   }
   assert.equal(api.calls.length, 2);
   assert.equal(fresh.bankSize, 2);
+  // Another voice or model is another clip: it is not served the old one, and not bought behind your back.
+  assert.equal(await createTts({ voiceId: 'another', modelId: 'other', cacheDir: tmp(), bankDir, log: () => {} }).speak('Got it.', 'R'), null);
+  // The clips bought before (named by normalized text only) still play, in any spelling and with any voice setting.
+  const old = tmp();
+  writeFileSync(join(old, bankFileName('It worked!')), new Uint8Array([9]));
+  const legacy = createTts({ voiceId: 'another', cacheDir: tmp(), bankDir: old, fetchFn: api.fetchFn, apiKey: 'k', log: () => {} });
+  for (const said of ['It worked!', 'it worked', ' IT  WORKED!! ']) assert.equal((await legacy.speak(said, 'R'))!.source, 'bank', said);
+  assert.equal(await legacy.bank('It worked!'), 'banked'); // and they are never bought again
+  assert.equal(api.calls.length, 2);
   assert.equal(normalizeLine("I can't HEAR you... Come closer!"), 'i cant hear you come closer');
-  // The bank does not depend on the voice settings of the day.
-  assert.equal((await createTts({ voiceId: 'another', modelId: 'other', cacheDir: tmp(), bankDir, log: () => {} }).speak('Got it.', 'R'))!.source, 'bank');
 });
 
 test('banking copies a clip that is already in the local cache instead of buying it again', async () => {
@@ -99,40 +112,7 @@ test('banking copies a clip that is already in the local cache instead of buying
   assert.equal(await createTts({ cacheDir: tmp(), bankDir: tmp(), log: () => {} }).bank('No key, no cache.'), null);
 });
 
-test('session cap: 15 generated lines per room, then null so the browser voice takes over', async () => {
-  const api = fakeApi();
-  const lines: string[] = [];
-  const tts = make(api, { log: (l) => lines.push(l) });
-  for (let i = 0; i < DEFAULT_SESSION_LINES; i++) assert.equal((await tts.speak(`dynamic line ${i}`, 'AAAA'))!.source, 'api');
-  assert.equal(await tts.speak('one line too many', 'AAAA'), null);
-  assert.equal(await tts.speak('and another', 'AAAA'), null);
-  assert.equal(api.calls.length, 15);
-  assert.equal(lines.filter((l) => l.includes('browser voice takes over')).length, 1);
-  // Lines already paid for stay free after the cap, and another room has its own allowance.
-  assert.equal((await tts.speak('dynamic line 3', 'AAAA'))!.source, 'cache');
-  assert.equal((await tts.speak('fresh room', 'BBBB'))!.source, 'api');
-  assert.equal(api.calls.length, 16);
-  assert.equal(DEFAULT_SESSION_LINES, 15);
-});
-
-test('session cap: set by TTS_SESSION_LINES; bank lines never count against it', async () => {
-  assert.equal(parseSessionLines(undefined), 15);
-  assert.equal(parseSessionLines(''), 15);
-  assert.equal(parseSessionLines('4'), 4);
-  assert.equal(parseSessionLines('0'), 0);
-  assert.equal(parseSessionLines('-1'), 15);
-  assert.equal(parseSessionLines('lots'), 15);
-  const api = fakeApi();
-  const tts = make(api, { sessionLines: 2 });
-  await tts.bank('It worked!');
-  for (let i = 0; i < 10; i++) assert.equal((await tts.speak('It worked!', 'R'))!.source, 'bank');
-  assert.equal((await tts.speak('first', 'R'))!.source, 'api');
-  assert.equal((await tts.speak('second', 'R'))!.source, 'api');
-  assert.equal(await tts.speak('third', 'R'), null);
-  assert.equal(await make(api, { sessionLines: 0 }).speak('never', 'R'), null);
-});
-
-test('usage log: characters per session and running total, only for real API calls', async () => {
+test('usage log without a budget: one line per real API call; cached lines are not counted', async () => {
   const lines: string[] = [];
   const tts = make(fakeApi(), { log: (l) => lines.push(l) });
   await tts.speak('12345', 'AAAA');
@@ -140,10 +120,7 @@ test('usage log: characters per session and running total, only for real API cal
   await tts.speak('12345', 'AAAA'); // cached: not counted
   await tts.speak('abc', 'BBBB');
   assert.equal(tts.totalChars, 18);
-  assert.equal(lines.length, 3);
-  assert.match(lines[0]!, /\[tts AAAA\] 5 chars to ElevenLabs .*session 5, total since start 5/);
-  assert.match(lines[1]!, /\[tts AAAA\] 10 chars .*session 15, total since start 15/);
-  assert.match(lines[2]!, /\[tts BBBB\] 3 chars .*session 3, total since start 18/);
+  assert.deepEqual(lines, ['[eleven] room=AAAA chars=5 total=5', '[eleven] room=AAAA chars=10 total=15', '[eleven] room=BBBB chars=3 total=18']);
 });
 
 test('fails soft: API error, no key, or cacheOnly give null so the caller uses the browser voice', async () => {
@@ -169,38 +146,37 @@ test('TTS_MODE: browser unless production, explicit value wins', () => {
 
 // ---------- the committed bank ----------
 
-test('the bank list: every banked scripted line of both personas, plus the generic file, no duplicates', () => {
+test('the bank list: every fixed line of both personas, the generic file and every vocabulary piece, no duplicates', () => {
   const lines = bankLines();
   assert.ok(lines.every((l) => l.length <= MAX_SAY_CHARS), lines.filter((l) => l.length > MAX_SAY_CHARS).join(' | '));
   assert.equal(new Set(lines.map(normalizeLine)).size, lines.length);
   const banked = new Set(lines.map(normalizeLine));
-  for (const l of bankedScriptLines()) assert.ok(banked.has(normalizeLine(l)), l);
-  for (const l of loadBank()) assert.ok(banked.has(normalizeLine(l)), l);
+  for (const l of [...bankedScriptLines(), ...loadBank(), ...VOCAB]) assert.ok(banked.has(normalizeLine(l)), l);
+  assert.ok(lines.every((l) => !l.includes('{')), 'a relay line with a placeholder is never a whole clip');
   assert.deepEqual(parseBank('# note\n\nHi!\nhi\n  Got it.  \n'), ['Hi!', 'Got it.']);
 });
 
-test('the committed bank holds a real clip for every line, and git tracks it', async () => {
-  const lines = bankLines();
-  const missing = lines.filter((l) => !existsSync(join(TTS_BANK_DIR, bankFileName(l))));
-  assert.deepEqual(missing, [], 'run: npm run tts:bank -w server, then commit server/tts/bank');
-  for (const l of lines) {
-    const head = readFileSync(join(TTS_BANK_DIR, bankFileName(l))).subarray(0, 3);
-    // an MP3: an ID3 tag or a frame sync
-    assert.ok(head.toString('latin1') === 'ID3' || (head[0] === 0xff && (head[1]! & 0xe0) === 0xe0), l);
-    assert.ok(statSync(join(TTS_BANK_DIR, bankFileName(l))).size > 2000, l);
-  }
-  // No stray clip: one that no line uses any more (a retired line: clips are never deleted)
-  // is still in the bank's index, with its text.
-  const wanted = new Set(lines.map(bankFileName));
+test('the committed bank: every clip is a real MP3, listed in the index, tracked by git, and served with no key and no network', async () => {
+  // Lines and pieces added since the last `tts:bank -- --buy` are not in the bank yet (the
+  // dry run lists them); until then the browser voice reads them. What IS there must be right.
+  const prod = createTts({ cacheDir: tmp(), fetchFn: (() => assert.fail('the bank must not call the API')) as unknown as typeof fetch, log: () => {} });
+  const lines = bankLines().filter((l) => prod.where(l)?.source === 'bank');
+  assert.ok(lines.length >= 70, `${lines.length} banked lines`);
   const index = JSON.parse(readFileSync(join(TTS_BANK_DIR, 'index.json'), 'utf8')) as { lines: { file: string; text: string }[] };
   const indexed = new Set(index.lines.map((l) => l.file));
-  const retired = readdirSync(TTS_BANK_DIR).filter((f) => f.endsWith('.mp3') && !wanted.has(f));
-  assert.deepEqual(retired.filter((f) => !indexed.has(f)), []);
-  for (const l of index.lines) assert.equal(l.file, bankFileName(l.text), l.text);
-  // Served in production with no key, no cache and no network: this is the lookup the server does.
-  const prod = createTts({ cacheDir: tmp(), fetchFn: (() => assert.fail('the bank must not call the API')) as unknown as typeof fetch, log: () => {} });
-  for (const l of bankedScriptLines()) assert.equal((await prod.speak(l, 'ROOM', { cacheOnly: true }))?.source, 'bank', l);
-  assert.equal(prod.bankSize, lines.length + retired.length);
+  for (const l of lines) {
+    const file = join(TTS_BANK_DIR, prod.where(l)!.file);
+    const head = readFileSync(file).subarray(0, 3);
+    // an MP3: an ID3 tag or a frame sync
+    assert.ok(head.toString('latin1') === 'ID3' || (head[0] === 0xff && (head[1]! & 0xe0) === 0xe0), l);
+    assert.ok(statSync(file).size > 2000, l);
+    assert.equal((await prod.speak(l, 'ROOM', { cacheOnly: true }))?.source, 'bank', l);
+  }
+  // No stray clip: every file is in the index with its text (a retired line's clip too: clips are never deleted).
+  assert.deepEqual(readdirSync(TTS_BANK_DIR).filter((f) => f.endsWith('.mp3') && !indexed.has(f)), []);
+  for (const l of index.lines) assert.ok(existsSync(join(TTS_BANK_DIR, l.file)), l.text);
+  // The core lines were banked before this change and must keep resolving.
+  for (const l of ['It worked!', 'We did it!', 'Okay, waiting. Say go when you are ready.']) assert.equal(prod.where(l)?.source, 'bank', l);
   // Not ignored: the clips are part of the repo, so a deploy has them.
   const ignored = (() => {
     try {

@@ -1,4 +1,4 @@
-import { VOICE_RAMP_MS, type TtsClip, type VoiceChunk } from '@cubic/shared';
+import { VOICE_RAMP_MS, type TtsChain, type TtsClip, type VoiceChunk } from '@cubic/shared';
 import { audioContext } from '../game/sfx';
 import type { VoiceState } from '../ui/hooks';
 import { STUN_ONLY, hasTurn, iceConfig } from './ice';
@@ -564,6 +564,30 @@ export class Voice {
   }
 
   /**
+   * Play a relay line: one clip per vocabulary piece, in order, `gapMs` apart, through the
+   * same proximity gain as every other AI line. They are scheduled on the audio clock, so
+   * the gaps are exact. If a clip cannot be decoded, nothing of the chain is played and
+   * `fallback` says the whole line instead.
+   */
+  async playChain(chain: TtsChain, fallback?: () => void): Promise<void> {
+    try {
+      const { bus } = this.graph();
+      const ac = audioContext();
+      const buffers = await Promise.all(chain.clips.map((data) => ac.decodeAudioData(data.slice(0))));
+      const at = ac.currentTime + 0.02;
+      for (const [i, start] of chainStarts(buffers.map((b) => b.duration), chain.gapMs).entries()) {
+        const src = ac.createBufferSource();
+        src.buffer = buffers[i]!;
+        src.connect(bus);
+        src.start(at + start);
+      }
+    } catch (e) {
+      console.warn('[voice] could not play the AI relay line', e);
+      fallback?.();
+    }
+  }
+
+  /**
    * Say an AI line with the browser's free speechSynthesis (TTS_MODE=browser, or the
    * ElevenLabs call failed). It cannot be routed through Web Audio, so the proximity gain
    * is applied as the utterance volume when the line starts.
@@ -583,6 +607,17 @@ export class Voice {
     this.closeCall();
     for (const t of this.micStream?.getTracks() ?? []) t.stop();
   }
+}
+
+/** When each clip of a chain starts, in seconds from the first: one after the other, `gapMs` apart. */
+export function chainStarts(durations: readonly number[], gapMs: number): number[] {
+  const starts: number[] = [];
+  let at = 0;
+  for (const d of durations) {
+    starts.push(at);
+    at += d + Math.max(0, gapMs) / 1000;
+  }
+  return starts;
 }
 
 let silentUrl: string | null = null;
