@@ -246,7 +246,7 @@ portal and no exit to walk to.
 - Randomness: `ctx.rand(...keys)` = `mix(ctx.seed, ...keys)`, and `ctx.seed` in `init`.
   The seed (`GameState.seed`) is new for every game of a room and the same on the server
   and both clients. Derive content from it instead of storing it.
-- `shared/src/puzzles/lib`: `keypad`, `flip`, `sequence`, `push`, `hazard`, `path`, `deps`.
+- `shared/src/puzzles/lib`: `keypad`, `flip`, `sequence`, `push`, `hazard`, `deps`.
   `chain.ts`: the battery and the flower (ids, kinds, the flower's colour).
 - Art per face: `client/src/game/puzzleArt/faceN.ts` (`common.ts`, `items.ts`, `index.ts`
   beside them).
