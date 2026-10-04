@@ -45,7 +45,7 @@ server and Vite on the client both consume `/shared` as TS source).
   src/voice/          WebRTC + Web Audio
   src/lobby/          placeholder UI (core)
   src/ui/             the real UI, behind the hook interface in ui/hooks.ts
-  src/scenes/         extra polish scenes
+  src/scenes/         the menu stage, the ending (scenes/ending), extra polish scenes
   public/assets/      real art + manifest.json
 /maps     Tiled .tmj maps + template + legend
 ```
@@ -204,7 +204,7 @@ tests allow exactly that object, only while it is unburnt. Nothing else may join
 
 Six, one per face, in `shared/src/puzzles` (`PUZZLES` in `index.ts`). Chain: 2 -> 5 -> 6 ->
 4; faces 1 and 3 stand alone. The game is won the moment all six are solved: there is no
-portal and no exit to walk to.
+portal and no exit to walk to. The win plays the ending (see "Ending").
 
 | Face | id | Outside | Inside | Unlocks |
 | --- | --- | --- | --- | --- |
@@ -259,6 +259,53 @@ portal and no exit to walk to.
 The cube in the HUD is drawn by `client/src/cube`. The outside player's is a solid cube;
 the inside player's is drawn as a room, seen from within. Both turn with the compass
 drift. The turtle faces its screen direction and carries an item above its head.
+
+## Ending ("Passed cube 1!", client only)
+
+The win (6/6, decided in `/shared`, `GameState.wonAt` + one `win` event) is not a modal any
+more: the cube opens. The server and the state are untouched.
+
+- **Where.** `client/src/scenes/ending`: `timeline.ts` (PURE, tested in
+  `client/test/ending.test.ts`: phases, hinge angles, camera, both turtles, the layout),
+  `run.ts` (the one piece of state: when it started, whether it was skipped, is the card
+  up), `EndingScene.ts` (a scene of the STAGE, full window, over the backdrop: it only
+  draws what the timeline returns). The title card is DOM: `#cu-win` in `ui/cubicUI.ts`
+  (`.cu-ending` in `ui/css.ts`), on from the moment the game is won, so the input gates
+  treat it as a modal; `.cu[data-ending]` hides the HUD, the top bar and the touch controls.
+- **Drawn** by the cube's software rasterizer (`cube/raster.ts`: `drawQuad`, `drawSprite`,
+  one depth per pixel) into one canvas texture, whole pixels: identical in WebGL and Canvas.
+  The faces are the REAL ones at the win: `GameScene.shots()` paints all twelve
+  (`game/shots.ts`), the outside of each wall and its inside (fully lit, tinted with the
+  biome colour: `DAYLIGHT`). A box opens with its inside up, so the flat net shows the rooms.
+- **Timeline** (ms since the win event; the knobs are the constants at the top of
+  `timeline.ts`): flash 0 to `FLASH_MS` 600 (every face in its biome colour); the lid (face
+  5, hinged on the back wall, face 3) opens at `LID_AT` 800 and the outside turtle jumps off
+  it (`JUMP_MS` 2000, `JUMP_HEIGHT`); the walls fall from `WALL_AT` (front 1700, sides 1900,
+  back 2200), flat at `FLAT_AT` 3700, while the camera turns to the front (`YAW`, `PITCH`)
+  and the inside player's dark lifts; two hops for joy; the circle from `RUN_AT` 4500
+  (`RUN_LAP_MS` 2400, `RUN_RADIUS`); the card at `CARD_AT` 6900, dropped in by
+  `CARD_DROP_MS` 600: `ENDING_MS` 7500. The turtles keep running behind the card. Facing and
+  frames come from `game/turtle.ts` (`playerFrames`, `playerFlip`: left = the walk-right row
+  mirrored).
+- **In sync.** `app.ts` starts the run on the `win` EVENT (online only the server announces
+  it, to both players in one broadcast), never on the mover's predicted state, and the
+  frame is a pure function of the time since then: no randomness, no per-client state. A
+  game found already won (reload, rejoin) has no event: it goes straight to the card.
+- **Skip.** Any key or tap after `SKIP_AFTER_MS` 2000 jumps that player to the card
+  (`endingClock`); before that, and for a held key, nothing. Esc never closes it. On the
+  card Enter = PLAY AGAIN (`onPlayAgain`), MAIN MENU = `onLeaveRoom`, as before.
+- **Reduce motion**: no unfold, no jump, no running: the flat cube, the two turtles side by
+  side and the card, at once (`endingFrame(t, true)`).
+- **Fit.** The stage's own size (`logicalSize`, `sizeCanvas`, `onFit`); `endingLayout(w, h)`
+  puts the sky in the top third and sizes the cube so the open lid and the flat net fit;
+  the scene is rebuilt on a re-fit. The card is at the top, over the sky.
+- **Sound** is what the win always played: the `win` chime and the solved sting. In solo
+  the AI says its banked `win` line as before, with its caption.
+- Dev (`import.meta.env.DEV`): `__cubicEnding()` (what it shows), `__cubicEndingHold(ms |
+  null)` (freeze the timeline), `__cubicEndingReplay()`. Checks and pictures:
+  `tools/screens/ending.ts` (WebGL, Canvas, reduce motion, a phone, a reload; it wins
+  through the dev command), and the playtest's `puzzles` section (a played win: the
+  sequence starts for both, the skip, the card, play again).
 
 ## Biome layer (client only, outside faces)
 

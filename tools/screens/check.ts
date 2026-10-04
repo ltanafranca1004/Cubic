@@ -10,7 +10,7 @@
 // touches nothing: only the menu track (one format) may be downloaded before the first click.
 // heroes land back where they started however fast the sides are switched. And that no
 // click on a DOM overlay reaches another DOM control under it either: the veil over the
-// gear or LEAVE, the controls tab, the side card's GOT IT, COPY, the win screen.
+// gear or LEAVE, the controls tab, the side card's GOT IT, COPY, the ending's title card.
 //
 //   one of the four runs:  SIZE=1920 RENDERER=webgl npx tsx screens/check.ts
 //
@@ -640,12 +640,20 @@ async function run(browser: Browser, size: { width: number; height: number }, re
   }
   await a.keyboard.press('Escape');
   await a.waitForTimeout(300);
-  // the win screen (shown here by hand: nobody has won): its veil and its panel take the click
-  await a.evaluate(() => (document.querySelector('#cu-win') as unknown as { classList: { add(c: string): void } }).classList.add('on'));
-  await a.waitForTimeout(300);
-  await quiet('a click on the win screen veil over LEAVE', async () => mouseClick(a, await middle(a, '#cu-leave')));
-  await quiet('a click on the win screen panel', async () => mouseClick(a, await middle(a, '#cu-win h2')));
-  await a.evaluate(() => (document.querySelector('#cu-win') as unknown as { classList: { remove(c: string): void } }).classList.remove('on'));
+  // the ending's modal with its title card (shown here by hand: nobody has won): it has no veil to see, and still takes every click
+  await a.evaluate(() => {
+    const win = document.querySelector('#cu-win') as unknown as { classList: { add(c: string): void }; dataset: Record<string, string> };
+    win.classList.add('on');
+    win.dataset.phase = 'card';
+  });
+  await a.waitForTimeout(900);
+  await quiet('a click on the ending over LEAVE', async () => mouseClick(a, await middle(a, '#cu-leave')));
+  await quiet('a click on the title of the ending', async () => mouseClick(a, await middle(a, '#cu-win h2')));
+  await a.evaluate(() => {
+    const win = document.querySelector('#cu-win') as unknown as { classList: { remove(c: string): void }; dataset: Record<string, string> };
+    win.classList.remove('on');
+    win.dataset.phase = 'play';
+  });
   await a.waitForTimeout(300);
   await quiet('a click in the chat field', async () => mouseClick(a, await middle(a, '#cu-chat')));
   await a.keyboard.press('Escape');

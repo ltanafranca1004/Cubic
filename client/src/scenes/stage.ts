@@ -8,14 +8,17 @@ import type { UIActions, UIState } from '../ui/hooks';
 import { BackdropScene } from './BackdropScene';
 import { BootScene } from './BootScene';
 import { CubeBackdropScene } from './CubeBackdropScene';
+import { EndingScene } from './ending/EndingScene';
+import { ending } from './ending/run';
 import { Flow, UI_EVENT, type Screen, type StageContext } from './flow';
 import { ModeScene } from './ModeScene';
 import { SideSelectScene } from './SideSelectScene';
 import { StartScene } from './StartScene';
 
 // THE STAGE: one full-window Phaser canvas behind the DOM UI. It runs the menu scenes
-// (start, mode, side select) over the turning cube, and the backdrop behind the in-game HUD. The game itself
-// stays in its own small canvas (client/src/game), drawn at the same pixel scale.
+// (start, mode, side select) over the turning cube, the backdrop behind the in-game HUD, and
+// over that backdrop the ending once the game is won (scenes/ending). The game itself stays
+// in its own small canvas (client/src/game), drawn at the same pixel scale.
 
 export interface Stage {
   update(state: UIState): void;
@@ -42,7 +45,7 @@ export function createStage(parent: HTMLElement, actions: UIActions, initial: UI
     // field) as a press on the canvas button that happens to be behind it.
     input: { windowEvents: false },
     // drawn in this order: the cube is under every menu
-    scene: [BootScene, CubeBackdropScene, StartScene, ModeScene, SideSelectScene, BackdropScene],
+    scene: [BootScene, CubeBackdropScene, StartScene, ModeScene, SideSelectScene, BackdropScene, EndingScene],
   });
 
   const ctx: StageContext = { actions, state: initial, flow: null as unknown as Flow };
@@ -72,15 +75,31 @@ export function createStage(parent: HTMLElement, actions: UIActions, initial: UI
   const fitOff = onFit(fit);
   game.events.once(Phaser.Core.Events.READY, fit); // the window may have changed while Phaser booted
 
+  // The ending plays over the in-game backdrop from the moment its run starts (the win
+  // event), and is gone with it (play again, leave).
+  let endingOn = false;
+  const syncEnding = () => {
+    const on = !!ending.current && ctx.flow.current === 'backdrop';
+    if (on === endingOn) return;
+    endingOn = on;
+    if (on) {
+      game.scene.run('ending');
+      game.scene.bringToTop('ending');
+    } else game.scene.stop('ending');
+  };
+  const endingOff = ending.onChange(syncEnding);
+
   return {
     update(state) {
       ctx.state = state;
       game.events.emit(UI_EVENT, state);
       ctx.flow.route();
+      syncEnding();
     },
     screen: () => ctx.flow.current,
     destroy() {
       fitOff();
+      endingOff();
       ctx.flow.destroy();
       game.destroy(true);
     },

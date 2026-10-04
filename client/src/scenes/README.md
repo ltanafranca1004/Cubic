@@ -18,6 +18,7 @@ it and feeds it the `UIState`. Design: [docs/menu-design.md](../../../docs/menu-
 | `ModeScene.ts` | Create / Join / Play with AI on a panel beside the cube, and the join popup. |
 | `SideSelectScene.ts` | Pick a side, ready, start. Draws `UIState.lobby`, nothing else. |
 | `BackdropScene.ts` | Behind the in-game HUD: the sky outside, the dark inside. |
+| `ending/` | The ending, "Passed cube 1!": the won cube opens into its net on the grass, over the backdrop (key `ending`). `timeline.ts` is pure (every number of the sequence, tested in `client/test/ending.test.ts`), `run.ts` is when it started and whether it was skipped, `EndingScene.ts` draws it with `client/src/cube`'s rasterizer. `stage.ts` runs it while a run is on; the title card is DOM (`ui/cubicUI.ts`). See "Ending" in the root `CLAUDE.md`. |
 | `clouds.ts` | The sky and its four cloud layers. |
 | `kit.ts` | Text, 9-slice panels, buttons, shake and hop, for all the scenes above. |
 

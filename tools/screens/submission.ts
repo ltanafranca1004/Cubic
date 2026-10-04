@@ -11,6 +11,12 @@
 //   game-inside-lava.png                 face 6 inside: half way over the hot lava
 //   mobile.png                           a phone held sideways (touch layout), the offline game
 //
+// docs/submission/ending.png (the title card of the ending, "Passed cube 1!") is not made
+// here: a game has to be played to its win for it. It is the outside player's card picture
+// of the playtest, at this size and in this renderer:
+//   cd tools && RENDERER=canvas SIZE=1920x1080 GIF=0 npx tsx screens/playtest.ts puzzles
+//   then copy <OUT>/ending-canvas-outside-6-card.png
+//
 // In docs/submission/: game-outside.png = game-outside.png, game-inside.png =
 // game-inside-vault.png, title.png and title-thumb.png = <n> 3 (grass, rooftop, desert).
 //

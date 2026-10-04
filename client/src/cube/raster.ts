@@ -128,7 +128,7 @@ export function drawCube(t: Target, faces: CubeFaces, m: Mat3, o: DrawOptions): 
  * One pixel of ink wherever two faces meet and all around the silhouette. Each boundary
  * is inked on one side only, so an inner edge is one pixel wide, not two.
  */
-function outline(t: Target, ink: number): void {
+export function outline(t: Target, ink: number): void {
   const { width, height, px, id } = t;
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
@@ -227,4 +227,149 @@ export function drawRoom(t: Target, faces: CubeFaces, m: Mat3, o: RoomOptions): 
     }
   }
   if (o.ink !== null) outline(t, o.ink);
+}
+
+// THE CUBE COMING APART (the ending, scenes/ending). The same texels, shade and ink, but
+// every face is a quad of its own, anywhere in space, seen from either side, and a depth
+// per pixel decides what is in front: faces on hinges pass in front of each other in ways
+// a painter's order cannot follow. Sprites (the turtles) go into the same depth.
+
+export interface DepthTarget extends Target {
+  /** How near the camera each pixel is (larger = nearer); -Infinity where nothing is drawn. */
+  depth: Float32Array;
+}
+
+export function createDepthTarget(width: number, height: number): DepthTarget {
+  return { ...createTarget(width, height), depth: new Float32Array(width * height).fill(-Infinity) };
+}
+
+export function clearDepthTarget(t: DepthTarget): void {
+  clearTarget(t);
+  t.depth.fill(-Infinity);
+}
+
+/** One face in SCREEN space (the view already applied): x right, y up, z to the viewer, in half edges. */
+export interface Quad {
+  /** What the outline tells apart (a face number). */
+  id: number;
+  /** Its centre, its half edges (texture right, texture up) and its outer normal. */
+  c: V3;
+  r: V3;
+  u: V3;
+  n: V3;
+  /** The texture of its outer side, and of the side seen from behind (the same layout: it shows mirrored). */
+  tex: FaceTex;
+  back?: FaceTex;
+  /** Mix this colour (packed) into every texel, by `amount` 0..1. */
+  tint?: number;
+  amount?: number;
+}
+
+/** Draw one quad, either side, where it is nearer than what is there. */
+export function drawQuad(t: DepthTarget, quad: Quad, o: Pick<DrawOptions, 'cx' | 'cy' | 'half' | 'light' | 'ambient'>): void {
+  const { width, height, px, id, depth } = t;
+  const { c, r, u, n } = quad;
+  const front = n[2] >= 0;
+  const tex = front ? quad.tex : (quad.back ?? quad.tex);
+  const size = tex.size;
+  const cx = o.cx + c[0] * o.half;
+  const cy = o.cy - c[1] * o.half;
+  const ax = r[0] * o.half;
+  const ay = -r[1] * o.half;
+  const bx = u[0] * o.half;
+  const by = -u[1] * o.half;
+  const d = ax * by - ay * bx;
+  if (Math.abs(d) < 1e-6) return; // edge on
+  const ex = Math.abs(ax) + Math.abs(bx);
+  const ey = Math.abs(ay) + Math.abs(by);
+  const x0 = Math.max(0, Math.floor(cx - ex));
+  const x1 = Math.min(width - 1, Math.ceil(cx + ex));
+  const y0 = Math.max(0, Math.floor(cy - ey));
+  const y1 = Math.min(height - 1, Math.ceil(cy + ey));
+  const k = Math.round(shadeOf(front ? n : [-n[0], -n[1], -n[2]], o.light, o.ambient) * 256);
+  const mix = Math.round(Math.max(0, Math.min(1, quad.amount ?? 0)) * 256);
+  const tint = quad.tint ?? 0;
+  const tr = tint & 0xff;
+  const tg = (tint >> 8) & 0xff;
+  const tb = (tint >> 16) & 0xff;
+  for (let y = y0; y <= y1; y++) {
+    const dy = y + 0.5 - cy;
+    for (let x = x0; x <= x1; x++) {
+      const dx = x + 0.5 - cx;
+      const p = (dx * by - dy * bx) / d;
+      if (p < -1 || p > 1) continue;
+      const q = (ax * dy - ay * dx) / d;
+      if (q < -1 || q > 1) continue;
+      const i = y * width + x;
+      const z = c[2] + p * r[2] + q * u[2];
+      if (z <= depth[i]!) continue;
+      let tu = Math.floor((p + 1) * 0.5 * size);
+      let tv = Math.floor((1 - q) * 0.5 * size);
+      if (tu >= size) tu = size - 1;
+      if (tv >= size) tv = size - 1;
+      const texel = tex.px[tv * size + tu]!;
+      let cr = texel & 0xff;
+      let cg = (texel >> 8) & 0xff;
+      let cb = (texel >> 16) & 0xff;
+      if (mix > 0) {
+        cr += ((tr - cr) * mix) >> 8;
+        cg += ((tg - cg) * mix) >> 8;
+        cb += ((tb - cb) * mix) >> 8;
+      }
+      if (k < 256) {
+        cr = (cr * k) >> 8;
+        cg = (cg * k) >> 8;
+        cb = (cb * k) >> 8;
+      }
+      px[i] = (0xff000000 | (cb << 16) | (cg << 8) | cr) >>> 0;
+      id[i] = quad.id;
+      depth[i] = z;
+    }
+  }
+}
+
+/** A sprite's pixels (packed like a FaceTex), `width` x `height`. */
+export interface SpritePx {
+  width: number;
+  height: number;
+  px: Uint32Array;
+}
+
+/**
+ * Draw a sprite upright with its top-left at (x, y), all of it at one depth: it shows
+ * where nothing nearer is. `flip` mirrors it left to right; `scale` (a whole number) is
+ * how many target pixels one of its pixels takes.
+ */
+export function drawSprite(t: DepthTarget, sprite: SpritePx, x: number, y: number, z: number, flip = false, scale = 1): void {
+  const { width, height, px, depth } = t;
+  for (let dy = 0; dy < sprite.height * scale; dy++) {
+    const ty = y + dy;
+    if (ty < 0 || ty >= height) continue;
+    const sy = Math.floor(dy / scale);
+    for (let dx = 0; dx < sprite.width * scale; dx++) {
+      const tx = x + dx;
+      if (tx < 0 || tx >= width) continue;
+      const sx = Math.floor(dx / scale);
+      const c = sprite.px[sy * sprite.width + (flip ? sprite.width - 1 - sx : sx)]!;
+      if (c >>> 24 < 128) continue;
+      const i = ty * width + tx;
+      if (z < depth[i]!) continue;
+      px[i] = (c | 0xff000000) >>> 0;
+      depth[i] = z;
+    }
+  }
+}
+
+/** Darken a box of pixels that are already drawn and not nearer than `z` (a shadow on the ground). `keep` 0..1 of the light stays. */
+export function shadeBox(t: DepthTarget, x: number, y: number, w: number, h: number, z: number, keep: number): void {
+  const { width, height, px, depth } = t;
+  const k = Math.round(keep * 256);
+  for (let ty = Math.max(0, y); ty < Math.min(height, y + h); ty++) {
+    for (let tx = Math.max(0, x); tx < Math.min(width, x + w); tx++) {
+      const i = ty * width + tx;
+      const c = px[i]!;
+      if (c >>> 24 === 0 || depth[i]! > z) continue;
+      px[i] = (0xff000000 | ((((c >> 16) & 0xff) * k) >> 8 << 16) | ((((c >> 8) & 0xff) * k) >> 8 << 8) | (((c & 0xff) * k) >> 8)) >>> 0;
+    }
+  }
 }

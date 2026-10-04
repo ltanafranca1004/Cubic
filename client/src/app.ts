@@ -25,6 +25,8 @@ import { heardSfx } from './audio/hearing';
 import { createGameView, type GameHandle } from './game';
 import { sfx } from './game/sfx';
 import { Net } from './net/client';
+import { ending } from './scenes/ending/run';
+import { settings } from './style/settings';
 import { setPartnerLevel, showCaption } from './ui/captions';
 import { chatText, type HudState, type LobbyState, type UIActions, type UIHandle, type UIHost, type UIState } from './ui/hooks';
 import { mountOnboarding } from './ui/onboarding';
@@ -86,6 +88,8 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
         if (net.side && net.state) for (const id of heardSfx(events, net.side, net.state, (key) => key in sfx)) audio.playSfx(id);
         if (events.some((e) => e.type === 'solve')) audio.playSfx('solved');
         game?.handle(events);
+        // The one win event (online it comes from the server, to both players at once): the ending starts here.
+        if (events.some((e) => e.type === 'win')) ending.won(settings().reduceMotion);
       },
       onChat: () => {},
       onQuick: (quick) => {

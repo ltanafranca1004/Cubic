@@ -1,7 +1,7 @@
 import { asset, ICONS } from '../style/assets';
 import { C, FACE_HUD, ROLE, VIEW, textOn } from '../style/tokens';
 
-// The stylesheet of the DOM UI (HUD, chat, voice, settings, pause, win screen).
+// The stylesheet of the DOM UI (HUD, chat, voice, settings, pause, the ending's title card).
 // Sizes are written in ART PIXELS with two units, both turned into calc() by `units`:
 //   "4u" = four art pixels at the UI scale       calc(4px * var(--u))
 //          --u is the whole-number UI scale (style/scale.ts: uiScale in the menus, hudScale
@@ -278,12 +278,25 @@ ${ICONS.map((name, i) => `.cu-ico.${name} { background-position: -${i * 16}u 0; 
 .cu-title { text-align: center; margin: 0 0 4t; }
 .cu-actions { display: flex; justify-content: center; gap: 6t; margin-top: 4t; }
 
-/* the win screen: the title, the time, then leave or play again */
-.cu-win { width: max(216u, 216t); text-align: center; padding: 4t 4t 6t; }
-.cu-win h2 { font: 32t/26t "m5x7", monospace; margin: 0 0 6t; color: ${ROLE.portalDark}; font-weight: normal; }
-.cu-win p { margin: 0; }
-.cu-wintime { display: block; font: 32t/26t "m5x7", monospace; font-weight: normal; margin: 0 0 4t; }
-.cu-win .cu-actions { margin-top: 8t; }
+/* THE ENDING ("Passed cube 1!"). The sequence plays on the stage (scenes/ending) with the
+   HUD out of the way; this modal is on from the moment the game is won, so the game takes
+   no keys, and has no veil: the scene is what is looked at. The card (title, time,
+   strikes, main menu or play again) is not there until the run says so (data-phase), then
+   drops in at the top, over the sky. It only MOVES, like every panel. */
+/* (hidden, not faded: the HUD's own fade-in animation holds its opacity, and the game canvas sets its own visibility) */
+.cu[data-ending] :is(.cu-hud, .cu-top, .cu-m, .cu-onb), .cu[data-ending] :is(.cu-hud, .cu-top, .cu-m, .cu-onb) * { visibility: hidden !important; }
+.cu-modal.cu-ending { background: none; align-items: flex-start; }
+.cu-ending[data-phase="play"] .cu-win { display: none; }
+.cu-win { display: flex; flex-direction: column; align-items: center; gap: 5t; max-width: 100%; padding: 8u 4u 0; text-align: center; animation: cu-ending-drop 0.6s steps(15) both; }
+@keyframes cu-ending-drop { 0% { transform: translateY(calc(-100% - 8u)); } 70% { transform: translateY(3u); } 100% { transform: none; } }
+/* big pixel text on the sky: paper with an ink edge one font pixel wide, and a shadow under it */
+.cu-win h2 {
+  font: 48t/34t "m5x7", monospace; margin: 0; color: ${ROLE.paper}; font-weight: normal; white-space: nowrap;
+  text-shadow: 3t 0 ${ROLE.ink}, -3t 0 ${ROLE.ink}, 0 3t ${ROLE.ink}, 0 -3t ${ROLE.ink}, 3t 3t ${ROLE.ink}, -3t 3t ${ROLE.ink}, 3t -3t ${ROLE.ink}, -3t -3t ${ROLE.ink}, 0 6t ${ROLE.ink}, 3t 6t ${ROLE.ink}, -3t 6t ${ROLE.ink};
+}
+.cu-winbox { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 3t 8t; padding: 2t 4t; }
+.cu-winstats { display: flex; gap: 2u; }
+.cu-win .cu-actions { margin: 0; }
 
 /* ---------- settings: three tabs in one box, two columns of rows each ---------- */
 .cu-settings { width: min(calc(var(--vw, 100vw) - 12u), max(448u, 448t)); display: flex; flex-direction: column; gap: 3t; padding: 2t 4t 4t; }
@@ -396,7 +409,7 @@ ${focusRule()} {
 .cu[data-contrast="high"] .cu-set.off label { text-decoration: line-through; }
 .cu[data-contrast="high"] .cu-field::placeholder { color: ${ROLE.ink}; }
 .cu[data-contrast="high"] .cu-btn:disabled { color: ${ROLE.ink}; text-decoration: line-through; }
-.cu[data-contrast="high"] .cu-log b, .cu[data-contrast="high"] .cu-edge.done, .cu[data-contrast="high"] .cu-side, .cu[data-contrast="high"] .cu-prog b, .cu[data-contrast="high"] .cu-stat.x, .cu[data-contrast="high"] .cu-warn, .cu[data-contrast="high"] .cu-win h2, .cu[data-contrast="high"] .cu-onb-card h3 b { color: inherit; }
+.cu[data-contrast="high"] .cu-log b, .cu[data-contrast="high"] .cu-edge.done, .cu[data-contrast="high"] .cu-side, .cu[data-contrast="high"] .cu-prog b, .cu[data-contrast="high"] .cu-stat.x, .cu[data-contrast="high"] .cu-warn, .cu[data-contrast="high"] .cu-onb-card h3 b { color: inherit; }
 .cu[data-contrast="high"] .cu-log b, .cu[data-contrast="high"] .cu-onb-card h3 b { text-decoration: underline; }
 /* the tags (room code, time, banner, captions, bubbles): white on ink or ink on white, with an edge */
 .cu[data-contrast="high"] .cu-room .k, .cu[data-contrast="high"] .cu-room .v, .cu[data-contrast="high"] .cu-banner, .cu[data-contrast="high"] .cu-caption b { color: inherit; }

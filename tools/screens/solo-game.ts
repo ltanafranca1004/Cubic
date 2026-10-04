@@ -1,5 +1,5 @@
 // A WHOLE SOLO GAME in a real browser: PLAY SOLO as OUTSIDE through the mode screen and the
-// side popup, then the six puzzles to the win screen with the AI partner INSIDE, played as
+// side popup, then the six puzzles to the ending and its title card with the AI partner INSIDE, played as
 // a person would: arrow keys to walk, E to use / pick up / plant, and the chat box for
 // everything the human tells the AI. The order is 1, 3, 2, 5, 6, 4 (the chain is 2 -> 5 ->
 // 6 -> 4).
@@ -24,7 +24,7 @@
 // Per puzzle one PASS / FAIL line with the game time and the strikes, then every chat line.
 // It also reports three things only a browser shows: how the AI's lines were voiced (tts,
 // tts:chain or the browser voice), what was said after a strike, and whether every caption
-// fitted its box. Exit code 1 if the win screen was not reached.
+// fitted its box. Exit code 1 if the title card of the ending was not reached.
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { chromium, type Page } from 'playwright';
@@ -86,6 +86,8 @@ interface Snap {
   caption: string;
   typing: boolean;
   win: boolean;
+  /** The ending's title card is up ("Passed cube 1!"). */
+  card: boolean;
 }
 interface CaptionSeen {
   text: string;
@@ -120,7 +122,8 @@ const snap = (page: Page) =>
         clock: document.querySelector('#cu-clock')?.textContent ?? '',
         caption: cap && !cap.hidden ? cap.textContent ?? '' : '',
         typing: document.activeElement instanceof HTMLInputElement,
-        win: !!document.querySelector('#cu-win')?.classList.contains('on') };
+        win: !!document.querySelector('#cu-win')?.classList.contains('on'),
+        card: document.querySelector('#cu-win')?.dataset.phase === 'card' };
     })()`,
   );
 const labels = (page: Page) => js<string>(page, `typeof window.__cubicButtons === 'function' ? window.__cubicButtons().map((b) => b.label).sort().join('|') : ''`);
@@ -646,14 +649,20 @@ try {
     if (error) throw new Error(`face ${step.face} ${step.id}: ${error}`);
   }
 
-  await player.until('the win screen (#cu-win)', 15_000, () => player.last.win && player.state.wonAt !== null);
-  await sleep(1200);
+  await player.until('the win (#cu-win)', 15_000, () => player.last.win && player.state.wonAt !== null);
+  // the ending plays (the AI's turtle is the other one in it), then its title card drops in
+  await sleep(2600);
+  await page.screenshot({ path: `${OUT}ending.png` });
+  await player.until('the title card of the ending', 12_000, () => player.last.card);
+  await sleep(1200); // the card has dropped in; the AI's last words
   await page.screenshot({ path: `${OUT}win.png` });
-  await sleep(4000); // the AI's last words
   await player.look();
   const all = player.log;
+  const title = await js<string>(page, `document.querySelector('#cu-win h2')?.textContent ?? ''`);
   const winTime = await js<string>(page, `document.querySelector('#cu-wintime')?.textContent ?? ''`);
-  say(`PASS  the win screen  escaped in ${winTime}  strikes ${player.state.strikes}  chat: you ${all.filter((l) => l.who === 'YOU').length}, AI ${all.filter((l) => l.who === 'AI').length}`);
+  const winStrikes = await js<string>(page, `document.querySelector('#cu-wintxt')?.textContent ?? ''`);
+  if (title !== 'Passed cube 1!' || !/^\d+:\d\d$/.test(winTime)) throw new Error(`the title card says "${title}", "${winTime}", "${winStrikes}"`);
+  say(`PASS  the ending  "${title}" in ${winTime}, ${winStrikes}  strikes ${player.state.strikes}  chat: you ${all.filter((l) => l.who === 'YOU').length}, AI ${all.filter((l) => l.who === 'AI').length}`);
 } catch (e) {
   failed = true;
   say(`FAIL  ${e instanceof Error ? e.message.split('\n')[0] : String(e)}`);

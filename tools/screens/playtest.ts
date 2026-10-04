@@ -2,13 +2,15 @@
 // PASS / FAIL steps. It is the regression pass for "does the whole game still work":
 // the full lobby flow, every face and every edge on both sides, items, chat, pause,
 // settings, the map, leave / rejoin / refresh, every co-op puzzle solved for real, the
-// win screen, and then a section that tries to break it.
+// ending ("Passed cube 1!") and its title card, and then a section that tries to break it.
 //
 // One Chromium, one browser context per player (A creates the room and plays OUTSIDE, B
 // joins with the code and plays INSIDE, C is the stranger who tries to get in).
 // Every action is page.keyboard or page.mouse. window.__cubic and window.__cubicButtons
 // are only READ: to assert, to find where a canvas button is, and to plan a walk.
-// No ?dev, no ?mock, no DEV_COMMANDS.
+// No ?dev, no ?mock, no DEV_COMMANDS. (One exception, for pictures only: once the game is
+// won, the ending is played again and held at fixed moments through its dev hook, so the
+// pictures of it are the same every run. It changes nothing but what is drawn.)
 //
 //   server:  PORT=3310 npm run dev -w server
 //   client:  VITE_SERVER_URL=http://localhost:3310 npm run dev -w client -- --port 5410
@@ -22,6 +24,7 @@
 //   OUT        folder for screenshots, GIFs and results.json
 //              (default <REPO>/docs/status/playtest/, REPO = this checkout unless set)
 //   GIF=0      skip the puzzle GIFs (they need ffmpeg on the PATH, or FFMPEG=/path)
+//   SIZE       the window of every player (default 1280x720)
 //
 // Exit code 1 if any step fails. A failed step saves a picture of every player.
 //
@@ -38,6 +41,7 @@
 //
 // NEW PUZZLE? Add one entry to PUZZLE_SCRIPTS below. The run fails if a puzzle registered
 // in shared/src/puzzles/index.ts has no entry.
+import { ENDING_CARD_MOMENT, endingShots, endingState } from './play';
 import { SILENCE } from './quiet';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -411,7 +415,9 @@ const BASE = process.env.BASE ?? 'http://localhost:5410';
 const REPO = resolve(process.env.REPO ?? new URL('../../', import.meta.url).pathname);
 const OUT = resolve(process.env.OUT ?? join(REPO, 'docs/status/playtest')) + '/';
 const FFMPEG = process.env.FFMPEG ?? 'ffmpeg';
-const SIZE = { width: 1280, height: 720 };
+/** The window of every player. `SIZE=1920x1080` for the pictures of docs/submission. */
+const [SIZE_W, SIZE_H] = (process.env.SIZE ?? '1280x720').split('x').map(Number);
+const SIZE = { width: SIZE_W || 1280, height: SIZE_H || 720 };
 /** Key pacing: one tap per step of the walking pace (STEP_MS in shared/src/pace.ts). The server allows a burst of 5 moves, then one per 90 ms. */
 /** A face transition (roll 500 ms, hop 400 ms) and a little air. */
 const FLIP_MS = 650;
@@ -1759,33 +1765,100 @@ async function puzzles(run: Run): Promise<void> {
 
   const finale: PuzzleResult = { renderer: run.renderer, id: 'finale', completed: false, stuck: '' };
   puzzleResults.push(finale);
-  await step(run, 'finale: the last puzzle wins the game; the win screen shows for both', async () => {
+  /** The win modal of a page: is it on, and is its title card showing yet? */
+  const card = (page: Page) =>
+    js<{ on: boolean; phase: string; title: string; focus: string; shown: boolean }>(
+      page,
+      `(() => { const w = document.querySelector('#cu-win'); const box = w.querySelector('.cu-win').getBoundingClientRect(); return { on: w.classList.contains('on'), phase: w.dataset.phase, title: w.querySelector('h2').textContent, focus: document.activeElement?.id ?? '', shown: box.width > 0 && box.top >= 0 && box.right <= innerWidth + 1 }; })()`,
+    );
+  await step(run, 'finale: the last puzzle wins the game; the ending starts for both players', async () => {
     try {
       const all = PUZZLES.map((p) => p.face);
       const state = await stateOf(a);
       check(all.every((f) => state.solved.includes(f)), `solved faces are [${state.solved}], the win needs [${all}]`);
       // no portal to walk to: the game is won the moment the last face is solved
       await until('the game is won on both clients', async () => (await stateOf(a)).wonAt !== null && (await stateOf(b)).wonAt !== null);
-      await until('the win screen on both', async () => (await snap(a)).modal === 'cu-win' && (await snap(b)).modal === 'cu-win');
-      const shown = (await text(a, '#cu-wintime')) ?? '';
-      check(/^\d+:\d\d$/.test(shown) && (await text(b, '#cu-wintime')) === shown, `the win screens show "${shown}" and "${await text(b, '#cu-wintime')}"`);
-      await a.waitForTimeout(400);
+      await until('the win modal on both', async () => (await snap(a)).modal === 'cu-win' && (await snap(b)).modal === 'cu-win');
+      await until('the ending playing on both', async () => (await endingState(a)).run !== null && (await endingState(b)).run !== null);
+      // both started from the same win event: read one right after the other, they are at the same point
+      const ea = await endingState(a);
+      const eb = await endingState(b);
+      check(ea.phase !== 'card' && eb.phase !== 'card' && ea.run!.skippedAt === null && eb.run!.skippedAt === null, `the sequence is not playing from its start (outside ${ea.phase}, inside ${eb.phase})`);
+      check(Math.abs(eb.t! - ea.t!) < 500, `the two are ${Math.round(eb.t! - ea.t!)} ms apart`);
+      check(ea.faces === 'game' && eb.faces === 'game', "the cube of the ending is not made of the game's own faces");
+      check((await card(a)).phase === 'play' && (await card(b)).phase === 'play', 'the title card is up before the sequence has played');
       await shots(run, `${tag}-win`);
       finale.completed = true;
-      return `Escaped in ${shown}; ${(await text(a, '#cu-wintxt')) ?? ''}`;
+      return `outside at ${Math.round(ea.t!)} ms, inside at ${Math.round(eb.t!)} ms`;
     } catch (e) {
       finale.stuck = e instanceof Error ? e.message : String(e);
       throw e;
     }
   });
-  await step(run, 'win: the game takes no more keys, and Esc does not close the win screen', async () => {
+  await step(run, 'ending: a key in the first 2 s does nothing, a key after 2 s skips to the title card', async () => {
+    const before = await stateOf(a);
+    const early = (await endingState(a)).elapsed ?? 0;
+    await a.keyboard.press('Enter');
+    const pressed = (await endingState(a)).elapsed ?? 0;
+    // (only a press that surely fell inside the two seconds says anything)
+    if (pressed < 2000) check((await card(a)).phase === 'play', `a key at ${Math.round(pressed)} ms skipped`);
+    await until('two seconds of the sequence', async () => ((await endingState(a)).elapsed ?? 0) > 2050, 4000);
+    await a.keyboard.press('d');
+    await until('the title card on A', async () => (await card(a)).phase === 'card' && (await endingState(a)).phase === 'card', 1000);
+    check((await endingState(a)).run!.skippedAt !== null, 'A did not skip');
+    check(same((await stateOf(a)).players, before.players), 'the key that skipped also moved a player');
+    // the skip is A's own: B goes on watching, and gets the card when the sequence is over
+    const eb = await endingState(b);
+    if ((eb.elapsed ?? 0) < 6000) check((await card(b)).phase === 'play' && eb.run!.skippedAt === null, "A's skip also skipped B");
+    await until('the title card on B, by itself', async () => (await card(b)).phase === 'card', 9000);
+    check((await endingState(b)).run!.skippedAt === null, 'B skipped');
+    return `first key at ${Math.round(early)} to ${Math.round(pressed)} ms`;
+  });
+  await step(run, 'ending: the title card says "Passed cube 1!" with the time and the strikes, for both', async () => {
+    await a.waitForTimeout(800); // the card has dropped in
+    for (const [who, page] of [['outside', a], ['inside', b]] as const) {
+      const c = await card(page);
+      check(c.on && c.shown && c.title === 'Passed cube 1!', `${who}: the card is ${JSON.stringify(c)}`);
+      check(c.focus === 'cu-again', `${who}: Enter is not on PLAY AGAIN (focus on "${c.focus}")`);
+    }
+    const shown = (await text(a, '#cu-wintime')) ?? '';
+    const strikes = (await text(a, '#cu-wintxt')) ?? '';
+    check(/^\d+:\d\d$/.test(shown) && (await text(b, '#cu-wintime')) === shown, `the cards show "${shown}" and "${await text(b, '#cu-wintime')}"`);
+    const state = await stateOf(a);
+    check(strikes === `${state.strikes} strike${state.strikes === 1 ? '' : 's'}` && (await text(b, '#cu-wintxt')) === strikes, `the cards show "${strikes}" and "${await text(b, '#cu-wintxt')}" for ${state.strikes} strikes`);
+    check(((await text(a, '#cu-winleave')) ?? '').trim() === 'Main menu' && ((await text(a, '#cu-again')) ?? '').trim() === 'Play again', 'the buttons are not MAIN MENU and PLAY AGAIN');
+    await shots(run, `${tag}-card`);
+    return `Passed cube 1! in ${shown}, ${strikes}`;
+  });
+  await step(run, 'win: the game takes no more keys, and Esc does not close the title card', async () => {
     const before = await stateOf(a);
     await press(a, 'w', 'a', 'e', 'Escape', 'Tab');
     await press(b, 's', 'd', 'Escape');
     await a.waitForTimeout(300);
     check(same((await stateOf(a)).players, before.players), 'a player moved after the win');
-    check((await snap(a)).modal === 'cu-win' && (await snap(b)).modal === 'cu-win', 'the win screen closed');
+    check((await stateOf(a)).wonAt === before.wonAt && (await stateOf(a)).startedAt === before.startedAt, 'a key started a new game');
+    check((await snap(a)).modal === 'cu-win' && (await snap(b)).modal === 'cu-win', 'the win modal closed');
+    check((await card(a)).phase === 'card' && (await card(b)).phase === 'card', 'the title card went away');
     await synced([a, b], 'after the win');
+  });
+  await step(run, 'ending: pictures of the sequence for both players (flash, unfold, jump, landing, running)', async () => {
+    // for the pictures only: played again and held at fixed moments (the dev hook of the scene)
+    for (const [who, page] of [['outside', a], ['inside', b]] as const) await endingShots(page, (name) => `${OUT}ending-${run.renderer}-${who}-${name}.png`);
+    // ... which leaves it playing from its start: skip to the card again, with a real key
+    for (const page of [a, b]) {
+      await until('two seconds of the sequence', async () => ((await endingState(page)).elapsed ?? 0) > 2050, 4000);
+      await page.keyboard.press(' ');
+      await until('the title card', async () => (await card(page)).phase === 'card', 1000);
+    }
+    await a.waitForTimeout(800);
+    // the card, with the turtles held at one moment of their lap (apart, left and right of the middle)
+    for (const [who, page] of [['outside', a], ['inside', b]] as const) {
+      await js(page, `window.__cubicEndingHold(${ENDING_CARD_MOMENT})`);
+      await page.waitForTimeout(300);
+      await page.screenshot({ path: `${OUT}ending-${run.renderer}-${who}-6-card.png` });
+      await js(page, 'window.__cubicEndingHold(null)');
+    }
+    return `ending-${run.renderer}-*.png`;
   });
   await step(run, 'win: Play again (mouse) starts a fresh game for both, same sides', async () => {
     const before = (await stateOf(a)).startedAt;
