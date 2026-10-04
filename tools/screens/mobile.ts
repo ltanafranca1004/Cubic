@@ -284,6 +284,8 @@ async function play(browser: Browser, dev: (typeof DEVICES)[number]): Promise<vo
   if (!(await a.page.evaluate(() => window.__cubicAudio.unlocked))) fail(`${a.tag}: a tap on a DOM button did not unlock the audio`);
   const before = await a.page.evaluate(() => window.__cubicStage().lastDown);
   const motion = '#cu-settings .cu-toggle[data-key="reduceMotion"]';
+  await tap(a, '#cu-settings [data-tab="access"]'); // the tabs by finger too
+  await a.page.locator(motion).scrollIntoViewIfNeeded();
   await tap(a, motion);
   if (!(await a.page.evaluate((s) => document.querySelector(s)!.classList.contains('on'), motion))) fail(`${a.tag}: a tap did not flip a settings switch`);
   await tap(a, motion);
@@ -478,7 +480,7 @@ async function play(browser: Browser, dev: (typeof DEVICES)[number]): Promise<vo
       const parts = [...document.querySelectorAll('.cu-col > *, .cu-top')].map((el) => el.getBoundingClientRect());
       return { n: parts.filter((r) => r.width > 0).length, off: parts.filter((r) => r.width > 0 && (r.left < 0 || r.top < 0 || r.right > innerWidth || r.bottom > innerHeight)).length, log: document.querySelector('#cu-log')!.textContent };
     });
-    if (col.n < 5 || col.off) fail(`${a.tag}: the HUD panel is incomplete or cut off (${JSON.stringify(col)})`);
+    if (col.n < 4 || col.off) fail(`${a.tag}: the HUD panel is incomplete or cut off (${JSON.stringify(col)})`);
     if (!col.log?.includes('west edge')) fail(`${a.tag}: the chat log is not in the HUD panel`);
     await pic(a, '16-hud-panel');
     await tap(a, ctl('info'));

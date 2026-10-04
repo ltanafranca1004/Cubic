@@ -1,4 +1,5 @@
 import { dpadDir } from './dpad';
+import { sendAction, type BindAction } from './bindings';
 import type { Dir } from './keymap';
 
 // TOUCH. Like the gamepad (./gamepad.ts), the on-screen controls have no code paths of
@@ -9,34 +10,16 @@ import type { Dir } from './keymap';
 /** Fired on the window by the join popup (scenes/ModeScene.ts): detail true when it opens, false when it closes. */
 export const CODEPAD_EVENT = 'cubic:codepad';
 
-export type TouchAction = Dir | 'interact' | 'drop' | 'talk' | 'mute' | 'map' | 'pause' | 'quick1' | 'quick2' | 'quick3' | 'quick4';
-
-/** The DEFAULT key of every action. Arrows and Escape are fixed; the rest are the default bindings. */
-const DEFAULT_KEY: Record<TouchAction, string> = {
-  up: 'ArrowUp',
-  down: 'ArrowDown',
-  left: 'ArrowLeft',
-  right: 'ArrowRight',
-  interact: 'e',
-  drop: 'q',
-  talk: 'v',
-  mute: 'm',
-  map: 'Tab',
-  pause: 'Escape',
-  quick1: '1',
-  quick2: '2',
-  quick3: '3',
-  quick4: '4',
-};
+export type TouchAction = BindAction | 'pause';
 
 /**
- * THE ONE PLACE a touch becomes a key. A synthetic event (isTrusted is false) is always
- * read with the default bindings, so this keeps working when the keyboard is rebound.
- * Never send the live bound key from here.
+ * THE ONE PLACE a touch becomes a key. The event carries the action itself (bindings.ts
+ * sendAction), so it works whatever the keyboard is bound to. Pause is Escape, a fixed key.
  */
 export function sendTouch(action: TouchAction, type: 'keydown' | 'keyup'): void {
   const target = document.activeElement instanceof HTMLElement ? document.activeElement : document.body;
-  target.dispatchEvent(new KeyboardEvent(type, { key: DEFAULT_KEY[action], bubbles: true, cancelable: true }));
+  if (action === 'pause') target.dispatchEvent(new KeyboardEvent(type, { key: 'Escape', bubbles: true, cancelable: true }));
+  else sendAction(action, type, target);
 }
 
 /** Every action a finger is holding right now, so all of them can be let go at once. */

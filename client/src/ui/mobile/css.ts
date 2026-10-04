@@ -33,6 +33,11 @@ html[data-touch][data-dark] body { background: ${ROLE.ink}; }
   touch-action: none; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
   cursor: auto;
 }
+/* no pointer on a touch screen (and no cursor file for a scale that is not a whole number) */
+.cu[data-touch], .cu[data-touch] * { cursor: auto !important; }
+/* the Controls tab rebinds keyboard keys: nothing to do there with fingers */
+.cu[data-touch] .cu-tabs > [data-tab="controls"] { display: none; }
+.cu[data-touch] .cu-tabs > span { min-height: 44px; display: flex; align-items: center; }
 .cu[data-touch] input { touch-action: manipulation; -webkit-user-select: text; user-select: text; }
 .cu[data-touch] .cu-log, .cu[data-touch] .cu-modal > .cu-panel { touch-action: pan-y; overscroll-behavior: contain; }
 
@@ -48,8 +53,6 @@ html[data-touch][data-dark] body { background: ${ROLE.ink}; }
 .cu[data-touch] .cu-toggle::after { content: ""; position: absolute; inset: -12px -10px; }
 .cu[data-touch] .cu-slider::after { content: ""; position: absolute; inset: -12px 0; }
 .cu[data-touch] .cu-set { min-height: 36px; }
-/* Done stays in reach while the rows scroll under it */
-.cu[data-touch] .cu-settings .cu-actions { position: sticky; bottom: -4u; margin-bottom: -4u; padding: 4u 0; background: ${ROLE.surface}; }
 .cu[data-touch] .cu-seg span { min-width: 40px; height: 32px; display: flex; align-items: center; justify-content: center; }
 /* the keyboard hints mean nothing here: the buttons carry their own names */
 .cu[data-touch] .cu-onb-keys { opacity: 0 !important; }
@@ -114,6 +117,7 @@ html[data-touch][data-dark] body { background: ${ROLE.ink}; }
 /* the veil behind the chat field and behind the HUD panel: a tap on it closes them */
 .cu-m-shade { position: absolute; inset: 0; z-index: 6; display: none; background: rgba(46, 34, 47, 0.72); pointer-events: auto; }
 .cu[data-drawer="on"] .cu-m-shade, .cu-m-chat.on ~ .cu-m-shade { display: block; }
+.cu[data-drawer="on"] .cu-m-shade { z-index: 8; }
 .cu-m-chat.on ~ .cu-m-shade { z-index: 8; background: rgba(46, 34, 47, 0.45); }
 
 /* ---------- the room code keys (join popup): two blocks beside the popup ---------- */
@@ -175,12 +179,12 @@ ${COMPACT} .cu-m-acts { right: ${TOUCH.margin}px; bottom: calc(${TOUCH.margin}px
 ${COMPACT} .cu-m-info { position: absolute; z-index: 4; right: ${TOUCH.margin}px; top: ${TOUCH.margin}px; width: calc(3 * var(--m-btn) + ${2 * TOUCH.gap}px); height: 44px; }
 .cu-m-info { display: none; }
 ${COMPACT} .cu-m-info { display: flex; }
-${COMPACT}[data-drawer="on"] .cu-m-info { z-index: 8; width: 64px; }
+${COMPACT}[data-drawer="on"] .cu-m-info { z-index: 10; width: 64px; }
 
 /* the HUD column, folded away: the HUD button opens it as a panel over the game */
 ${COMPACT} .cu-col { display: none; }
 ${COMPACT}[data-drawer="on"] .cu-col {
-  display: grid; position: absolute; z-index: 7; inset: 0; margin: auto; pointer-events: auto;
+  display: grid; position: absolute; z-index: 9; inset: 0; margin: auto; pointer-events: auto;
   width: min(calc(100% - 160px), 380u); height: min(calc(100% - 8px - var(--sab)), 236u);
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: 44px auto auto minmax(0, 1fr);
   grid-template-areas: "top top" "where voice" "where stats" "where chat"; gap: var(--gap);
@@ -191,7 +195,7 @@ ${COMPACT} .cu-stats { grid-area: stats; }
 ${COMPACT} .cu-chat { grid-area: chat; min-height: 0; }
 /* the top bar (leave, room, gear) is the head of that panel */
 ${COMPACT}${GAME} .cu-top { display: none; }
-${COMPACT}${GAME}[data-drawer="on"] .cu-top { display: flex; z-index: 8; left: 0; right: 0; margin: 0 auto; width: min(calc(100% - 160px), 380u); top: max(4px, calc((100% - var(--sab) - 236u) / 2)); }
+${COMPACT}${GAME}[data-drawer="on"] .cu-top { display: flex; z-index: 10; left: 0; right: 0; margin: 0 auto; width: min(calc(100% - 160px), 380u); top: max(4px, calc((100% - var(--sab) - 236u) / 2)); }
 
 /* ================= a tablet held sideways ================= */
 /* the desktop layout, moved to the top; the controls are in the strip under it */
