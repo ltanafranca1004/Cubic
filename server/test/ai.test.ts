@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
-import { defaultEnv, faceDistance, parseAction, planAction, type Side } from '@cubic/shared';
+import { defaultEnv, devSolve, faceDistance, parseAction, planAction, type Side } from '@cubic/shared';
 import { AiPlayer, FALLBACK_LINE, parseReply } from '../src/ai/aiPlayer';
 import type { Brain } from '../src/ai/gemini';
 import { MAX_SAY_CHARS, idleHint, parsePersona, systemPrompt } from '../src/ai/prompt';
@@ -51,16 +51,17 @@ test('parseReply: validates the JSON shape', () => {
 });
 
 test('the AI takes the empty seat, talks, and walks its action at walking speed', async () => {
-  const { room, ai, prompts } = setup('out', ['{"say":"I see a crystal. Going over to it.","action":{"type":"step_on","object":"crystal"}}']);
+  const { room, ai, prompts } = setup('out', ['{"say":"I see a keypad. Going over to it.","action":{"type":"step_on","object":"key"}}']);
   assert.deepEqual(room.info().seats.in, { taken: true, connected: true, isAI: true });
   await until(() => room.chat.length === 1, 'the AI to speak');
   assert.deepEqual([room.chat[0]!.from, room.chat[0]!.isAI], ['in', true]);
-  assert.ok(JSON.parse(prompts[0]!).observation.objects.some((o: { type: string }) => o.type === 'crystal'));
-  const crystal = defaultEnv.world.in[1].objects.find((o) => o.type === 'crystal')!;
+  assert.ok(JSON.parse(prompts[0]!).observation.objects.some((o: { type: string }) => o.type === 'key'));
+  const keys = defaultEnv.world.in[1].objects.filter((o) => o.type === 'key');
   const start = { ...room.state.players.in.pose };
-  await until(() => room.state.players.in.pose.x === crystal.x && room.state.players.in.pose.y === crystal.y, 'the AI to reach the crystal');
+  const on = () => keys.find((k) => k.x === room.state.players.in.pose.x && k.y === room.state.players.in.pose.y);
+  await until(() => !!on(), 'the AI to reach a key of the keypad');
   // it walked there step by step, no teleport
-  assert.ok(room.state.players.in.steps >= Math.abs(crystal.x - start.x) + Math.abs(crystal.y - start.y) && room.state.players.in.steps > 0);
+  assert.ok(room.state.players.in.steps >= Math.abs(on()!.x - start.x) + Math.abs(on()!.y - start.y) && room.state.players.in.steps > 0);
   assert.equal(ai.calls >= 1, true);
 });
 
@@ -191,8 +192,9 @@ test('scripted partner (AI_FAKE): after face 1 is solved it stays within one fac
   room.listen({ onState: () => (farthest = Math.max(farthest, apart(room))) });
 
   await pass(10_000);
-  walk(room, 'out', { type: 'step_on', object: 'crystal' });
-  room.interact('out');
+  // face 1 gets solved (it takes both players: forced here), and the human's last move is now
+  room.devApply((state, now) => devSolve(state, 1, now));
+  room.move('out', 0, 1);
   assert.deepEqual(room.state.solved, [1]);
 
   const solvedAt = Date.now(); // the human's last move
@@ -313,7 +315,7 @@ test('the turn tells the brain its goal, and nothing about the other side', asyn
 
 test('a throw inside the AI is contained: it is logged, and an AI that keeps failing is stopped', async () => {
   // its body: every step throws (a timer callback: uncaught, this would end the process)
-  const walk = setup('out', ['{"say":null,"action":{"type":"step_on","object":"crystal"}}']);
+  const walk = setup('out', ['{"say":null,"action":{"type":"step_on","object":"key"}}']);
   walk.room.move = () => {
     throw new Error('boom in step');
   };
