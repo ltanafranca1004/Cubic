@@ -1,7 +1,8 @@
 import { C } from '../../style/tokens';
 import { bitmap, type Draw, type Rect, type Sprite } from './common';
 
-// Face 6 (Laser and Invisible Path): the sprites only this face's puzzle uses, both sides.
+// Face 6 (Laser and Lava): the sprites only this face's puzzle uses, both sides. The safe
+// path through the lava has no art: it is the beam the outside player sees (a line).
 // Add a draw function per object type to DRAW and every (type, state) it can show to
 // SPRITES, then run `npm run art` in /tools. How: see ./index.ts.
 
@@ -30,7 +31,7 @@ function mirror(rect: Rect, state: string): void {
   }
 }
 
-/** The wooden crate on the edge: `whole`, or `burnt` (a heap of ash, walked over). */
+/** The wooden crate on the edge: `whole` (solid), or `burnt` (a heap of ash, walked over). */
 function crate(rect: Rect, state: string): void {
   if (state === 'burnt') {
     rect(4, 11, 8, 2, C.ink);
@@ -104,8 +105,9 @@ const CRUST = [
 
 /**
  * One lava tile of the inside room. Both states are lava and nothing else in the room is
- * red: `hot` is bright and flows (frames 0 to 3, the deadly one), `cold` is the same lava
- * under a dark crust with glowing cracks, still, and safe to walk.
+ * red: `hot` is bright and flows (frames 0 to 3, the deadly one: what the room shows from
+ * the start of the game), `cold` is the same lava under a dark crust with glowing cracks,
+ * still, and safe to walk (after the button). The safe tiles look like every other tile.
  */
 function lava(rect: Rect, state: string, frame = 0): void {
   if (state === 'cold') {
@@ -141,21 +143,7 @@ function lava(rect: Rect, state: string, frame = 0): void {
   }
 }
 
-/** A tile of the safe path, drawn on the cave floor for the outside player. `goal` is the button's tile. */
-function path(rect: Rect, state: string): void {
-  const goal = state === 'goal';
-  rect(5, 5, 6, 6, C.ink);
-  rect(6, 6, 4, 4, goal ? C.amber : C.green);
-  rect(6, 6, 4, 1, goal ? C.lemon : C.grassLight);
-  if (goal) {
-    rect(3, 3, 10, 1, C.amber);
-    rect(3, 12, 10, 1, C.amber);
-    rect(3, 3, 1, 10, C.amber);
-    rect(12, 3, 1, 10, C.amber);
-  }
-}
-
-export const DRAW: Record<string, Draw> = { 'f6-rock': rock, 'f6-mirror': mirror, 'f6-crate': crate, 'f6-source': source, 'f6-lava': lava, 'f6-path': path };
+export const DRAW: Record<string, Draw> = { 'f6-rock': rock, 'f6-mirror': mirror, 'f6-crate': crate, 'f6-source': source, 'f6-lava': lava };
 
 export const SPRITES: readonly Sprite[] = [
   { type: 'f6-rock', state: 'default' },
@@ -167,8 +155,6 @@ export const SPRITES: readonly Sprite[] = [
   { type: 'f6-source', state: 'on' },
   { type: 'f6-lava', state: 'hot' },
   { type: 'f6-lava', state: 'cold' },
-  { type: 'f6-path', state: 'path' },
-  { type: 'f6-path', state: 'goal' },
   // the other frames of the hot lava, last so no older cell of the sheet moves
   ...Array.from({ length: LAVA_FRAMES - 1 }, (_, i) => ({ type: 'f6-lava', state: 'hot', frame: i + 1 })),
 ];

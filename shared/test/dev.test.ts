@@ -93,6 +93,7 @@ test('devSolve on the real game hands out what the chain carries: the battery (f
   applyInteract(s, 'in', 1000);
   assert.equal(s.players.in.carrying, BATTERY_ID);
 
+  assert.equal(seen('in', 6, 'f6-lava'), 'hot'); // from the start
   devSolve(s, 5, 1000);
   assert.equal(seen('in', 6, 'f6-lava'), 'hot');
   devSolve(s, 6, 1000);
@@ -101,7 +102,7 @@ test('devSolve on the real game hands out what the chain carries: the battery (f
   assert.equal(seen('out', 6, 'f6-crate'), 'burnt');
   assert.equal(seen('in', 6, 'f6-lava'), 'cold'); // solved: the lava is not deadly any more
   assert.deepEqual(s.solved, [2, 5, 6]);
-  assert.equal(Object.keys(s.items).length, 2); // one battery, one flower
+  assert.equal(Object.keys(s.items).length, 6); // one battery, the crate's flower, and the four flowers that lie about from the start
 });
 
 test('devSolve on the last puzzle wins at once in a world without a portal', () => {

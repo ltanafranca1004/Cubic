@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createGame, laserPathScript, mirrorPush, parseHuman, stepLine, visibleObjects, type GameState, type Side } from '../src/index';
+import { beamRoute, createGame, laserPathScript, linesOn, mirrorPush, parseHuman, stepLine, type GameState, type Side } from '../src/index';
 import { partnerCell, rowColumnIn, stepsIn, turnOf } from '../src/bot/scripts/kit456';
 import { FLOWER_ID } from '../src/puzzles/chain';
 import { solver } from './harness';
@@ -10,7 +10,7 @@ import { SOLUTIONS } from './solutions';
 
 // The AI partner on face 6 (laser-path), either side, against a simulated human, through
 // the real engine. No server, no network, no model. Every game starts with faces 2 and 5
-// solved by their real solution scripts: the laser is on and the lava is hot.
+// solved by their real solution scripts: the laser is on. The lava is hot from the start.
 
 const FACE = 6;
 const STARTS = [1_700_000_000_000, 1_700_000_123_456, 1_700_000_999_999, 1_700_000_424_242];
@@ -29,7 +29,13 @@ const relays = (r: Played) => r.decisions.flatMap((d) => d.say).filter((s) => s.
 const saidAt = (r: Played, key: string) => r.decisions.flatMap((d, i) => (d.say.some((s) => s.key === key) ? [(i + 1) * STEP_MS] : []));
 /** Inner (lava) tiles of face 6 the AI stood on. */
 const lavaTrodden = (r: Played) => [...r.trodden].filter((t) => t.startsWith('6:')).map((t) => t.slice(2).split(',').map(Number)).filter(([x, y]) => x! > 0 && y! > 0 && x! < 11 && y! < 11);
-const pathTiles = (state: GameState) => visibleObjects(state, 'out', FACE).filter((o) => o.type === 'f6-path').map((o) => [o.x, o.y]);
+/** Every tile under the beam the outside player sees, source included: the safe path. */
+const pathTiles = (state: GameState) => {
+  const lines = linesOn(state, 'out', FACE);
+  const tiles: number[][] = [[...lines[0]!.from]];
+  for (const { from, to } of lines) for (let [x, y] = from; x !== to[0] || y !== to[1]; ) tiles.push([(x += Math.sign(to[0] - from[0])), (y += Math.sign(to[1] - from[1]))]);
+  return tiles;
+};
 
 test('the pieces: the mirror plan, a line of steps, the turn between the screens, what a human types', () => {
   assert.deepEqual(mirrorPush({ x: 4, y: 2 }, { x: 9, y: 4 }, { x: 5, y: 5 }, { x: 9, y: 11 }), { stand: { x: 3, y: 2 }, dx: 1, dy: 0 });
@@ -44,6 +50,19 @@ test('the pieces: the mirror plan, a line of steps, the turn between the screens
   // upright on both sides the inside is my mirror image: my right is their left, my tile 0,5 their 11,5
   assert.equal(turnOf({ col: 1, row: 0 }, 'left'), 0);
   assert.deepEqual(partnerCell({ col: 0, row: 5 }, 0), { col: 11, row: 5 });
+  // the beam, read backwards off what the outside player sees: crate, "\\", "/", source
+  const seen = [
+    { type: 'f6-crate', state: 'burnt', col: 9, row: 11 },
+    { type: 'f6-mirror', state: 'back', col: 9, row: 2 },
+    { type: 'f6-mirror', state: 'fwd', col: 5, row: 2 },
+    { type: 'f6-source', state: 'on', col: 5, row: 5 },
+  ];
+  const route = beamRoute(seen)!;
+  assert.deepEqual(route.ring, { col: 9, row: 11 });
+  assert.deepEqual(stepLine(route.steps.map((v) => (v.row < 0 ? 'up' : v.row > 0 ? 'down' : v.col < 0 ? 'left' : 'right')), 0), { pieces: ['step', 'up', 'nine', 'then', 'left', 'four'], length: 13 });
+  assert.equal(route.steps.length, 9 + 4 + 3);
+  assert.equal(beamRoute(seen.map((o) => (o.type === 'f6-crate' ? { ...o, state: 'whole' } : o))), null, 'no path while the crate is whole');
+  assert.equal(beamRoute(seen.map((o) => (o.state === 'back' ? { ...o, col: 8 } : o))), null);
   for (const line of ['right 2 then up 1', 'face 4', 'row 6', 'column 12', 'up 1 then press', 'left']) assert.ok(parseHuman(line).plain, line);
 });
 
@@ -111,9 +130,9 @@ test('AI inside: told a wrong step it falls, says so, and walks the path when to
   const liar: HumanScript<unknown> = {
     ...(base as HumanScript<unknown>),
     play(ctx) {
-      // the first steps the human would say are swapped for "straight on": into the lava
+      // the first steps the human would say are swapped for one step too many straight on: into the lava
       const say = ctx.say;
-      base.play({ ...ctx, say: (text: string) => say(!lied && /^(up|down|left|right) \d/.test(text) ? ((lied = true), `${text.split(' ')[0]} 9`) : text) } as never);
+      base.play({ ...ctx, say: (text: string) => say(!lied && /^(up|down|left|right) \d/.test(text) ? ((lied = true), `${text.split(' ')[0]} 10`) : text) } as never);
     },
   };
   const r = run('in', liar);

@@ -1,6 +1,6 @@
 import { DIRS, dirOf, throughWall, VEC, type Dir } from '../../src/index';
 import { canonDir, partnerCell, rowColumnIn, runsOf, stepsIn, turnOf } from '../../src/bot/scripts/kit456';
-import { mirrorPush, opposite, pathOf, sideTile } from '../../src/bot/scripts/laserPath';
+import { beamRoute, mirrorPush, opposite, sideTile } from '../../src/bot/scripts/laserPath';
 import { canonOf, wordsOf, type Tile } from '../../src/bot/scripts/relayKit';
 import type { HumanCtx, HumanScript } from '../partnerSim';
 
@@ -8,7 +8,7 @@ import type { HumanCtx, HumanScript } from '../partnerSim';
 // the convention of src/bot/scripts/laserPath.ts. Inside: it goes to the side of the ring
 // the AI names, says which way the lava is, stands on the tile the AI names and takes the
 // steps it is told, with "yes" after each line. Outside: it pushes the mirrors, takes the
-// flower, and guides the AI the same way.
+// flower, and guides the AI the same way, along the beam it sees (the beam is the path).
 
 const ID = 'laser-path';
 const RELAY = `${ID}.relay`;
@@ -90,8 +90,8 @@ export const laserPathHuman = (opts: LaserPathHumanOptions = {}): HumanScript<Hu
     // ---- outside: the mirrors, the flower, then guide the partner ----
     const one = (type: string, state?: string): Tile | undefined => seen(type).find((x) => state === undefined || x.state === state);
     const crate = seen('f6-crate')[0];
-    const reset = one('reset')!;
     if (crate?.state !== 'burnt') {
+      const reset = one('reset')!;
       const push = mirrorPush(one('f6-mirror', 'fwd'), one('f6-mirror', 'back'), one('f6-source'), crate);
       if (push === 'reset') return void (walk(reset) && interact());
       if (push === null || push === 'set') return;
@@ -99,8 +99,8 @@ export const laserPathHuman = (opts: LaserPathHumanOptions = {}): HumanScript<Hu
       const d = VEC[canonDir(o, push.dx, push.dy)];
       return move(d.col, d.row);
     }
-    const path = pathOf(o.objects.filter((x) => x.type === 'f6-path'));
-    if (!path) return void (walk(reset) && interact());
+    const path = beamRoute(o.objects);
+    if (!path) return;
     const flower = o.items.find((i) => i.kind.startsWith('flower-'));
     if (!o.carrying && flower) return void (walk(canonOf(o, flower)) && interact());
 

@@ -3,7 +3,7 @@
 // when it is imported. Menus are clicked like a player would, the game is played with real
 // keys, and the page is only ever read (window.__cubic, dev builds).
 import type { Browser, Page } from 'playwright';
-import { STEP_MS as PACE_MS, defaultEnv, findPath, stepPose, visibleObjects, type FaceId, type GameState, type Move, type Pose, type Side, type TileRef } from '../../shared/src/index';
+import { STEP_MS as PACE_MS, defaultEnv, findPath, hazardAvoid, linesOn, stepPose, visibleObjects, type FaceId, type GameState, type Move, type Pose, type Side, type TileRef } from '../../shared/src/index';
 
 /** The wait after a key tap: one step of the walking pace (shared/src/pace.ts), so the scripts follow the knob. */
 export const STEP_MS = PACE_MS;
@@ -137,7 +137,18 @@ export async function toGame(a: Page, b: Page): Promise<void> {
 const KEY_OF: Record<string, string> = { '0,-1': 'w', '0,1': 's', '-1,0': 'a', '1,0': 'd' };
 const MOVE_OF: Record<string, Move> = { w: [0, -1], s: [0, 1], a: [-1, 0], d: [1, 0] };
 const onTile = (t: TileRef) => (p: Pose) => p.face === t.face && p.x === t.x && p.y === t.y;
-const hot = (s: GameState) => s.solved.includes(5) && !s.solved.includes(LAVA);
+/**
+ * Face 6: the safe path over the lava, read off the beam the OUTSIDE player sees once the
+ * crate is burnt. The tiles under the beam, walked backwards: the first is the ring tile
+ * where the crate stood, the last the beam source (the button is behind it).
+ */
+export function beamPath(state: GameState): { x: number; y: number }[] {
+  const lines = linesOn(state, 'out', LAVA);
+  if (!lines.length) return [];
+  const tiles = [{ x: lines[0]!.from[0], y: lines[0]!.from[1] }];
+  for (const { from, to } of lines) for (let [x, y] = from; x !== to[0] || y !== to[1]; ) tiles.push({ x: (x += Math.sign(to[0] - from[0])), y: (y += Math.sign(to[1] - from[1])) });
+  return tiles.reverse();
+}
 
 /** Walking and using for the two pages of one game (A outside, B inside), planned with the game's own pathfinding. */
 export function players(a: Page, b: Page) {
@@ -151,7 +162,8 @@ export function players(a: Page, b: Page) {
       await settle(side);
       const s = await stateOf(page(side));
       if (goal(s.players[side].pose)) return;
-      const path = findPath(s, side, goal, defaultEnv, side === 'in' && hot(s) ? (f) => f !== LAVA : undefined);
+      // never through a deadly tile: the lava inside face 6 is hot from the start of the game
+      const path = findPath(s, side, goal, defaultEnv, undefined, hazardAvoid(s, side));
       if (!path) throw new Error(`${side}: no path to ${what}`);
       let face = s.players[side].pose.face;
       for (const m of path) {

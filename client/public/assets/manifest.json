@@ -817,19 +817,11 @@
         "default": 120,
         "hot": [
           120,
-          124,
-          125,
-          126
+          122,
+          123,
+          124
         ],
         "cold": 121
-      }
-    },
-    "f6-path": {
-      "image": "sprites/objects.png",
-      "frames": {
-        "default": 122,
-        "path": 122,
-        "goal": 123
       }
     }
   },

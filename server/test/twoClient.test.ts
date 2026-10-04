@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { io, type Socket } from 'socket.io-client';
-import { FACE_SIZE, defaultEnv, pathTo, visibleObjects, type ChatMessage, type ClientToServer, type GameEvent, type RoomInfo, type Seat, type ServerToClient, type Side, type StateUpdate, type FaceId, type TileRef } from '@cubic/shared';
+import { FACE_SIZE, defaultEnv, visibleObjects, type ChatMessage, type ClientToServer, type GameEvent, type RoomInfo, type Seat, type ServerToClient, type Side, type StateUpdate, type FaceId, type TileRef } from '@cubic/shared';
 import { readCode } from '../../shared/src/puzzles/hiddenCode';
 import { createApp, type App } from '../src/app';
 import { LIMITS } from '../src/rooms';
 // face 4 (botanical-mirror): what a side sees, under its own name so the other faces' blocks can import theirs
 import { visibleObjects as seenOnFace4 } from '@cubic/shared';
-import { MOVES, findPath, stepPose } from '@cubic/shared'; // faces 5 and 6
+import { MOVES, findPath, hazardAvoid, linesOn, stepPose } from '@cubic/shared'; // faces 5 and 6
 
 // Scripted two-client game over real sockets: rooms, codes, the lobby (pick sides, ready,
 // start), chat, validation, reconnect, items, every puzzle and the win.
@@ -103,10 +103,10 @@ class Client {
     await this.until(() => this.last.acks[this.side] >= seq, `ack ${seq}`);
   }
 
-  /** Walk to a tile with real validated moves, re-planning from the server state. */
+  /** Walk to a tile with real validated moves, re-planning from the server state. Never through a deadly tile (face 6's lava). */
   async walkTo(target: TileRef) {
     for (let guard = 0; guard < 200; guard++) {
-      const path = pathTo(this.last.state, this.side, target, defaultEnv);
+      const path = findPath(this.last.state, this.side, (p) => p.face === target.face && p.x === target.x && p.y === target.y, defaultEnv, undefined, hazardAvoid(this.last.state, this.side));
       assert.ok(path, `${this.side}: no path to face ${target.face} ${target.x},${target.y}`);
       if (path.length === 0 || this.last.state.wonAt !== null) return;
       await this.move(path[0]![0], path[0]![1]);
@@ -243,9 +243,13 @@ test('two clients play a whole game online', async () => {
   // --- items online: outside picks one up, carries it over an edge and drops it
   const room = app.rooms.get(seatA.code)!;
   // (the test owns the room: the items of the real game are handed out by the puzzles)
+  // (a start flower may lie on this very tile, by the seed: E would pick that up instead, so it steps aside for the pickup)
+  const under = Object.values(room.state.items).filter((i) => !i.carriedBy && i.side === 'out' && i.face === a.pose.face && i.x === a.pose.x && i.y === a.pose.y);
+  for (const item of under) delete room.state.items[item.id];
   room.state.items.parcel = { id: 'parcel', kind: 'parcel', side: 'out', face: a.pose.face, x: a.pose.x, y: a.pose.y, carriedBy: null, placedOn: null, props: {} };
   await a.interact();
   assert.equal(a.last.state.players.out.carrying, 'parcel');
+  for (const item of under) room.state.items[item.id] = item;
   await a.walkTo({ face: 3, x: 5, y: 5 });
   assert.equal(a.last.state.players.out.carrying, 'parcel'); // it crossed the edges with them
   await a.interact();
@@ -334,12 +338,16 @@ test('two clients play a whole game online', async () => {
     }
     await b2.until(() => b2.events.some((e) => e.type === 'puzzle' && e.name === 'burn'), 'the crate burns');
     assert.equal(a.last.state.items.flower?.side, 'out'); // left lying for face 4
-    await reset(); // the mirrors off whatever path tile they cover
-    // only the outside player sees the path; the inside player walks what they are told
-    const path = visibleObjects(a.last.state, 'out', 6).filter((o) => o.type === 'f6-path');
-    assert.ok(path.length > 1 && !visibleObjects(b2.last.state, 'in', 6).some((o) => o.type === 'f6-path'));
-    const edge = [[-1, 0], [1, 0], [0, -1], [0, 1]].map(([dx, dy]) => [path[0]!.x + dx!, path[0]!.y + dy!] as const).find(([x, y]) => x === 0 || y === 0 || x === FACE_SIZE - 1 || y === FACE_SIZE - 1)!;
-    // inside: round the lava to the face next door, then onto the ring tile beside the path's start
+    // the beam is the path: only the outside player sees it; the inside player walks what they are told,
+    // from the edge tile where the crate stood back along the beam to its source (the button)
+    const beam = linesOn(a.last.state, 'out', 6);
+    assert.ok(beam.length > 1 && linesOn(b2.last.state, 'in', 6).length === 0);
+    const tiles: { x: number; y: number }[] = [{ x: beam[0]!.from[0], y: beam[0]!.from[1] }];
+    for (const { from, to } of beam) for (let [x, y] = from; x !== to[0] || y !== to[1]; ) tiles.push({ x: (x += Math.sign(to[0] - from[0])), y: (y += Math.sign(to[1] - from[1])) });
+    const [start, ...path] = tiles.reverse();
+    const edge = [start!.x, start!.y] as const;
+    assert.ok(edge[0] === 0 || edge[1] === 0 || edge[0] === FACE_SIZE - 1 || edge[1] === FACE_SIZE - 1, 'the beam ends on the ring');
+    // inside: round the lava to the face next door, then onto the ring tile the path starts on
     const beside = findPath(b2.last.state, 'in', (p) => p.face !== 6 && MOVES.some(([dx, dy]) => ((q) => q.face === 6 && q.x === edge[0] && q.y === edge[1])(stepPose(p, dx, dy).pose)), defaultEnv, (face) => face !== 6);
     assert.ok(beside, 'a way to face 6 that stays off its lava');
     for (const [dx, dy] of beside) await b2.move(dx, dy);
@@ -356,30 +364,51 @@ test('two clients play a whole game online', async () => {
 
   // ---------- face 4: botanical-mirror ----------
   {
-    // The flower face 6 left outside: the outside player fetches it (unless it is in hand already).
-    const flower = () => Object.values(a.last.state.items).find((i) => i.side === 'out' && i.kind.startsWith('flower-'))!;
-    assert.ok(flower(), 'face 6 is solved but there is no flower outside');
-    if (flower().carriedBy !== 'out') {
-      await a.walkTo({ face: flower().face, x: flower().x, y: flower().y });
-      await a.interact();
-    }
-    assert.equal(a.last.state.players.out.carrying, flower().id);
-    // Outside sees five empty pots and no colours; inside sees the five flowers and names the pot.
-    const colour = flower().kind.replace('flower-', '');
+    // Five flowers outside: the crate's (face 6) and the four that lay about from the start. One walk each.
+    const loose = () => Object.values(a.last.state.items).filter((i) => i.side === 'out' && i.kind.startsWith('flower-') && !i.placedOn);
+    assert.equal(loose().length, 5, 'face 6 is solved: five flowers are outside');
+    // Outside sees five empty pots and no colours; inside sees the five flowers and names the pots.
     assert.ok(seenOnFace4(a.last.state, 'out', 4).every((o) => o.type === 'f4-pot' && o.state === 'empty'));
     const pots = seenOnFace4(bNow().last.state, 'in', 4).filter((o) => o.type === 'f4-flowerpot');
     assert.equal(new Set(pots.map((o) => o.state)).size, 5);
-    // A wrong pot first: a strike for both, and the flower is back in the outside hands.
-    const wrong = pots.find((o) => o.state !== colour)!;
-    const strikes = a.last.state.strikes;
-    await a.walkTo({ face: 4, x: wrong.x, y: wrong.y });
-    await a.interact();
-    await bNow().until(() => bNow().last.state.strikes === strikes + 1, 'the strike reaches the inside player');
-    assert.deepEqual([a.last.state.strikes, a.last.state.players.out.carrying, a.last.state.solved.includes(4)], [strikes + 1, flower().id, false]);
-    // The pot the inside player names.
-    const right = pots.find((o) => o.state === colour)!;
-    await a.walkTo({ face: 4, x: right.x, y: right.y });
-    await a.interact();
+    /** A pot is solid: walk to a tile next to it, then step into it (a bump) to face it. */
+    const faceTo = async (pot: { x: number; y: number }) => {
+      const into = (p: typeof a.pose) => MOVES.find(([dx, dy]) => ((to) => !to.crossed && to.pose.face === 4 && to.pose.x === pot.x && to.pose.y === pot.y)(stepPose(p, dx, dy)));
+      for (let guard = 0; guard < 200; guard++) {
+        const path = findPath(a.last.state, 'out', (p) => !!into(p), defaultEnv);
+        assert.ok(path, `no way to stand next to the pot at ${pot.x},${pot.y}`);
+        if (path.length === 0) break;
+        await a.move(path[0]![0], path[0]![1]);
+      }
+      const bump = into(a.pose)!;
+      await a.move(bump[0], bump[1]);
+      assert.notDeepEqual([a.pose.x, a.pose.y], [pot.x, pot.y], 'nobody stands on a pot');
+    };
+    const ids = loose().sort((x, y) => Number(y.carriedBy === 'out') - Number(x.carriedBy === 'out')).map((i) => i.id);
+    for (const [n, id] of ids.entries()) {
+      const flower = () => a.last.state.items[id]!;
+      if (flower().carriedBy !== 'out') {
+        await a.walkTo({ face: flower().face, x: flower().x, y: flower().y });
+        await a.interact();
+      }
+      assert.equal(a.last.state.players.out.carrying, id);
+      const colour = flower().kind.replace('flower-', '');
+      if (n === 0) {
+        // A wrong pot first: a strike for both, and the flower is back in the outside hands.
+        const wrong = pots.find((o) => o.state !== colour)!;
+        const strikes = a.last.state.strikes;
+        await faceTo(wrong);
+        await a.interact();
+        await bNow().until(() => bNow().last.state.strikes === strikes + 1, 'the strike reaches the inside player');
+        assert.deepEqual([a.last.state.strikes, a.last.state.players.out.carrying, a.last.state.solved.includes(4)], [strikes + 1, id, false]);
+      }
+      // The pot the inside player names: the flower stays in it.
+      const right = pots.find((o) => o.state === colour)!;
+      await faceTo(right);
+      await a.interact();
+      assert.deepEqual([a.last.state.players.out.carrying, flower().x, flower().y, !!flower().placedOn], [null, right.x, right.y, true]);
+      assert.equal(a.last.state.solved.includes(4), n === ids.length - 1);
+    }
   }
   await solved(4);
   // ---------- end face 4 ----------

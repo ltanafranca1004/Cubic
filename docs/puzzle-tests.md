@@ -20,12 +20,12 @@ won the moment the sixth is solved: there is no portal.
 | Hidden code (`hidden-code`) | 1 Grass / Keypad room | reads the 3-digit number laid out in the grass, at compass drift 0 | types it on the floor keypad (E on a key), then ENTER | the number is drawn outside only and differs every game; the keypad is inside only |
 | Equation safe (`equation-safe`) | 2 Desert / Vault | counts the berry bushes, the round rocks and the birds (1 to 4 each) | types 3 x bushes x 2 x birds x rocks, then ENTER | the counts are outside, the formula and the keypad inside |
 | Mirrored glyph (`mirrored-glyph`) | 3 Snow / Tile room | describes the symbol in the snow | flips floor tiles (E) until exactly the symbol is on | the symbol is outside only, the tiles inside only, and the inside view is mirrored |
-| Botanical mirror (`botanical-mirror`) | 4 Forest / Greenhouse | plants the flower in the pot the partner names | says which of the five pots holds the flower's colour | the pots are empty outside; which colour stands where differs every game |
+| Botanical mirror (`botanical-mirror`) | 4 Forest / Greenhouse | collects the five flowers (one lies on each of faces 1, 2, 3, 5; the fifth is in face 6's crate) and plants each in the pot the partner names, from the tile next to the pot, facing it | says which of the five pots holds each colour | the pots are empty outside; which colour stands where, and where the flowers lie, differs every game |
 | Sequence laser (`sequence-laser`) | 5 Rooftop / Laser room | calls the order the seven symbols light up in | puts the battery in the emitter, presses the symbols in that order | the lights are outside only, the buttons inside only, the order differs every game |
-| Laser and path (`laser-path`) | 6 Cave / Lava room | pushes two mirrors until the beam burns the crate, then calls the path | walks the path over the lava to the button, E | the mirrors and the path are outside only, the button is inside |
+| Laser and lava (`laser-path`) | 6 Cave / Lava room | pushes two mirrors until the beam burns the crate on the edge, then calls the beam's route | walks the tiles behind the beam over the lava to the button, E | the mirrors and the beam are outside only, the lava and the button inside; nothing marks the safe tiles |
 
 What each face hands on: face 2 the battery (inside), face 5 the laser beam on face 6, face
-6 the flower (outside), which face 4 needs.
+6 one of the five flowers (outside) that face 4 needs.
 
 ### Exact solve steps
 
@@ -50,24 +50,38 @@ off. No strikes. Once the flipped tiles are exactly the symbol they lock.
 3. Inside presses E on the seven symbol tiles in that order. A wrong press: one strike and
    the presses start over. The order never changes during a game.
 
-**Laser and path, face 6.**
+**Laser and lava, face 6.** The lava inside is hot from the start of the game.
 1. The beam comes up at `5,5` and runs north. The mirrors start at `4,2` ("/") and `9,4`
    ("\"). Three pushes do it: from `3,2` into `4,2`, from `9,5` into `9,4`, from `9,4` into
    `9,3`. The beam then turns east at `5,2`, south at `9,2` and hits the crate at `9,11`.
-2. The crate burns: the flower lies beside it, and the path is drawn on the cave floor.
-   E on RESET (`3,8`) puts the mirrors back, which also uncovers a path tile they stand on.
-3. The path starts at `1,5`. The inside player steps onto the ring tile `0,5` from the face
-   next door, walks the path to the button at `6,6` and presses E.
-4. A lava tile off the path: one strike, back to `0,5`. The path stays the same.
+   The crate stands ON THE RING and is solid until it burns: the one exception to the edge
+   rule (`maps.test.ts` and the ring check in `laser-path.test.ts` allow only it, only unburnt).
+2. The crate burns: the flower lies on its tile (`9,11`) and the mirrors lock. E on RESET
+   (`3,8`) puts the mirrors back before the burn and does nothing after it.
+3. The beam is the safe path. The inside player walks round the ring to `9,11`, then the
+   tiles behind the beam backwards: north to `9,2`, west to `5,2`, south to the button at
+   `5,5` (behind the beam source), and presses E. `shownPath` in `laser-solutions.ts` reads
+   those tiles off the beam the outside player sees (`linesOn`).
+4. A lava tile off the beam: one strike, back to `9,11`. Before the crate burns every lava
+   tile is deadly and a fall puts you on `0,5`.
 
-**The lava is deadly only while face 5 is solved and face 6 is not.** Before the laser is on
-it is cold rock, and it cools again when the button is pressed. So a script (and the bot)
-may walk straight across face 6 at any other time, and must walk around it while it is hot:
-`insideGo` in `laser-solutions.ts` does that.
+**The lava is deadly from the first second until face 6 is solved**, then it crusts over
+and is walkable. So every inside walk keeps to the ring of face 6: `t.go` plans with
+`hazardAvoid` (it never crosses a deadly tile, and fails if the target is one), and a step
+into the lava on purpose is a single `stepTo`.
 
-**Botanical mirror, face 4.** Until face 6 is solved the pots are asleep: anything put in
-one comes straight back. Then: the wrong pot is one strike and the flower is back in hand;
-the right pot blooms.
+**Botanical mirror, face 4.** Five flowers, five pots, all five must be planted.
+
+- The flowers are outside items. Four lie about from the start, one each on faces 1, 2, 3
+  and 5, on one of that face's `flower-spot` map objects (legend `f`), picked by the seed
+  (`onStart`, `startFlowers` in `chain.ts`). The fifth comes out of face 6's crate when it
+  burns (`flower`, colour `flowerColour(seed)`). One is carried at a time.
+- The pots are SOLID on both sides. To plant: stand on a tile next to the pot, facing it
+  (the last step or bump was towards it: `facedTile(state, side)`), and press E or Q. In a
+  script: `t.face('out', pot)` then `t.interact('out')`.
+- A pot never sleeps: a flower can be planted as soon as it is in hand, face 6 solved or not.
+- The wrong pot is one strike and the flower is back in hand. The right pot blooms and
+  keeps its flower for good. Next to a pot but not facing it, E only drops the flower.
 
 ## The test files
 
@@ -142,7 +156,8 @@ The tests then check, for your puzzle:
 
 | Call | What it does |
 | --- | --- |
-| `t.go(side, tile)` | Walk to a tile by the shortest legal path (crosses faces). Fails if there is no path. |
+| `t.go(side, tile)` | Walk to a tile by the shortest legal path that enters no deadly tile (crosses faces; round the ring of face 6 inside). Fails if there is no path. |
+| `t.face(side, tile)` | Walk to a tile next to `tile` and step into it (a bump), so the player faces it. For things nobody can stand on: face 4's pots. Then `t.interact` places the carried item in it. |
 | `t.move(side, dx, dy)` | One step in that player's own screen space. Returns the events (check for `bump`). Walking into a box pushes it. |
 | `t.interact(side)` | The E key: drop / place the carried item, else pick up the item on the tile, else use the tile (`onUse`). |
 | `t.wait(ms)` | Let time pass. Runs your `onTick` every 250 ms. |

@@ -1,76 +1,125 @@
-import { defaultEnv, objectsOn } from '../../src/index';
 import { isFlower } from '../../src/bot/scripts/botanicalMirror';
 import { colourIn, rowColumnIn } from '../../src/bot/scripts/kit456';
-import { canonOf } from '../../src/bot/scripts/relayKit';
+import { canonOf, cellOf } from '../../src/bot/scripts/relayKit';
 import type { HumanScript } from '../partnerSim';
 
 // The simulated human for BOTANICAL MIRROR (face 4), either side, only from its own screen.
-// Outside: it brings the flower from face 6 (errand), says its colour when asked and plants
-// it in the pot the AI names. Inside: it hears the colour and names the pot that holds it:
-// "row R column C", counted from the edges beside faces 5 and 3 (the canonical tile).
+// Outside: once face 6 is solved it looks for the flowers (one lies on each other face),
+// carries them to face 4 one at a time, hears the AI name each pot with its colour and
+// plants every flower from the tile next to its pot, facing it.
+// Inside: the AI names a pot ("the pot is row R column C") and asks its colour: it says the
+// colour of the flower it sees there. After a strike the AI says the colour in its hands
+// and asks for the pot: it names it, "row R column C", counted from the edges beside faces
+// 5 and 3 (the canonical tile).
 
 const ID = 'botanical-mirror';
 const RELAY = `${ID}.relay`;
+const KIND = 'flower-';
 
 export interface BotanicalMirrorHumanOptions {
   /** Never say anything. */
   mute?: boolean;
-  /** Inside: name a wrong pot first (one strike), then the right one. */
+  /** Inside: say every pot's colour one pot off, until the partner says it struck (one strike), then the truth. */
   lie?: boolean;
 }
 
-interface HumanMem {
-  looked: boolean;
-  colour: string | null;
-  /** Outside: the pot the partner named (the canonical tile: row and column counted from the edges by faces 5 and 3). */
-  pot: { x: number; y: number } | null;
-  lied: boolean;
-  /** Outside: ticks spent counting rows and columns before walking to the pot. */
-  counting: number;
+interface Tile {
+  x: number;
+  y: number;
 }
+
+interface HumanMem {
+  /** Outside: the pot of each colour, as the partner named them (canonical). */
+  pots: Record<string, Tile>;
+  /** Outside: faces with no loose flower on them. */
+  empty: number[];
+  /** Outside: the pot I have turned to face ("x,y"). */
+  facing: string | null;
+  /** Inside: the pot the partner asked about, the colour it holds in its hands, and whether it wants the pot for it. */
+  tile: Tile | null;
+  colour: string | null;
+  wantPot: boolean;
+  lied: boolean;
+}
+
+const key = (t: Tile) => `${t.x},${t.y}`;
 
 export const botanicalMirrorHuman = (opts: BotanicalMirrorHumanOptions = {}): HumanScript<HumanMem> => ({
   id: ID,
-  init: () => ({ looked: false, colour: null, pot: null, lied: false, counting: 0 }),
+  init: () => ({ pots: {}, empty: [], facing: null, tile: null, colour: null, wantPot: false, lied: false }),
 
-  // Outside: pick the flower up where it fell (beside the crate of face 6) and bring it along.
-  errand({ side, o, mem, walk, interact }) {
-    if (side !== 'out' || !o.solvedFaces.includes(6) || o.carrying) return false;
-    const flower = o.items.find((i) => isFlower(i.kind));
-    if (flower) {
-      if (walk(canonOf(o, flower))) interact();
+  // Outside: fetch the flowers one at a time; plant the one in hand once its pot is known.
+  errand({ side, o, mem, walk, move, interact }) {
+    if (side !== 'out' || !o.solvedFaces.includes(6)) return false;
+    const here = o.puzzleId === ID;
+    const pots = here ? o.objects.filter((x) => x.type === 'f4-pot') : [];
+    if (o.carrying) {
+      const pot = isFlower(o.carrying) ? mem.pots[o.carrying.slice(KIND.length)] : undefined;
+      // which pot: the partner says (play). Until then, just go to the face.
+      if (!pot || !here) return false;
+      const cell = cellOf(o, pot);
+      // a free tile next to the pot (the pot itself is solid), then a step into the pot to face it, then E
+      const beside = [[0, 1], [0, -1], [1, 0], [-1, 0]].map(([dc, dr]) => ({ col: cell.col + dc!, row: cell.row + dr! })).filter((c) => ['.', '@'].includes(o.grid[c.row]?.[c.col] ?? ''));
+      const stand = beside.find((c) => c.col === o.position.col && c.row === o.position.row) ?? beside[0];
+      if (!stand) return false;
+      if (!walk(canonOf(o, stand))) mem.facing = null;
+      else if (mem.facing !== key(pot)) {
+        mem.facing = key(pot);
+        move(cell.col - stand.col, cell.row - stand.row);
+      } else {
+        mem.facing = null;
+        interact();
+      }
       return true;
     }
-    if (o.face === 6) mem.looked = true;
-    if (mem.looked) return false;
-    const crate = objectsOn(defaultEnv.world, 'out', 6, 'f6-crate')[0]!;
-    walk({ face: 6, x: crate.x, y: crate.y });
+    // empty hands: the flower I see here, else the next face I have not searched
+    const loose = o.items.find((i) => isFlower(i.kind) && !pots.some((p) => p.col === i.col && p.row === i.row));
+    if (loose) {
+      if (walk(canonOf(o, loose))) interact();
+      return true;
+    }
+    if (!here && !mem.empty.includes(o.face)) mem.empty.push(o.face);
+    const next = o.puzzleList.map((p) => p.face).find((f) => f !== 4 && !mem.empty.includes(f));
+    if (next === undefined) return false;
+    walk({ face: next, x: 5, y: 0 }); // any tile of it: once there, I look around
     return true;
   },
 
-  play({ side, o, mem, seen, next, walk, interact, say: speak }) {
+  play({ side, o, mem, seen, next, say: speak }) {
     const say = (text: string) => void (opts.mute || speak(text));
     const line = next();
-    const words = line?.key === RELAY ? String(line.args?.words ?? '') : '';
-    if (side === 'in') {
-      // the partner says the colour; I name the pot that holds it, counted from the edges by faces 5 and 3
-      mem.colour = colourIn(words) ?? mem.colour;
-      const pots = seen('f4-flowerpot');
-      let pot = pots.find((p) => p.state === mem.colour);
-      if (pot && opts.lie && !mem.lied && colourIn(words)) {
-        mem.lied = true;
-        pot = pots.find((p) => p !== pot);
-      }
-      if (pot && (colourIn(words) || line?.key === `${ID}.out.strike`)) say(`row ${pot.y + 1} column ${pot.x + 1}`);
+    if (!line) return;
+    const words = line.key === RELAY ? String(line.args?.words ?? '') : '';
+    const rc = rowColumnIn(words);
+    const tile = rc.row !== undefined && rc.column !== undefined ? { x: rc.column - 1, y: rc.row - 1 } : null;
+    const colour = colourIn(words);
+
+    if (side === 'out') {
+      // "the pot is row R column C the flower is pink": remember where each colour goes
+      if (tile && colour) mem.pots[colour] = tile;
+      if (line.key === `${ID}.in.strike`) mem.pots = {};
+      if (line.key === `${ID}.in.ask` && o.carrying) say(`it is ${o.carrying.slice(KIND.length)}`);
       return;
     }
-    if (line?.key === `${ID}.in.ask` && o.carrying) return say(`it is ${o.carrying.slice('flower-'.length)}`);
-    const named = rowColumnIn(words);
-    if (named.row !== undefined && named.column !== undefined) Object.assign(mem, { pot: { x: named.column - 1, y: named.row - 1 }, counting: 10 });
-    if (mem.counting > 0) return void mem.counting--; // a person counts the tiles first (2 s)
-    if (mem.pot && o.carrying && walk(mem.pot)) {
-      interact();
-      mem.pot = null;
+
+    // inside: I see the five flowers
+    const pots = seen('f4-flowerpot').map((p) => ({ x: p.x, y: p.y, colour: p.state ?? '' }));
+    const namePot = () => {
+      const pot = pots.find((p) => p.colour === mem.colour);
+      if (pot) say(`row ${pot.y + 1} column ${pot.x + 1}`);
+      mem.wantPot = false;
+    };
+    if (tile && !colour) mem.tile = tile;
+    if (colour && !tile) {
+      mem.colour = colour;
+      if (mem.wantPot) namePot();
     }
+    if (line.key === `${ID}.out.colour` && mem.tile) {
+      let pot = pots.find((p) => key(p) === key(mem.tile!));
+      if (pot && opts.lie && !mem.lied) pot = pots[(pots.indexOf(pot) + 1) % pots.length];
+      if (pot) say(pot.colour);
+    }
+    if (line.key === `${ID}.out.strike`) Object.assign(mem, { wantPot: true, lied: true });
+    if (line.key === `${ID}.out.ask` && mem.colour) namePot();
   },
 });

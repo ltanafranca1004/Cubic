@@ -2,6 +2,8 @@
 // Two players in one room, the inside one is put on face 6 with the dev commands, and the
 // painted face is read back pixel by pixel.
 //
+// The lava is hot from the first second of a game, and only crusts over when face 6 is solved.
+//
 //   server:  PORT=3600 AI_FAKE=1 DEV_COMMANDS=1 npm run dev -w server
 //   client:  VITE_SERVER_URL=http://localhost:3600 npm run dev -w client -- --port 5700
 //   cd tools && LABEL=after npx tsx screens/lava.ts
@@ -13,7 +15,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { chromium, type Browser, type Page } from 'playwright';
 import { FACE_SIZE, TILE_PX, canonToScreen, visibleObjects, type GameState } from '../../shared/src/index';
-import { PATH_START, RESPAWN } from '../../shared/src/puzzles/laserPath';
+import { RESPAWN } from '../../shared/src/puzzles/laserPath';
 import { C } from '../../client/src/style/tokens';
 import { js, openTitle, players, sleep, snap, stateOf, toGame, toLobby, toMode, until } from './play';
 
@@ -22,7 +24,7 @@ const OUT = process.env.OUT ?? new URL('../../docs/status/lava/', import.meta.ur
 const LABEL = process.env.LABEL ?? 'after';
 const STRICT = process.env.STRICT !== '0';
 const FACE = 6;
-/** Where the inside player stands for the pictures: a ring tile, not the one a fall puts you back on. */
+/** Where the inside player stands for the pictures: a ring tile, not one a fall puts you back on. */
 const STAND = { x: 5, y: FACE_SIZE - 1 };
 /** The colours only lava is drawn in (the floor, the button and the turtle use none of them). */
 const LAVA_COLOURS = [C.maroon, C.brick, C.vermilion, C.red, C.orange, C.amberDark, C.amber, C.lemon];
@@ -119,51 +121,38 @@ try {
 
   const ping = await dev(b, { type: 'ping' });
   if (!ping.ok) throw new Error(`dev commands are off: ${ping.error} (start the server with DEV_COMMANDS=1)`);
+  // the dev teleport drops the player in the middle of the room: that is lava, so they are
+  // put back on the ring (one strike, counted from here on)
   await dev(b, { type: 'teleport', side: 'in', face: FACE });
   await until('the inside player on face 6', async () => (await stateOf(b)).players.in.pose.face === FACE);
-  // onto the ring while the lava is cold (the dev teleport lands in the middle of it)
-  await game.go('in', FACE, STAND.x, STAND.y);
+  await game.go('in', FACE, STAND.x, STAND.y); // round the ring
   await sleep(700);
 
-  // ---- COLD: face 5 not solved yet ----
+  // ---- HOT AT THE START: nothing is solved ----
   let state = await stateOf(b);
+  check(state.solved.length === 0, `nothing is solved yet (solved: [${state.solved}])`);
   let lava = visibleObjects(state, 'in', FACE).filter((o) => o.type === 'f6-lava');
-  facts.cold = { lavaObjects: lava.length, states: [...new Set(lava.map((o) => o.state))] };
-  check(lava.length === 99, `cold: the client's state has 99 f6-lava objects for the inside player (${lava.length})`);
-  check(!visibleObjects(state, 'in', FACE).some((o) => o.type === 'f6-path'), 'cold: no f6-path object for the inside player');
-  const cold = await face(b, 'cold');
-  const coldCount = count(state, cold.share);
-  Object.assign(facts.cold as object, coldCount);
-  check(coldCount.interior === 99, `cold: 99 interior tiles are painted in lava colours (${coldCount.interior}, lowest share ${coldCount.min.toFixed(2)})`);
-  check(coldCount.ring === 0, `cold: no lava colour on the ring (${coldCount.ring} tiles)`);
-
-  // ---- HOT: face 5 solved ----
-  await dev(b, { type: 'solve', face: 5 });
-  await until('face 5 solved', async () => (await stateOf(b)).solved.includes(5));
-  await sleep(700);
-  state = await stateOf(b);
-  lava = visibleObjects(state, 'in', FACE).filter((o) => o.type === 'f6-lava');
-  facts.hot = { lavaObjects: lava.length, states: [...new Set(lava.map((o) => o.state))] };
-  check(lava.length === 99 && lava.every((o) => o.state === 'hot'), `hot: 99 f6-lava objects, all "hot" (${lava.length})`);
-  const hot = await face(b, 'hot');
+  facts.start = { lavaObjects: lava.length, states: [...new Set(lava.map((o) => o.state))] };
+  check(lava.length === 99 && lava.every((o) => o.state === 'hot'), `start: 99 f6-lava objects, all "hot" (${lava.length})`);
+  check(!visibleObjects(state, 'in', FACE).some((o) => o.type === 'f6-path'), 'start: no path object for the inside player');
+  const hot = await face(b, 'start-hot');
   const hotCount = count(state, hot.share);
-  Object.assign(facts.hot as object, hotCount);
-  check(hotCount.interior === 99, `hot: 99 interior tiles are painted in lava colours (${hotCount.interior}, lowest share ${hotCount.min.toFixed(2)})`);
-  check(hotCount.ring === 0, `hot: no lava colour on the ring (${hotCount.ring} tiles)`);
-  check(hot.hash !== cold.hash, 'hot lava is painted differently from cold lava');
+  Object.assign(facts.start as object, hotCount);
+  check(hotCount.interior === 99, `start: 99 interior tiles are painted in lava colours (${hotCount.interior}, lowest share ${hotCount.min.toFixed(2)})`);
+  check(hotCount.ring === 0, `start: no lava colour on the ring (${hotCount.ring} tiles)`);
   const hashes = new Set([hot.hash]);
   for (let i = 0; i < 6; i++) {
     await sleep(130);
-    hashes.add((await face(b, 'hot')).hash);
+    hashes.add((await face(b, 'start-hot')).hash);
   }
-  (facts.hot as Record<string, unknown>).frames = hashes.size;
+  (facts.start as Record<string, unknown>).frames = hashes.size;
   check(hashes.size > 1, `hot lava is animated (${hashes.size} different frames in 0.8 s)`);
 
-  // the outside player: no path yet (the crate is whole), and never any lava
+  // the outside player: never any lava, and no drawn path (the beam is the path)
   const outSees = visibleObjects(await stateOf(a), 'out', FACE).map((o) => o.type);
-  check(!outSees.includes('f6-lava') && !outSees.includes('f6-path'), 'outside: no lava, and no path before the crate burns');
+  check(!outSees.includes('f6-lava') && !outSees.includes('f6-path'), 'outside: no lava and no path object');
 
-  // ---- one step into the hot lava ----
+  // ---- one step into the hot lava, before anything is solved ----
   const before = await stateOf(b);
   const p = before.players.in.pose;
   const inward = { x: STAND.x, y: STAND.y - 1 };
@@ -172,11 +161,33 @@ try {
   await sleep(500);
   const after = await stateOf(b);
   const q = after.players.in.pose;
-  Object.assign(facts.step as object, { at: { face: q.face, x: q.x, y: q.y }, strikesAfter: after.strikes, respawn: RESPAWN, pathStart: PATH_START });
-  check(q.face === FACE && q.x === RESPAWN.x && q.y === RESPAWN.y, `stepping into hot lava at ${inward.x},${inward.y} puts the inside player on the respawn tile ${RESPAWN.x},${RESPAWN.y} beside the path start (now ${q.x},${q.y})`);
+  Object.assign(facts.step as object, { at: { face: q.face, x: q.x, y: q.y }, strikesAfter: after.strikes, respawn: RESPAWN });
+  check(q.face === FACE && q.x === RESPAWN.x && q.y === RESPAWN.y, `stepping into hot lava at ${inward.x},${inward.y} puts the inside player on the ring at ${RESPAWN.x},${RESPAWN.y} (now ${q.x},${q.y})`);
   check(after.strikes === before.strikes + 1, `one strike more (${before.strikes} -> ${after.strikes})`);
   check((await snap(a)).state!.strikes === after.strikes, 'the outside client has the same strike count');
   await face(b, 'fell');
+
+  // ---- STILL HOT with the laser on ----
+  await dev(b, { type: 'solve', face: 5 });
+  await until('face 5 solved', async () => (await stateOf(b)).solved.includes(5));
+  await sleep(400);
+  lava = visibleObjects(await stateOf(b), 'in', FACE).filter((o) => o.type === 'f6-lava');
+  check(lava.length === 99 && lava.every((o) => o.state === 'hot'), 'laser on: still 99 hot lava tiles');
+
+  // ---- COLD: face 6 solved, the lava has crusted over ----
+  await dev(b, { type: 'solve', face: FACE });
+  await until('face 6 solved', async () => (await stateOf(b)).solved.includes(FACE));
+  await sleep(700);
+  state = await stateOf(b);
+  lava = visibleObjects(state, 'in', FACE).filter((o) => o.type === 'f6-lava');
+  facts.cold = { lavaObjects: lava.length, states: [...new Set(lava.map((o) => o.state))] };
+  check(lava.length === 99 && lava.every((o) => o.state === 'cold'), `solved: 99 f6-lava objects, all "cold" (${lava.length})`);
+  const cold = await face(b, 'cold');
+  const coldCount = count(state, cold.share);
+  Object.assign(facts.cold as object, coldCount);
+  check(coldCount.interior === 99, `cold: 99 interior tiles are painted in lava colours (${coldCount.interior}, lowest share ${coldCount.min.toFixed(2)})`);
+  check(coldCount.ring === 0, `cold: no lava colour on the ring (${coldCount.ring} tiles)`);
+  check(hot.hash !== cold.hash, 'hot lava is painted differently from cold lava');
 } catch (e) {
   problems.push(String(e));
   console.error(e);

@@ -3,9 +3,11 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { PUZZLE_SPRITES, drawPuzzleObject, puzzleFrames } from '../src/game/puzzleArt';
 import { C } from '../src/style/tokens';
+import { createGame, visibleObjects } from '@cubic/shared';
 
 // THE LAVA OF THE LAVA ROOM (inside face 6). The room once looked empty: cold lava was drawn
-// as dark rock. Both states have to read as lava, and only the hot one moves.
+// as dark rock. Both states have to read as lava, and only the hot one moves. It is hot from
+// the start of the game, and the safe path through it has no art at all.
 
 const T = 16;
 /** The colours lava is drawn in. Nothing else in the room uses them (tools/screens/lava.ts counts them on screen). */
@@ -59,6 +61,18 @@ test('lava: the sheet has a cell for every frame, and no older cell moved', () =
   // the extra frames come last in SPRITES, so the cells before them keep their place
   const firstExtra = PUZZLE_SPRITES.findIndex((s) => s.frame);
   assert.ok(PUZZLE_SPRITES.slice(firstExtra).every((s) => s.frame), 'animation frames are listed after every first frame');
-  const cold = lava.cold as number;
-  assert.deepEqual(manifest.objects['f6-path']!.frames, { default: cold + 1, path: cold + 1, goal: cold + 2 });
+  // the old drawn path is gone: the safe path is the beam, and nothing marks it on the floor
+  assert.equal(manifest.objects['f6-path'], undefined);
+  assert.equal(PUZZLE_SPRITES.some((s) => s.type === 'f6-path'), false);
+  assert.equal(drawPuzzleObject(() => {}, 'f6-path', 'path'), false);
+});
+
+test('lava: the room is hot lava at the start of a game, before anything is solved', () => {
+  const state = createGame(7);
+  assert.deepEqual(state.solved, []);
+  const seen = visibleObjects(state, 'in', 6);
+  const lava = seen.filter((o) => o.type === 'f6-lava');
+  assert.equal(lava.length, 99);
+  assert.ok(lava.every((o) => o.state === 'hot'));
+  assert.equal(puzzleFrames('f6-lava', lava[0]!.state), 4, 'and it is the animated sprite');
 });

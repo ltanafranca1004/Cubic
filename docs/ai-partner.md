@@ -205,6 +205,7 @@ export type BotAction =
   | { type: 'move'; dir: 'up' | 'down' | 'left' | 'right'; steps?: number }
   | { type: 'pick_up' }                          // the item on this tile
   | { type: 'drop' }                             // on a target it gets placed
+  | { type: 'place'; col: number; row: number }  // into a solid target (a pot): walk next to it, face it, E
   | { type: 'use'; col?: number; row?: number; object?: string; state?: string }
   | { type: 'wait' };
 
@@ -249,8 +250,8 @@ export function hazardAvoid(state, side, env = defaultEnv, except: readonly Tile
 ```
 
 `hazardTiles` is built from what that side's own `visibleObjects` shows: on face 6 inside,
-while face 5 is solved and face 6 is not, every lava tile is `hot`: all 100 inner tiles,
-the button included. Cold lava is plain floor. Nothing in `shared/src/game.ts` changed.
+from the start of the game until face 6 is solved, every lava tile is `hot`: all 100 inner
+tiles, the button included. Cold lava is plain floor. Nothing in `shared/src/game.ts` changed.
 
 `nextStep(state, side, decision, env?)` always plans with `hazardAvoid`, on every face, so
 `go_face` routes around the inside of face 6 and a `goto` / `use` into the lava returns
@@ -568,10 +569,12 @@ are tied together by things both players can name (the faces next door, the lava
   `the order is A then B then C` and `next D then E then F then G`. "again" or a strike
   says both parts again.
 - **laser-path (6).** Outside: solves the mirrors from its own view (`mirrorPush`: "/" into
-  the source's column, "\" up to the row of "/"; RESET if stuck, or if a mirror covers the
-  path), picks up the flower, then guides. Directions are always ON THE WALKER'S OWN
-  SCREEN:
-  1. `out.side.N`: the side of the ring the path starts from, named by the face beyond it.
+  the source's column, "\" up to the row of "/"; RESET if stuck). The burn locks the
+  mirrors and the beam is the safe path: `beamRoute` reads it off what the bot sees (burnt
+  crate on the edge, "\", "/", source), backwards from the crate's ring tile to the source,
+  where the button is. It picks up the flower from the crate's tile, then guides.
+  Directions are always ON THE WALKER'S OWN SCREEN:
+  1. `out.side.N`: the side of the ring the path starts on, named by the face beyond it.
   2. `out.lava`: the walker says which way the lava is from there (`right`). The guide sees
      that same step on its own screen: that fixes the turn between the two screens.
   3. `out.tile` + `row six` (or `column six`): the start tile, counted on the walker's
@@ -579,7 +582,8 @@ are tied together by things both players can name (the faces next door, the lava
   4. `step right two then up one`: at most two runs per line, `yes` after each, `again`
      repeats; the last line ends `then press`.
   5. A strike (a fall): `out.fell`, the lava question again, and the path from its start.
-  Inside: the same convention the other way round. It stays on the ring, asks `in.side`
+  Inside: the same convention the other way round. It stays on the ring (the lava is hot
+  from the start of the game), asks `in.side`
   every 15 s, walks round the ring to the side of `face N`, says `in.lava.<dir>`, takes its
   tile from `row 6` / `column 6`, then walks the steps it hears (`right 2 then up 1`), one
   tile at a time, each lava tile through `Play.allow`. `in.done` after each line, `in.ask`

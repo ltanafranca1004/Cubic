@@ -124,10 +124,10 @@ then 6, then 4. Faces 1 and 3 can be done at any time.
 | 3 Snow / Tile room | describes the symbol in the snow | flips floor tiles to copy it, mirrored | |
 | 4 Forest / Greenhouse | plants the flower in the pot the partner names | sees which pot holds that colour | |
 | 5 Rooftop / Laser room | calls the order the symbols light up in | battery into the emitter, then the symbols in that order | the laser |
-| 6 Cave / Lava room | pushes mirrors until the beam burns the crate, then calls the safe path | walks the path over the lava to the button | the flower |
+| 6 Cave / Lava room | pushes mirrors until the beam burns the crate on the edge, then calls the beam's route | walks the tiles behind the beam over the lava to the button | the flower |
 
-The lava of face 6 is only deadly while the laser is on (face 5 solved) and its button is
-not pressed yet; before and after it is cold rock.
+The lava of face 6 is deadly from the start of the game until its button is pressed. The
+safe way over it is the laser beam the outside player sees, once it has burnt the crate.
 
 ## Play with the AI
 

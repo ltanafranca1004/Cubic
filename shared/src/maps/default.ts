@@ -24,6 +24,7 @@ export const STRING_MAPS: Record<Side, Record<FaceId, string[]>> = {
     // ============================================================
     // Rows 2-6, columns 0-10 are where the number is laid out (CODE_ORIGIN in hiddenCode.ts):
     // keep that block floor.
+    // f = a spot where one of face 4's loose flowers may lie (one per game on this face, picked by the seed).
     1: [
       '............',
       '.T.T.....TT.',
@@ -33,26 +34,27 @@ export const STRING_MAPS: Record<Side, Record<FaceId, string[]>> = {
       '............',
       '............',
       '........~~..',
-      '.......~~~T.',
-      '............',
-      '.T........T.',
+      '....ff.~~~T.',
+      '..f.f.f.f...',
+      '.T...f.ff.T.',
       '............',
     ],
     // ============================================================
     // FACE 2 OUTSIDE: Desert (equation-safe)
     // ============================================================
     // No walls here: a grey block would pass for one of the rocks the puzzle has counted.
+    // f = a spot where one of face 4's loose flowers may lie (one per game on this face, picked by the seed).
     2: [
       '............',
-      '.T..........',
-      '.........T..',
-      '............',
+      '.T..ff..f.f.',
+      '.....ff..T..',
+      '.......ff...',
       '.....T~~....',
       '....~~~~T...',
       '.....~~~....',
       '.......T....',
-      '............',
-      '.T..........',
+      '........f...',
+      '.T.......f..',
       '..........T.',
       '............',
     ],
@@ -61,24 +63,27 @@ export const STRING_MAPS: Record<Side, Record<FaceId, string[]>> = {
     // ============================================================
     // The symbol is drawn by the puzzle (GLYPH in puzzles/mirroredGlyph.ts) and covers most of
     // the face: the pines, the snowman's tile (#) and the pond stand clear of it.
+    // f = a spot where one of face 4's loose flowers may lie (one per game on this face, picked by the seed).
     3: [
       '............',
       '.T........T.',
-      '..........T.',
+      '..f.......T.',
       '............',
       '............',
-      '............',
-      '..........T.',
-      '.TT.........',
-      '..........#.',
-      '.........~~.',
-      '.........~~.',
+      '..f.........',
+      '...f......T.',
+      '.TT.f....f..',
+      '...f......#.',
+      '..ff.....~~.',
+      '.f...f...~~.',
       '............',
     ],
     // ============================================================
     // FACE 4 OUTSIDE: Forest (botanical-mirror)
     // ============================================================
     // p = a pot (five of them). The inside pots stand on the same tiles (drawn by the puzzle).
+    // Pots are SOLID on both sides: none on the ring, and each needs a free tile next to it
+    // (shared/test/botanical-mirror.test.ts checks both).
     4: [
       '............',
       '.T.T...T.TT.',
@@ -96,23 +101,26 @@ export const STRING_MAPS: Record<Side, Record<FaceId, string[]>> = {
     // ============================================================
     // FACE 5 OUTSIDE: Rooftop (sequence-laser)
     // ============================================================
+    // f = a spot where one of face 4's loose flowers may lie (one per game on this face, picked by the seed).
     5: [
       '............',
-      '.##.........',
+      '.##.f.f...f.',
       '.#...u..T...',
       '...u...u....',
-      '.....~~.....',
-      '....~~~.....',
+      '..f..~~..f..',
+      '....~~~...f.',
       '..u..~..u...',
-      '............',
+      '.f........f.',
       '..T.u.u.....',
       '.....v..##..',
-      '.........#..',
+      '...f.f...#..',
       '............',
     ],
     // ============================================================
     // FACE 6 OUTSIDE: Cave (laser-path)
     // ============================================================
+    // y = the crate, ON THE RING (the one solid thing allowed there: it burns away). Keep
+    // its column free of terrain and rocks: the beam comes down it.
     6: [
       '............',
       '.T........T.',
@@ -222,14 +230,16 @@ export const STRING_MAPS: Record<Side, Record<FaceId, string[]>> = {
     // ============================================================
     // FACE 6 INSIDE: Lava room (laser-path)
     // ============================================================
+    // X = the button. It must stand on the tile behind the outside beam source (Y on the
+    // outside map): the beam is the safe path through the lava and ends there.
     6: [
       '............',
       '............',
       '............',
       '............',
       '............',
+      '.....X......',
       '............',
-      '......X.....',
       '............',
       '............',
       '............',

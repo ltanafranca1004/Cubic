@@ -86,6 +86,9 @@ const PUZZLE: Record<string, string> = {
   // ---- faces 4-6 (scripts-b) ----
   // face 4, botanical-mirror. A pot is named by row and column, counted from the edges beside faces 5 and 3.
   'botanical-mirror.relay': '{words}',
+  // (out.colour and out.go are newer than the voice bank: the browser voice reads them.)
+  'botanical-mirror.out.colour': 'What colour is the flower in that pot? Rows from face 5, columns from face 3.',
+  'botanical-mirror.out.go': 'I know every pot now. I will fetch the flowers and plant them.',
   'botanical-mirror.out.ask': 'Which pot? Say row and column. Rows from the face 5 edge, columns from face 3.',
   'botanical-mirror.out.nopot': 'I see no pot there. Rows count from the face 5 edge, columns from face 3.',
   'botanical-mirror.out.strike': "That was the wrong pot. I've got the flower back. Which row and column?",
@@ -166,7 +169,7 @@ const HUMAN_SAYS: Record<string, { out: string; in: string }> = {
   'hidden-code': { out: 'Nothing: they type the code you read out. "again" repeats it.', in: 'The three digits of the code they see, in order.' },
   'equation-safe': { out: 'Nothing: they type the answer. "again" repeats the counts.', in: 'How many bushes, birds and rocks they see, each with its kind.' },
   'mirrored-glyph': { out: '"next" for the next row, "again", or "row" and a number to hear that row.', in: 'One row per line, upright, from their left, like "row 1 skip 3 flip 7". "clear" starts over.' },
-  'botanical-mirror': { out: 'The pot as a row and a column. Rows from the face 5 edge, columns from face 3.', in: 'The colour of their flower: red, blue, yellow, pink or white.' },
+  'botanical-mirror': { out: 'The colour of the flower in the pot it names. After a wrong pot: the row and column for its flower.', in: 'Nothing: it names each pot and its colour. "again" or the colour of their flower repeats.' },
   'sequence-laser': { out: '"again" to hear the order once more.', in: 'They press REPLAY (E on its tile), then say the symbols in the order they light up.' },
   'laser-path': { out: 'Which way the lava is (up, down, left, right), then "yes" after each part. "again" repeats.', in: '"face" and the number the path starts by, a row or column, then steps like "right 2 then up 1".' },
 };

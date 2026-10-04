@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { FACES, FACE_SIZE, LEGEND, SIDES, SPAWN, isSolidTile, loadWorld, objectsOn, onRing, parseStringMap, parseTmj } from '../src/index';
+import { FACES, FACE_SIZE, LEGEND, SIDES, SPAWN, createGame, devSolve, isBlocked, isSolidTile, loadWorld, objectsOn, onRing, parseStringMap, parseTmj } from '../src/index';
 
 test('every face loads as a FACE_SIZE x FACE_SIZE map', () => {
   const world = loadWorld();
@@ -33,6 +33,26 @@ test('edge rule: no solid terrain on the outer ring of any face, on either side'
   }
   // A player walking in over the edge must always be able to step in: move the terrain inward.
   assert.deepEqual(bad, [], `solid terrain on the ring: ${bad.join('; ')}`);
+});
+
+test('edge rule: no puzzle blocks a ring tile, except the crate of face 6 until it burns', () => {
+  const world = loadWorld();
+  const crate = objectsOn(world, 'out', 6, 'f6-crate')[0]!;
+  assert.ok(onRing(crate.x, crate.y), 'the crate stands on the edge of its face');
+  const blocked = (state: ReturnType<typeof createGame>) => {
+    const bad: string[] = [];
+    for (const side of SIDES)
+      for (const face of FACES)
+        for (let y = 0; y < FACE_SIZE; y++) for (let x = 0; x < FACE_SIZE; x++) if (onRing(x, y) && isBlocked(state, side, { face, x, y })) bad.push(`${side}-${face} ${x},${y}`);
+    return bad;
+  };
+  const state = createGame(0);
+  // THE ONE EXCEPTION, kept this narrow on purpose: the wooden crate (`f6-crate`, outside
+  // face 6) is solid on its ring tile, and only while it is unburnt. The laser burns it
+  // away, and from then on that tile is open like every other ring tile.
+  assert.deepEqual(blocked(state), [`out-6 ${crate.x},${crate.y}`]);
+  devSolve(state, 6, 1000); // the crate is ash
+  assert.deepEqual(blocked(state), []);
 });
 
 test('onRing is the outer row and column of a face', () => {
