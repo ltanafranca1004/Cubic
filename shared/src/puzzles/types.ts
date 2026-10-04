@@ -31,8 +31,29 @@ export interface ItemEvent {
 }
 
 /** Read-only helpers available while creating the initial state. */
+/** A straight line drawn over a face (a laser beam), between canonical tile centres. */
+export interface PuzzleLine {
+  from: [x: number, y: number];
+  to: [x: number, y: number];
+  /** CSS colour, e.g. "#ff4040". */
+  colour: string;
+}
+
+/** A new carryable item for ctx.spawnItem. */
+export interface ItemSpawn {
+  id: string;
+  kind: string;
+  side: Side;
+  face: FaceId;
+  x: number;
+  y: number;
+  props?: Item['props'];
+}
+
 export interface PuzzleInitCtx {
   readonly world: World;
+  /** The game's seed (GameState.seed). Mix your random content from it: `mix(ctx.seed, ...)`. */
+  readonly seed: number;
   /** Map objects on one side of a face, optionally by type. */
   objects(side: Side, face: FaceId, type?: string): MapObject[];
 }
@@ -56,6 +77,24 @@ export interface PuzzleCtx extends PuzzleInitCtx {
   strike(side: Side): void;
   /** Put a player on another tile of the face they are on (e.g. back to the start). */
   teleport(side: Side, x: number, y: number): void;
+  /**
+   * The puzzles' only randomness: a 32-bit unsigned integer mixed from the game's seed and
+   * `keys` (`mix(seed, ...keys)`). Same keys = same number, on the server and both clients.
+   * e.g. `ctx.rand(this.face, i) % 10` for the i-th digit.
+   */
+  rand(...keys: number[]): number;
+  /** Is the puzzle on `face` solved (latched)? For chains: face 4 waits for face 6. */
+  faceSolved(face: FaceId): boolean;
+  /** Add a carryable item lying on a tile. Throws if the id is already in use. */
+  spawnItem(item: ItemSpawn): void;
+  /**
+   * Put item `id` in `side`'s hands, wherever it is, even if it was just placed on a target
+   * (clears placedOn). False (and nothing changes) if there is no such item or that player
+   * already carries a different one.
+   */
+  giveItem(side: Side, id: string): boolean;
+  /** Delete an item for good (also out of the hands of whoever carries it). */
+  removeItem(id: string): void;
 }
 
 export interface PuzzleModule<S = unknown> {
@@ -75,6 +114,20 @@ export interface PuzzleModule<S = unknown> {
 
   /** `side` just stepped off `tile` (also fires when they walk off the face). */
   onLeave?(s: S, ctx: PuzzleCtx, side: Side, tile: TileRef): void;
+
+  /**
+   * `side` pressed E on `tile` (where they stand, on this face) with empty hands and no
+   * item to pick up there. This is how keys, buttons and flip tiles are pressed.
+   */
+  onUse?(s: S, ctx: PuzzleCtx, side: Side, tile: TileRef): void;
+
+  /**
+   * `side` is trying to step onto `tile` of this face from the tile next to it on the SAME
+   * face (never across an edge). dx, dy is the canonical step (tile minus where they stand).
+   * Called before the block check: move your box and return true, and the engine emits
+   * `push` and then checks isBlocked again. Return false when nothing moved.
+   */
+  onPush?(s: S, ctx: PuzzleCtx, side: Side, tile: TileRef, dx: number, dy: number): boolean;
 
   /**
    * A carryable item was picked up, dropped or placed on a target. Unlike the tile hooks
@@ -98,6 +151,12 @@ export interface PuzzleModule<S = unknown> {
 
   /** One line of objective text for `side` while on this face. */
   objective?(s: S, ctx: PuzzleCtx, side: Side): string;
+
+  /** Lines `side` sees over this face (beams), drawn after the objects. Canonical tile centres. */
+  lines?(s: S, ctx: PuzzleCtx, side: Side): PuzzleLine[];
+
+  /** The INSIDE of this face is drawn fully lit (no darkness around the player). */
+  bright?: boolean;
 }
 
 /** How often the server calls onTick. */

@@ -11,7 +11,7 @@ export type BotAction =
   | { type: 'goto'; col: number; row: number }
   /** Walk to another face (1-6) by the shortest route. */
   | { type: 'go_face'; face: number }
-  /** Walk onto the nearest visible object or item of this type/kind on your face ("plate", "crystal", "portal", "rose", ...). */
+  /** Walk onto the nearest visible object or item of this type/kind on your face ("crystal", "key", "battery", ...). */
   | { type: 'step_on'; object: string }
   /** Walk in a straight line in your screen space. */
   | { type: 'move'; dir: 'up' | 'down' | 'left' | 'right'; steps?: number }

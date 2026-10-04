@@ -17,9 +17,6 @@ export interface BotMemory {
 
 export const newMemory = (): BotMemory => ({ faces: {}, partnerFace: null });
 
-/** The rules tell both players where the portal is. */
-const PORTAL_FACE: FaceId = 6;
-
 const opposite = (face: FaceId): FaceId => FACES.find((f) => faceDistance(face, f) === 2)!;
 
 /**
@@ -58,7 +55,7 @@ export function leashAllows(o: Observation, memory: BotMemory, face: FaceId): bo
 export const leashBroken = (o: Observation): boolean => o.voiceSignal <= 0 && !leashFree(o);
 
 export type Goal =
-  /** Everything is solved: go to the portal. */
+  /** Everything is solved and the world has a portal: go to it. */
   | { kind: 'portal'; face: FaceId }
   /** Carrying an item: take it where it belongs (`face` once a target has been seen). */
   | { kind: 'carry'; item: string; face: FaceId | null }
@@ -74,7 +71,8 @@ export function chooseGoal(o: Observation, memory: BotMemory): Goal {
   const known = remember(memory, o);
   const faceWith = (type: string) => FACES.find((f) => known.faces[f]?.objects.includes(type)) ?? null;
   if (o.won) return { kind: 'stay' };
-  if (o.portalOpen) return { kind: 'portal', face: faceWith('portal') ?? PORTAL_FACE };
+  // A world without a portal is won on the last solve: nothing left to walk to.
+  if (o.portalOpen && o.portalFace !== null) return { kind: 'portal', face: o.portalFace };
   if (o.carrying !== null) return { kind: 'carry', item: o.carrying, face: faceWith('target') };
   if (leashBroken(o)) return { kind: 'regroup' };
   const rank = (f: FaceId) => (leashAllows(o, known, f) ? 0 : 10) + faceDistance(o.face, f);

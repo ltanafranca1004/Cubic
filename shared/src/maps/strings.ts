@@ -11,31 +11,26 @@ export const LEGEND: Readonly<Record<string, { tile: TileKind } | { object: stri
   '#': { tile: 'wall' },
   T: { tile: 'tree' },
   '~': { tile: 'water' },
-  P: { object: 'plate' },
-  D: { object: 'door' },
-  C: { object: 'crystal' },
-  O: { object: 'portal' },
   // Carryable item and a target to drop it on. In string maps the item id is
-  // "<side><face>-<x>-<y>" and targets accept anything; use Tiled for named ones.
+  // "<side><face>-<x>-<y>" and targets accept anything; give `name` / `props` for named ones.
   I: { object: 'item' },
   U: { object: 'target' },
-  R: { object: 'item', name: 'rose', props: { kind: 'rose' } },
-  // Code relay (face 3): the six sign stones outside, the tablet and its lamps inside.
-  1: { object: 'glyph', name: 'sun' },
-  2: { object: 'glyph', name: 'moon' },
-  3: { object: 'glyph', name: 'star' },
-  4: { object: 'glyph', name: 'drop' },
-  5: { object: 'glyph', name: 'bolt' },
-  6: { object: 'glyph', name: 'ring' },
-  G: { object: 'tablet' },
-  L: { object: 'lamp' },
-  // Skylight (face 5): a pane outside lights the bridge with the same name inside.
-  S: { object: 'skylight', name: 'a' },
-  s: { object: 'skylight', name: 'b' },
-  B: { object: 'bridge', name: 'a' },
-  b: { object: 'bridge', name: 'b' },
-  // Mirror maze (face 4): the doorway of the trap room.
-  E: { object: 'entry' },
+  // The stub puzzles' crystal (every face until its real puzzle lands).
+  C: { object: 'crystal' },
+
+  // Each puzzle adds its own characters in its own section below, and nowhere else.
+  // A character means one thing on every face: check the other sections before picking one.
+  // ---------- face 1: hidden-code ----------
+
+  // ---------- face 2: equation-safe ----------
+
+  // ---------- face 3: mirrored-glyph ----------
+
+  // ---------- face 4: botanical-mirror ----------
+
+  // ---------- face 5: sequence-laser ----------
+
+  // ---------- face 6: laser-path ----------
 };
 
 /** Build a FaceMap from FACE_SIZE strings of FACE_SIZE legend characters. Throws on bad input. */

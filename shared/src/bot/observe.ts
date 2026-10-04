@@ -1,5 +1,5 @@
 import { canonToScreen, compassDrift, neighbours, screenToCanon } from '../cube';
-import { defaultEnv, itemsOn, objectiveFor, portalOpen, visibleObjects, type GameEnv } from '../game';
+import { defaultEnv, itemsOn, objectiveFor, portalFace, portalOpen, visibleObjects, type GameEnv } from '../game';
 import { FACE_NAMES, tileAt } from '../maps';
 import type { TileKind } from '../maps/types';
 import { FACE_SIZE, type FaceId, type GameState, type Side } from '../types';
@@ -33,6 +33,8 @@ export interface Observation {
   puzzleHere: boolean;
   solvedFaces: FaceId[];
   portalOpen: boolean;
+  /** The face the portal is on (the rules tell both players), or null: this world has none. */
+  portalFace: FaceId | null;
   strikes: number;
   /** How well you hear your partner: 3 same wall, 1 the next face over, 0 opposite side (silent). */
   voiceSignal: number;
@@ -80,6 +82,7 @@ export function observe(state: GameState, side: Side, env: GameEnv = defaultEnv)
     puzzleHere: env.puzzles.some((p) => p.face === face) && !state.solved.includes(face),
     solvedFaces: [...state.solved],
     portalOpen: portalOpen(state, env),
+    portalFace: portalFace(env),
     strikes: state.strikes,
     voiceSignal: signalBars(voiceMix(state).gain),
     won: state.wonAt !== null,

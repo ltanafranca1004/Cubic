@@ -48,5 +48,5 @@ export function objectsOn(world: World, side: Side, face: FaceId, type?: string)
  */
 export const FACE_NAMES: Record<Side, Record<FaceId, string>> = {
   out: { 1: 'Grass', 2: 'Desert', 3: 'Snow', 4: 'Forest', 5: 'Rooftop', 6: 'Cave' },
-  in: { 1: 'Plate room', 2: 'Crate room', 3: 'Frost room', 4: 'Echo room', 5: 'Moat room', 6: 'Core' },
+  in: { 1: 'Keypad room', 2: 'Vault', 3: 'Tile room', 4: 'Greenhouse', 5: 'Laser room', 6: 'Lava room' },
 };
