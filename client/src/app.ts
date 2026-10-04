@@ -172,6 +172,7 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
     return {
       screen: inGame ? 'game' : 'lobby',
       online: net.online,
+      blocked: net.blocked,
       status,
       error: net.error,
       roomCode: net.code,
@@ -187,7 +188,22 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
     };
   }
 
+  /**
+   * The voice call follows the room. It starts on the server's `voice:ready`; it ends here:
+   * for good (the microphone is let go too) when we are in no room or the partner gave
+   * their seat up, and for now when the partner lost their connection and the seat is held.
+   */
+  let callState: 'none' | 'gone' | 'held' | 'on' = 'none';
+  function syncVoice(): void {
+    const partner = net.role ? net.room?.members[net.role === 'host' ? 'guest' : 'host'] : undefined;
+    const next = !net.code ? 'none' : partner?.connected ? 'on' : partner ? 'held' : 'gone';
+    if (next === callState) return;
+    callState = next;
+    if (next !== 'on') voice.hangUp(next !== 'held');
+  }
+
   function render(): void {
+    syncVoice();
     const state = uiState();
     const playing = state.screen === 'game';
     gameEl.style.visibility = playing ? 'visible' : 'hidden';

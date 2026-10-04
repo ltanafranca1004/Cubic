@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { CONTROLS, STICK_DEADZONE, gameAction, keyDir, menuAction, padEdges, padInputs, padKey, stepFocus, typeCode, type GameAction, type KeyLike, type PadLike } from '../src/input/keymap';
+import { CONTROLS, STICK_DEADZONE, gameAction, keyDir, menuAction, padEdges, padInputs, padKey, pasteCode, stepFocus, typeCode, type GameAction, type KeyLike, type PadLike } from '../src/input/keymap';
 import { netCellLabel, textScale } from '../src/ui/a11y';
 import { CAPTION_MAX_MS, CAPTION_MIN_MS, SPEAK_HOLD_MS, caption, captionMs, clearCaption, onCaption, showCaption, speakStep } from '../src/ui/captions';
 
@@ -83,6 +83,16 @@ test('join code: type letters, Backspace deletes, four at most, the rest is igno
   assert.equal(typeCode(code, key('Backspace')), 'ABC');
   assert.equal(typeCode('', key('Backspace')), '');
   assert.equal(typeCode('AB', key('v', { ctrlKey: true })), 'AB', 'Ctrl+V is not a letter');
+});
+
+test('join code: pasted text is cut down to four upper-case letters', () => {
+  assert.equal(pasteCode('abcd'), 'ABCD');
+  assert.equal(pasteCode('  qz-7w k\n'), 'QZWK');
+  assert.equal(pasteCode('ABCDEFG'), 'ABCD');
+  assert.equal(pasteCode('ab'), 'AB', 'a short paste is kept: the rest can be typed');
+  assert.equal(pasteCode('12 34 !'), '', 'nothing usable');
+  assert.equal(pasteCode('Join me, the code is QZWK!'), 'QZWK', 'the code as the game shows it wins over the words around it');
+  assert.equal(pasteCode('room QZWKX'), 'ROOM', 'five capitals are not a code');
 });
 
 test('focus: steps stop at the ends, or wrap; the first key lands on the first item', () => {

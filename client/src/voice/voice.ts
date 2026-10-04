@@ -19,6 +19,8 @@ const RELAY_MIME = 'audio/webm;codecs=opus';
 const RELAY_SLICE_MS = 200;
 const RELAY_MAX_LAG_S = 1;
 const TALK_LEVEL = 0.04;
+/** Candidates kept while there is no connection to give them to (a real call has a few dozen). */
+const PENDING_ICE_MAX = 64;
 
 type Signal = { sdp?: RTCSessionDescriptionInit; candidate?: RTCIceCandidateInit; relay?: boolean };
 
@@ -45,6 +47,8 @@ export class Voice {
   private target = -1;
 
   private micStream: MediaStream | null = null;
+  /** The microphone was on when the last call ended for good: the next call turns it back on. */
+  private micWanted = false;
   private pc: RTCPeerConnection | null = null;
   private pendingIce: RTCIceCandidateInit[] = [];
   private directTimer: number | null = null;
@@ -189,6 +193,20 @@ export class Voice {
     this.deps.onChange();
   }
 
+  /**
+   * Let go of the microphone (the browser's recording light goes out). Nobody is there to
+   * hear it; the next call takes it again without asking, the permission is still there.
+   */
+  private releaseMic(): void {
+    if (!this.micStream) return;
+    for (const t of this.micStream.getTracks()) t.stop();
+    this.micStream = null;
+    this.micMeter = null;
+    this.myLevel = 0;
+    this.micWanted = this.mic === 'on';
+    this.mic = 'off';
+  }
+
   private transmitting(): boolean {
     return this.mic === 'on' && !this.muted && (this.mode === 'open' || this.keyDown);
   }
@@ -227,11 +245,15 @@ export class Voice {
   onReady(): void {
     const caller = this.deps.isCaller();
     if (caller === null) {
-      window.setTimeout(() => this.onReady(), 200); // our seat is not confirmed yet
+      // our seat is not confirmed yet: look again, unless we hang up meanwhile (we left)
+      const epoch = this.epoch;
+      window.setTimeout(() => epoch === this.epoch && this.onReady(), 200);
       return;
     }
     this.closeCall();
     this.setLink('connecting');
+    if (this.micWanted && this.mic === 'off') void this.enableMic(); // let go when the last call ended
+    this.micWanted = false;
     if (this.forceRelay) {
       this.startRelay(true);
       return;
@@ -295,10 +317,16 @@ export class Voice {
     const config = await iceConfig();
     if (epoch !== this.epoch) return; // hung up or restarted while waiting
     const pc = this.newPc(config);
-    const tx = pc.addTransceiver('audio', { direction: 'sendrecv' });
-    await tx.sender.replaceTrack(this.micStream?.getAudioTracks()[0] ?? null);
-    await pc.setLocalDescription(await pc.createOffer());
-    this.deps.signal({ sdp: pc.localDescription!.toJSON() } satisfies Signal);
+    try {
+      const tx = pc.addTransceiver('audio', { direction: 'sendrecv' });
+      await tx.sender.replaceTrack(this.micStream?.getAudioTracks()[0] ?? null);
+      await pc.setLocalDescription(await pc.createOffer());
+      this.deps.signal({ sdp: pc.localDescription!.toJSON() } satisfies Signal);
+    } catch (e) {
+      if (this.pc !== pc) return; // hung up or restarted meanwhile: not a failure
+      console.warn('[voice] could not place the call, using the relay', e);
+      this.startRelay(true);
+    }
   }
 
   async onSignal(data: unknown): Promise<void> {
@@ -331,7 +359,7 @@ export class Voice {
         await this.flushIce();
       } else if (msg.candidate) {
         if (this.pc?.remoteDescription) await this.pc.addIceCandidate(msg.candidate);
-        else this.pendingIce.push(msg.candidate);
+        else if (this.pendingIce.length < PENDING_ICE_MAX) this.pendingIce.push(msg.candidate);
       }
     } catch (e) {
       console.warn('[voice] signaling failed, using the relay', e);
@@ -372,9 +400,16 @@ export class Voice {
     this.stopRelay();
   }
 
-  /** The partner left: drop the call. */
-  hangUp(): void {
+  /**
+   * Drop the call. `forGood`: nobody is coming back to it (we left the room, or the partner
+   * gave their seat up), so the microphone is let go as well. Without it the partner only
+   * lost their connection and their seat is held: the microphone stays for the call that
+   * starts when they are back.
+   */
+  hangUp(forGood = false): void {
     this.closeCall();
+    if (this.remoteEl) this.remoteEl.srcObject = null;
+    if (forGood) this.releaseMic();
     this.setLink('none');
   }
 

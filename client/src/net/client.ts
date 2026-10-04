@@ -35,11 +35,18 @@ import {
 export const SERVER_URL: string = (import.meta.env.VITE_SERVER_URL ?? '').replace(/\/$/, '');
 
 /**
- * Wake the server as early as possible: the Render free tier sleeps when idle and a cold
- * start takes about 50 seconds. Fire and forget; the socket keeps retrying meanwhile.
+ * Ask the server's /health. It wakes it as early as possible (the Render free tier sleeps
+ * when idle and a cold start takes about 50 seconds), and its answer says whether this
+ * page's origin may connect at all. True = the server is up and refuses us: its
+ * CLIENT_ORIGIN does not list this site. False = allowed, or no answer yet (still waking).
  */
-export function wakeServer(): void {
-  void fetch(`${SERVER_URL}/health`, { mode: 'no-cors', cache: 'no-store' }).catch(() => {});
+export async function serverBlocksUs(): Promise<boolean> {
+  try {
+    const res = await fetch(`${SERVER_URL}/health`, { cache: 'no-store' });
+    return ((await res.json()) as { originAllowed?: boolean }).originAllowed === false;
+  } catch {
+    return false;
+  }
 }
 const SEAT_KEY = 'cubic.seat';
 
@@ -64,6 +71,11 @@ export interface NetHandlers {
 
 export class Net {
   online = false;
+  /**
+   * The server is up but refuses this site (a wrong CLIENT_ORIGIN on the server). Not the
+   * same as a cold start: waiting will not help, so the menus say so.
+   */
+  blocked = false;
   info: ServerInfo = { aiAvailable: false, ttsAvailable: false, ttsMode: 'browser' };
   code: string | null = null;
   /** Our member id in the room: who we are in `room.members`. */
@@ -111,10 +123,22 @@ export class Net {
       this.h.onChange();
       return;
     }
-    wakeServer();
-    const socket = (this.socket = SERVER_URL ? io(SERVER_URL, { transports: ['websocket', 'polling'] }) : io({ transports: ['websocket', 'polling'] }));
+    // wakes a sleeping server; and each time the socket is refused, asks why
+    const probe = () =>
+      void serverBlocksUs().then((blocked) => {
+        if (this.online || blocked === this.blocked) return;
+        this.blocked = blocked;
+        this.h.onChange();
+      });
+    probe();
+    // WebSocket first; where a network blocks it (some campus and office networks), HTTP
+    // long-polling. Without tryAllTransports the client would never try the second one.
+    const options = { transports: ['websocket', 'polling'], tryAllTransports: true };
+    const socket = (this.socket = SERVER_URL ? io(SERVER_URL, options) : io(options));
+    socket.on('connect_error', probe); // the socket keeps retrying by itself
     socket.on('connect', () => {
       this.online = true;
+      this.blocked = false;
       this.h.onChange();
       this.tryRejoin();
     });
@@ -193,7 +217,9 @@ export class Net {
     this.room = res.room;
     this.chat = res.chat;
     this.server = res.state;
+    // a new seat, or the same one after a reconnect: the server counts our moves from 0
     this.pending = [];
+    this.seq = 0;
     this.side = null;
     this.state = null;
     this.sync();
@@ -218,7 +244,10 @@ export class Net {
     if (!saved || !this.socket) return;
     this.socket.emit('room:rejoin', saved, (res) => {
       if (res.ok) this.adopt(res);
-      else this.forget();
+      else {
+        this.error = res.error; // the room is gone (it emptied, or the server restarted): say why we are back on the menu
+        this.forget();
+      }
     });
   }
 

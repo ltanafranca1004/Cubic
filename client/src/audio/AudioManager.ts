@@ -146,16 +146,22 @@ export class AudioManager {
   }
 
   /**
-   * Boot: only the menu track is downloaded. Once it is in, the other tracks follow in the
-   * background, one after the other; a track that is asked for first is fetched at once.
-   * Nothing here is awaited by the menu, and nothing is decoded before the first click.
+   * Boot: only the menu track is downloaded (one format). Nothing else is fetched until
+   * the player's first click or key: someone who opens the page and leaves has paid for
+   * one track, not four. From that first gesture the other tracks follow in the
+   * background, one after the other; a track that is asked for first is fetched at once
+   * (loadTrack). Nothing here is awaited by the menu, and nothing is decoded before the
+   * first click.
    */
   private preload(): void {
     const first = (id: TrackId) => this.order(TRACKS[id])[0]!;
-    void (async () => {
-      await this.bytes(first('menu')).catch(() => {});
-      for (const id of Object.keys(TRACKS) as TrackId[]) if (id !== 'menu') await this.bytes(first(id)).catch(() => {});
-    })();
+    const menu = this.bytes(first('menu')).catch(() => {});
+    onFirstGesture(window, () => {
+      void (async () => {
+        await menu;
+        for (const id of Object.keys(TRACKS) as TrackId[]) if (id !== 'menu') await this.bytes(first(id)).catch(() => {});
+      })();
+    });
   }
 
   /** The file to try first: Ogg Opus, or the mp3 where that cannot be played (older Safari). */

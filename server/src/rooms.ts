@@ -46,6 +46,8 @@ const CHAT_PER_WINDOW = 5;
  * disconnect (short: the room is blocked for a new guest meanwhile).
  */
 export const LIMITS = { moveBurst: 5, moveRefillMs: 90, lobbyHoldMs: 15_000 };
+/** How far past the last ack a move's seq may be (moves lost on the way leave small gaps). */
+const SEQ_JUMP_MAX = 1000;
 
 interface Member {
   id: number;
@@ -68,6 +70,11 @@ type Who = number | Side;
 
 export interface RoomListener {
   onState?(update: StateUpdate): void;
+  /**
+   * Member `id` sent a move that was dropped (rate limit): nothing changed, so only they
+   * hear about it, to take the move out of their prediction.
+   */
+  onAck?(id: number, update: StateUpdate): void;
   onChat?(msg: ChatMessage): void;
   onQuick?(quick: QuickChat): void;
   onRoom?(info: RoomInfo): void;
@@ -275,6 +282,9 @@ export class Room {
     if (m.dropTimer) clearTimeout(m.dropTimer);
     m.dropTimer = null;
     m.connected = true;
+    // The page that comes back numbers its moves from 1 again. Keeping the old ack would
+    // make it throw away every prediction until its count passed the old one.
+    m.ack = 0;
     this.seatPlayer(m);
     this.emitRoom();
     this.emitState([]);
@@ -345,19 +355,29 @@ export class Room {
 
   /** Validated move. `seq` is echoed back so the mover can reconcile its prediction. */
   move(side: Side, dx: number, dy: number, seq = 0): GameEvent[] {
-    const seat = this.playing(side);
-    if (!seat) return [];
-    if (seq > seat.ack) seat.ack = seq;
-    const events = this.spend(seat) ? applyMove(this.state, side, dx, dy, this.now()) : [];
-    this.emitState(events);
-    return events;
+    return this.input(side, seq, () => applyMove(this.state, side, dx, dy, this.now()));
   }
 
   interact(side: Side, seq = 0, only?: InteractOnly): GameEvent[] {
+    return this.input(side, seq, () => applyInteract(this.state, side, this.now(), undefined, only));
+  }
+
+  /**
+   * One player input, within the move budget. Over budget it is dropped: nothing changed,
+   * so nothing is broadcast (a flood of moves must not become a flood of state updates
+   * for the partner), and only the sender is told, so its prediction lets go of the move.
+   */
+  private input(side: Side, seq: number, apply: () => GameEvent[]): GameEvent[] {
     const seat = this.playing(side);
     if (!seat) return [];
-    if (seq > seat.ack) seat.ack = seq;
-    const events = this.spend(seat) ? applyInteract(this.state, side, this.now(), undefined, only) : [];
+    // a real client counts up by one: anything else (1e300, NaN) must not become the ack
+    if (Number.isSafeInteger(seq) && seq > seat.ack && seq <= seat.ack + SEQ_JUMP_MAX) seat.ack = seq;
+    if (!this.spend(seat)) {
+      const update: StateUpdate = { state: this.state, events: [], acks: this.acks() };
+      for (const l of this.listeners) l.onAck?.(seat.id, update);
+      return [];
+    }
+    const events = apply();
     this.emitState(events);
     return events;
   }

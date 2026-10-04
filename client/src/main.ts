@@ -17,7 +17,9 @@ setAudioApi({
 const root = document.querySelector<HTMLElement>('#app')!;
 const params = new URLSearchParams(location.search);
 const mock = params.get('mock');
-if (params.has('dev')) void import('./dev').then((dev) => dev.mountDev()); // dev tools, see client/src/dev
+// Dev tools (client/src/dev). Dev server only: a production build drops the chunk, so
+// ?dev does nothing there.
+if (import.meta.env.DEV && params.has('dev')) void import('./dev').then((dev) => dev.mountDev());
 
 if (mock === 'lobby' || mock === 'hud' || mock === 'menu') {
   // Static mock data for building UI without a server (see client/src/ui/README.md).

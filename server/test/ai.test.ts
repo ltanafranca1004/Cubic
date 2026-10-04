@@ -305,3 +305,32 @@ test('the turn tells the brain its goal, and nothing about the other side', asyn
   assert.match(systemPrompt(), /Stay within one face of your partner/);
   for (const hidden of ['"door"', '"crystal"', 'partnerFace', '"pose"', '"x"', '"y"']) assert.ok(!prompts[0]!.includes(hidden), hidden);
 });
+
+test('a throw inside the AI is contained: it is logged, and an AI that keeps failing is stopped', async () => {
+  // its body: every step throws (a timer callback: uncaught, this would end the process)
+  const walk = setup('out', ['{"say":null,"action":{"type":"step_on","object":"plate"}}']);
+  walk.room.move = () => {
+    throw new Error('boom in step');
+  };
+  await until(() => walk.logs.some((l) => l.includes('boom in step')), 'the step fault to be logged');
+  await sleep(30);
+  assert.ok(!walk.logs.some((l) => l.includes('stopped')), 'one fault drops the action, it does not stop the AI');
+
+  // its brain, before the call is even made (async: this would be an unhandled rejection),
+  // again and again: that AI is stopped
+  const think = setup('out', [], { idleMs: 5 });
+  think.room.isConnected = () => {
+    throw new Error('boom in think');
+  };
+  await until(() => think.logs.some((l) => l.includes('boom in think')), 'the think fault to be logged');
+  await until(() => think.logs.some((l) => l.includes('stopped')), 'the failing AI to be stopped');
+
+  // what it does when the human acts reaches it inside the human's own call: that must not throw
+  const hear = setup('out', []);
+  await sleep(30);
+  (hear.ai as unknown as { look(): never }).look = () => {
+    throw new Error('boom in listener');
+  };
+  assert.doesNotThrow(() => hear.room.move('out', 1, 0));
+  assert.ok(hear.logs.some((l) => l.includes('boom in listener')));
+});
