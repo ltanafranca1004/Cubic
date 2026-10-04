@@ -27,6 +27,11 @@ import {
   type TileRef,
   type VisibleObject,
 } from '../src/index';
+// ---- faces 1-3 (scripts-a) ----
+import { equationSafeHuman } from './humans/equationSafe';
+import { hiddenCodeHuman } from './humans/hiddenCode';
+import { mirroredGlyphHuman } from './humans/mirroredGlyph';
+// ---- end faces 1-3 ----
 
 // A SIMULATED HUMAN for the AI partner tests (not a test file itself). It plays one side
 // the way a person would: it looks at its own screen (observe / visibleObjects for ITS
@@ -94,10 +99,16 @@ export interface HumanScript<M = unknown> {
 
 /**
  * How the simulated human plays each puzzle: one HumanScript per puzzle id, next to the
- * PuzzleScript it is the partner of. Add yours here. (Empty: no V2 script yet.)
+ * PuzzleScript it is the partner of (shared/test/humans/<name>.ts). Add yours here.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const HUMAN_SCRIPTS: HumanScript<any>[] = [];
+export const HUMAN_SCRIPTS: HumanScript<any>[] = [
+  // ---- faces 1-3 (scripts-a) ----
+  hiddenCodeHuman(),
+  equationSafeHuman(),
+  mirroredGlyphHuman(),
+  // ---- end faces 1-3 ----
+];
 
 export interface HumanOptions {
   /** The faces in the order this human wants to solve them (default: the env's puzzles in list order). */
