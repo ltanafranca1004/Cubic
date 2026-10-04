@@ -24,6 +24,7 @@ import {
   type SourceLike,
 } from '../src/audio/core';
 import { TRACKS, TRACK_IDS, musicForScreen } from '../src/audio/tracks';
+import { DEFAULT_SETTINGS } from '../src/style/settings';
 
 // ---------- a fake AudioContext that records what was scheduled ----------
 
@@ -148,6 +149,12 @@ test('dbToGain: -6 dB is about half', () => {
   assert.ok(Math.abs(DUCK_GAIN - 0.501) < 0.001);
 });
 
+test('the default mix is quiet, and the settings UI starts from the same numbers', () => {
+  assert.deepEqual(DEFAULT_VOLUMES, { master: 0.8, music: 0.35, sfx: 0.7 });
+  const { master, music, sfx } = DEFAULT_SETTINGS;
+  assert.deepEqual({ master, music, sfx }, DEFAULT_VOLUMES);
+});
+
 test('volumes apply to the bus gains at once, with no ramp', () => {
   const { ctx, mixer, nodes } = setup();
   mixer.unlock();
@@ -157,11 +164,11 @@ test('volumes apply to the bus gains at once, with no ramp', () => {
 
   ctx.currentTime = 3;
   mixer.setMusic(0.5);
-  close(musicBus.gain.value, 0.5);
-  assert.deepEqual(musicBus.gain.last('set'), ['set', 0.5, 3]);
+  close(musicBus.gain.value, DEFAULT_VOLUMES.master * 0.5);
+  assert.equal(musicBus.gain.last('set')?.[2], 3);
   mixer.setMaster(0.5);
   close(musicBus.gain.value, 0.25);
-  close(sfxBus.gain.value, 0.5);
+  close(sfxBus.gain.value, 0.5 * DEFAULT_VOLUMES.sfx);
   mixer.setSfx(0.2);
   close(sfxBus.gain.value, 0.1);
   close(musicBus.gain.value, 0.25);
@@ -478,6 +485,7 @@ test('every track has a file and a sane trim', () => {
   assert.deepEqual(Object.keys(TRACKS).sort(), [...TRACK_IDS].sort());
   for (const id of TRACK_IDS) {
     assert.match(TRACKS[id].file, /^music-[a-z]+\.ogg$/);
+    assert.equal(TRACKS[id].alt, TRACKS[id].file.replace(/\.ogg$/, '.mp3'));
     assert.ok(TRACKS[id].gain > 0 && TRACKS[id].gain <= 1, `${id} trim ${TRACKS[id].gain}`);
   }
 });

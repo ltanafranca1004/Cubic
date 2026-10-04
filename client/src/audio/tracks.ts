@@ -14,25 +14,37 @@ export type SfxId = SampleId | (string & {});
 /** Music sits at this loudness (LUFS) with the music slider at full. */
 const MUSIC_LUFS = -24;
 
-interface AudioFile {
+export interface AudioFile {
+  /** Ogg Opus. */
   file: string;
+  /** The same audio as mp3, for browsers that cannot decode Ogg Opus (older Safari). */
+  alt: string;
   /** Linear trim so every file comes out equally loud. */
   gain: number;
 }
 
-/** `lufs` is the file's measured integrated loudness (ffmpeg ebur128). */
-const music = (file: string, lufs: number): AudioFile => ({ file, gain: dbToGain(MUSIC_LUFS - lufs) });
+/** `lufs` is the measured integrated loudness (ffmpeg ebur128) of `name`.ogg and `name`.mp3. */
+const music = (name: string, lufs: number): AudioFile => ({
+  file: `${name}.ogg`,
+  alt: `${name}.mp3`,
+  gain: dbToGain(MUSIC_LUFS - lufs),
+});
 
+// Gentle acoustic pieces by Kevin MacLeod (CC BY 4.0, see /CREDITS.md), each one whole,
+// levelled to about -20 LUFS and looped at the end of its last note.
 export const TRACKS: Record<TrackId, AudioFile> = {
-  menu: music('music-menu.ogg', -13.2),
-  lobby: music('music-lobby.ogg', -14.5),
-  outside: music('music-outside.ogg', -12.4),
-  inside: music('music-inside.ogg', -17.3),
+  menu: music('music-menu', -20.0), // "Morning": classical guitar, harp, flutes
+  lobby: music('music-lobby', -20.0), // "Clear Air": two guitars, soft piano
+  outside: music('music-outside', -20.0), // "Windswept": guitar and strings
+  inside: music('music-inside', -20.3), // "Immersed": sparse piano over string drones
 };
 
 export const SAMPLES: Record<SampleId, AudioFile & { fallback: string }> = {
-  /** Puzzle solved. Falls back to the synthesized `solve` chime until the file is decoded. */
-  solved: { file: 'sting-solved.mp3', gain: 0.35, fallback: 'solve' },
+  /**
+   * Puzzle solved: one rolled harp chord. Falls back to the synthesized `solve` chime
+   * until the file is decoded.
+   */
+  solved: { file: 'sting-solved.ogg', alt: 'sting-solved.mp3', gain: 0.2, fallback: 'solve' },
 };
 
 /**

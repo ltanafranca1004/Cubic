@@ -54,10 +54,14 @@ const rowHtml = (row: Row) => `<div class="cu-set"${row.needsVoice ? ' data-need
 const sectionHtml = (s: (typeof SECTIONS)[number]) => `<div class="cu-sub">${s.title}</div>${ROWS.filter((r) => r.section === s.id).map(rowHtml).join('')}`;
 const columnHtml = (column: 1 | 2) => `<div class="cu-setcol">${SECTIONS.filter((s) => s.column === column).map(sectionHtml).join('')}</div>`;
 
+/** CC BY needs the credit wherever the game is shown (the full list is in /CREDITS.md). */
+export const MUSIC_CREDIT = 'Music: Kevin MacLeod (incompetech.com), CC BY 4.0';
+
 const HTML = `
 <div class="cu-panel cu-settings" role="dialog" aria-label="Settings">
   <div class="cu-title">Settings</div>
   <div class="cu-setgrid">${columnHtml(1)}${columnHtml(2)}</div>
+  <div class="cu-credit">${MUSIC_CREDIT}</div>
   <div class="cu-actions"><button class="cu-btn" data-close><span>Done</span></button></div>
 </div>`;
 

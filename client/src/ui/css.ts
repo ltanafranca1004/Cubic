@@ -203,6 +203,7 @@ ${ICONS.map((name, i) => `.cu-ico.${name} { background-position: -${i * 16}u 0; 
 .cu-toggle.on { background-position: -22u 0; }
 .cu-toggle:focus-visible { outline: 1u solid ${ROLE.focus}; }
 .cu-actions { display: flex; justify-content: center; gap: 6u; margin-top: 4u; }
+.cu-credit { text-align: center; text-transform: none; color: var(--dim); margin-top: 2u; }
 
 .cu-win { width: 200u; text-align: center; padding: 4u; }
 .cu-win h2 { font: 32u/26u "m5x7", monospace; margin: 0 0 4u; color: ${ROLE.portalDark}; font-weight: normal; }

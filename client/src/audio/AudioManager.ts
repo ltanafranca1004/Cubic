@@ -1,6 +1,6 @@
 import { audioContext, routeSfx, sfx } from '../game/sfx';
 import { Mixer, onFirstGesture, type FadeOptions, type Volumes } from './core';
-import { SAMPLES, TRACKS, type SampleId, type SfxId, type TrackId } from './tracks';
+import { SAMPLES, TRACKS, type AudioFile, type SampleId, type SfxId, type TrackId } from './tracks';
 
 // All game sound except voice chat: music per screen (crossfaded, ducked under the
 // partner's voice) and sound effects, behind three volumes. The logic is in ./core; this
@@ -23,6 +23,8 @@ export class AudioManager {
   private mixer: Mixer<TrackId, AudioBuffer>;
   private decoded = new Map<TrackId, Promise<AudioBuffer | null>>();
   private samples = new Map<SampleId, AudioBuffer>();
+  /** Downloaded files, not yet decoded (decoding waits for the first click). */
+  private raw = new Map<string, Promise<ArrayBuffer>>();
 
   constructor() {
     this.mixer = new Mixer<TrackId, AudioBuffer>({
@@ -32,7 +34,10 @@ export class AudioManager {
     });
     // The synthesized effects in game/sfx.ts play into the SFX bus.
     routeSfx(() => this.mixer.sfxInput() as GainNode);
-    if (typeof window !== 'undefined') this.arm();
+    if (typeof window !== 'undefined') {
+      this.arm();
+      this.preload();
+    }
   }
 
   // ----- volumes (0..1, applied instantly) -----
@@ -109,9 +114,9 @@ export class AudioManager {
     return this.mixer.sfxInput() as GainNode;
   }
 
-  /** Fetch and decode a file in assets/audio. Null when it cannot be loaded. */
+  /** Fetch and decode one file in assets/audio. Null when it cannot be loaded. */
   loadBuffer(file: string): Promise<AudioBuffer | null> {
-    return this.decode(file);
+    return this.decodeFile(file);
   }
 
   // ----- ducking -----
@@ -140,21 +145,62 @@ export class AudioManager {
     }
   }
 
-  private async decode(file: string): Promise<AudioBuffer | null> {
+  /**
+   * Boot: only the menu track is downloaded. Once it is in, the other tracks follow in the
+   * background, one after the other; a track that is asked for first is fetched at once.
+   * Nothing here is awaited by the menu, and nothing is decoded before the first click.
+   */
+  private preload(): void {
+    const first = (id: TrackId) => this.order(TRACKS[id])[0]!;
+    void (async () => {
+      await this.bytes(first('menu')).catch(() => {});
+      for (const id of Object.keys(TRACKS) as TrackId[]) if (id !== 'menu') await this.bytes(first(id)).catch(() => {});
+    })();
+  }
+
+  /** The file to try first: Ogg Opus, or the mp3 where that cannot be played (older Safari). */
+  private order({ file, alt }: AudioFile): string[] {
+    const ogg = new Audio().canPlayType('audio/ogg; codecs="opus"') !== '';
+    return ogg ? [file, alt] : [alt, file];
+  }
+
+  /** One file's bytes, downloaded once. */
+  private bytes(name: string): Promise<ArrayBuffer> {
+    let job = this.raw.get(name);
+    if (!job) {
+      job = fetch(AUDIO_DIR + name).then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.arrayBuffer();
+      });
+      job.catch(() => this.raw.delete(name)); // a failed download may be tried again
+      this.raw.set(name, job);
+    }
+    return job;
+  }
+
+  private async decodeFile(name: string): Promise<AudioBuffer | null> {
     try {
-      const res = await fetch(AUDIO_DIR + file);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return await audioContext().decodeAudioData(await res.arrayBuffer());
+      // decoding empties the buffer it is given: hand it a copy, keep the download
+      return await audioContext().decodeAudioData((await this.bytes(name)).slice(0));
     } catch (e) {
-      console.warn(`[audio] could not load ${file}`, e);
+      console.warn(`[audio] could not load ${name}`, e);
       return null;
     }
+  }
+
+  /** The Ogg Opus file, or the mp3 where that cannot be played or decoded. */
+  private async decode(entry: AudioFile): Promise<AudioBuffer | null> {
+    for (const name of this.order(entry)) {
+      const buffer = await this.decodeFile(name);
+      if (buffer) return buffer;
+    }
+    return null;
   }
 
   private loadTrack(id: TrackId): Promise<AudioBuffer | null> {
     let job = this.decoded.get(id);
     this.decoded.delete(id);
-    job ??= this.decode(TRACKS[id].file);
+    job ??= this.decode(TRACKS[id]);
     this.decoded.set(id, job); // most recently used last
     for (const old of this.decoded.keys()) {
       if (this.decoded.size <= KEEP_DECODED) break;
@@ -164,7 +210,7 @@ export class AudioManager {
   }
 
   private async loadSample(id: SampleId): Promise<void> {
-    const buffer = await this.decode(SAMPLES[id].file);
+    const buffer = await this.decode(SAMPLES[id]);
     if (buffer) this.samples.set(id, buffer);
   }
 }
