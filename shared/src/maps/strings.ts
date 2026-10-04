@@ -21,6 +21,19 @@ export const LEGEND: Readonly<Record<string, { tile: TileKind } | { object: stri
   // Each puzzle adds its own characters in its own section below, and nowhere else.
   // A character means one thing on every face: check the other sections before picking one.
   // ---------- face 1: hidden-code ----------
+  // The floor keypad (inside): a key per digit, ENTER, and the cells of the display.
+  '0': { object: 'key', name: '0' },
+  '1': { object: 'key', name: '1' },
+  '2': { object: 'key', name: '2' },
+  '3': { object: 'key', name: '3' },
+  '4': { object: 'key', name: '4' },
+  '5': { object: 'key', name: '5' },
+  '6': { object: 'key', name: '6' },
+  '7': { object: 'key', name: '7' },
+  '8': { object: 'key', name: '8' },
+  '9': { object: 'key', name: '9' },
+  e: { object: 'key', name: 'enter' },
+  d: { object: 'display' },
 
   // ---------- face 2: equation-safe ----------
 

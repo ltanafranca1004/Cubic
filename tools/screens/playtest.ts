@@ -51,6 +51,7 @@ import {
   type Side,
   type TileRef,
 } from '../../shared/src/index';
+import { readCode } from '../../shared/src/puzzles/hiddenCode';
 
 // ---------- the puzzle table ----------
 
@@ -121,7 +122,20 @@ const stub = (id: string, face: FaceId): PuzzleScript => ({
 // In chain order: 1 and 3 stand alone, then 2 -> 5 -> 6 -> 4.
 const PUZZLE_SCRIPTS: PuzzleScript[] = [
   // Face 1. Hidden Code.
-  stub('hidden-code', 1),
+  // Outside reads the number in the grass (their view is upright at the start); inside types it.
+  {
+    id: 'hidden-code',
+    steps: [
+      {
+        who: 'out',
+        plan: (state) => {
+          const code = readCode(visibleObjects(state, 'out', 1));
+          if (!code) throw new Error('the outside player sees no number on face 1');
+          return [...code, 'enter'].flatMap((name): PuzzleStep[] => [{ who: 'in', goto: { object: ['in', 1, 'key'], name } }, { who: 'in', keys: 'e' }]);
+        },
+      },
+    ],
+  },
   // Face 3. Mirrored Glyph.
   {
     id: 'mirrored-glyph',

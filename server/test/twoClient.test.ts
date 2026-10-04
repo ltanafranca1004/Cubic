@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { io, type Socket } from 'socket.io-client';
-import { FACE_SIZE, defaultEnv, pathTo, type ChatMessage, type ClientToServer, type GameEvent, type RoomInfo, type Seat, type ServerToClient, type Side, type StateUpdate, type FaceId, type TileRef } from '@cubic/shared';
+import { FACE_SIZE, defaultEnv, pathTo, visibleObjects, type ChatMessage, type ClientToServer, type GameEvent, type RoomInfo, type Seat, type ServerToClient, type Side, type StateUpdate, type FaceId, type TileRef } from '@cubic/shared';
+import { readCode } from '../../shared/src/puzzles/hiddenCode';
 import { createApp, type App } from '../src/app';
 import { LIMITS } from '../src/rooms';
 // face 4 (botanical-mirror): what a side sees, under its own name so the other faces' blocks can import theirs
@@ -211,8 +212,15 @@ test('two clients play a whole game online', async () => {
   };
 
   // ---------- face 1: hidden-code ----------
-  await stub(a, 1);
-  await b.until(() => b.events.some((e) => e.type === 'use' && e.side === 'out'), 'the use event reaches the other player');
+  // outside reads the number laid out in the grass, inside types it on the floor keypad
+  const code = readCode(visibleObjects(a.last.state, 'out', 1));
+  assert.ok(code, 'the outside player sees the number');
+  assert.equal(readCode(visibleObjects(b.last.state, 'in', 1)), null, 'the inside player does not');
+  for (const name of [...code, 'enter']) {
+    await b.walkTo(find('in', 1, 'key', name));
+    await b.interact();
+  }
+  await a.until(() => a.events.some((e) => e.type === 'use' && e.side === 'in'), 'the use event reaches the other player');
   await b.until(() => b.events.some((e) => e.type === 'solve' && e.face === 1), 'solve reaches both');
   assert.deepEqual(a.last.state.solved, [1]);
   // ---------- end face 1 ----------
@@ -251,7 +259,6 @@ test('two clients play a whole game online', async () => {
 
   // ---------- face 3: mirrored-glyph ----------
   // outside reads the symbol off the snow, inside flips those tiles (a snake, row by row)
-  const { visibleObjects } = await import('@cubic/shared');
   const symbol = visibleObjects(a.last.state, 'out', 3).filter((o) => o.type === 'f3-glyph');
   assert.deepEqual(visibleObjects(b2.last.state, 'in', 3).filter((o) => o.type === 'f3-glyph'), []); // the inside player cannot see it
   symbol.sort((p, q) => p.y - q.y || (p.y % 2 ? q.x - p.x : p.x - q.x));

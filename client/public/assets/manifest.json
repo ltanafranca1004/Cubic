@@ -656,43 +656,52 @@
         "default": 62
       }
     },
+    "code-mark": {
+      "image": "sprites/objects.png",
+      "frames": {
+        "default": 63,
+        "flower": 63,
+        "rock": 64,
+        "path": 65
+      }
+    },
     "f3-glyph": {
       "image": "sprites/objects.png",
       "frames": {
-        "default": 63
+        "default": 66
       }
     },
     "f3-tile": {
       "image": "sprites/objects.png",
       "frames": {
-        "default": 64,
-        "off": 64,
-        "on": 65,
-        "done": 66
+        "default": 67,
+        "off": 67,
+        "on": 68,
+        "done": 69
       }
     },
     "f4-pot": {
       "image": "sprites/objects.png",
       "frames": {
-        "default": 67,
-        "empty": 67,
-        "locked": 68,
-        "bloom-red": 69,
-        "bloom-blue": 70,
-        "bloom-yellow": 71,
-        "bloom-pink": 72,
-        "bloom-white": 73
+        "default": 70,
+        "empty": 70,
+        "locked": 71,
+        "bloom-red": 72,
+        "bloom-blue": 73,
+        "bloom-yellow": 74,
+        "bloom-pink": 75,
+        "bloom-white": 76
       }
     },
     "f4-flowerpot": {
       "image": "sprites/objects.png",
       "frames": {
-        "default": 74,
-        "red": 74,
-        "blue": 75,
-        "yellow": 76,
-        "pink": 77,
-        "white": 78
+        "default": 77,
+        "red": 77,
+        "blue": 78,
+        "yellow": 79,
+        "pink": 80,
+        "white": 81
       }
     }
   },
