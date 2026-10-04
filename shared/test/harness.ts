@@ -9,9 +9,7 @@ import {
   needsTick,
   seedOf,
   objectsOn,
-  findPath,
   hazardAvoid,
-  pathTo,
   stepPose,
   tick,
   type FaceId,
@@ -130,7 +128,7 @@ export function solver(state: GameState, env: GameEnv = defaultEnv, startAt = 10
           const { pose, crossed } = stepPose(p, dx, dy);
           return !crossed && pose.face === target.face && pose.x === target.x && pose.y === target.y;
         });
-      const path = findPath(state, side, (p) => !!into(p), env);
+      const path = findPath(state, side, (p) => !!into(p), env, undefined, hazardAvoid(state, side, env));
       assert.ok(path, `no way for ${side} to stand next to ${where}`);
       const out: GameEvent[] = [];
       for (const [dx, dy] of path) out.push(...t.move(side, dx, dy));

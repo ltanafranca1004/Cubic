@@ -38,6 +38,7 @@ import {
   findPath,
   mirrorPush,
   observe,
+  stepPose,
   throughWall,
   visibleObjects,
   voiceMix,
@@ -516,35 +517,54 @@ async function laserPath(p: Player): Promise<void> {
   });
 }
 
-/** Face 4: carry the flower over, say its colour, plant it in the pot the AI names. */
+/**
+ * Face 4: five flowers (the crate's in my hands, four lying on faces 1, 2, 3 and 5) go into five
+ * solid pots. The AI names every pot with the colour of its twin inside ("the pot is row three
+ * column nine the flower is pink"); each flower is planted from the tile next to its pot, facing it.
+ */
 async function botanicalMirror(p: Player): Promise<void> {
   if (!p.o.carrying?.startsWith('flower-')) throw new Error('no flower to carry to face 4');
-  const colour = p.o.carrying.slice('flower-'.length);
   p.heard();
   await p.meetOn(4);
-  const colourAgain = paced(6000);
-  const since = Date.now();
-  let said = false;
-  await p.until('face 4 solved', 180_000, async (lines) => {
-    if (p.solved(4)) return true;
+  /** colour -> the pot's canonical tile, from the AI's relay lines */
+  const pots = new Map<string, TileRef>();
+  const again = paced(8000);
+  let asked = false;
+  await p.until('the AI to name every pot', 120_000, async (lines) => {
     for (const l of lines) {
-      // the answer itself is read from the relay line's words (vocabulary pieces)
-      const pot = is(l, 'botanical-mirror', 'relay') ? /pot is row (\w+) column (\w+)/i.exec(l.text) : null;
-      if (pot) {
-        // rows from the edge beside face 5, columns from the edge beside face 3: the tile both can count
-        await p.goToTile({ face: 4, x: numberOf(pot[2]!.toLowerCase()) - 1, y: numberOf(pot[1]!.toLowerCase()) - 1 });
-        await p.press('e');
-      } else if (is(l, 'botanical-mirror', 'in.ask') && colourAgain()) {
-        said = true;
-        await p.tell(`it is ${colour}`);
-      }
+      if (!is(l, 'botanical-mirror', 'relay')) continue;
+      for (const m of l.text.matchAll(/pot is row (\w+) column (\w+)\W+the flower is (\w+)/gi))
+        pots.set(m[3]!.toLowerCase(), { face: 4, x: numberOf(m[2]!.toLowerCase()) - 1, y: numberOf(m[1]!.toLowerCase()) - 1 });
     }
-    if (!said && Date.now() - since > 8000 && colourAgain()) {
-      said = true;
-      await p.tell(`it is ${colour}`);
+    if (pots.size >= 5) return true;
+    if (!asked && again()) {
+      asked = true;
+      await p.tell('again');
     }
     return false;
   });
+  const loose = () => Object.values(p.state.items).filter((i) => i.side === 'out' && i.kind.startsWith('flower-') && !i.placedOn && !i.carriedBy);
+  /** The key that steps from `pose` into the tile without leaving the face (a bump when it is solid). */
+  const into = (pose: Pose, t: TileRef) => Object.entries(ARROW).find(([d]) => ((to) => !to.crossed && to.pose.face === t.face && to.pose.x === t.x && to.pose.y === t.y)(stepPose(pose, ...(d.split(',').map(Number) as [number, number]))))?.[1];
+  for (let n = 0; n < 5; n++) {
+    await p.look();
+    if (!p.state.players.out.carrying) {
+      const flower = loose()[0];
+      if (!flower) throw new Error(`no flower left to fetch (${n} planted)`);
+      await p.goToTile({ face: flower.face, x: flower.x, y: flower.y });
+      await p.press('e');
+      await p.until('the flower in my hands', 4000, () => !!p.state.players.out.carrying);
+    }
+    const id = p.state.players.out.carrying!;
+    const colour = p.state.items[id]!.kind.slice('flower-'.length);
+    const pot = pots.get(colour);
+    if (!pot) throw new Error(`the AI named no pot for the ${colour} flower`);
+    await p.goTo(`next to the ${colour} pot`, (q) => q.face === 4 && !!into(q, pot));
+    await p.press(into(p.state.players.out.pose, pot)!); // face the pot
+    await p.press('e');
+    await p.until(`the ${colour} flower planted`, 6000, () => !!p.state.items[id]?.placedOn);
+  }
+  await p.until('face 4 solved', 30_000, () => p.solved(4));
 }
 
 const CHAIN: { face: FaceId; id: string; play: (p: Player) => Promise<void> }[] = [

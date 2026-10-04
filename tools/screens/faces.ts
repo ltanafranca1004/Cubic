@@ -354,17 +354,29 @@ console.log('face 6');
 // ---------- face 4: botanical mirror ----------
 console.log('face 4');
 {
-  const flower = (await state()).items.flower!;
-  await go('out', flower.face, flower.x, flower.y);
-  await use('out');
-  await go('out', 4, 5, 4);
-  await go('in', 4, 6, 9);
-  await shot(4, 'unsolved'); // empty pots outside, the flower in hand; five flowers inside
-  const colour = flower.kind.replace('flower-', '');
-  const pot = (await sees('in', 4, 'f4-flowerpot')).find((o) => o.state === colour);
-  if (!pot) throw new Error(`the inside player sees no ${colour} flower on face 4`);
-  await go('out', 4, pot.x, pot.y);
-  await use('out');
+  // five flowers (the crate's and four lying on faces 1, 2, 3, 5), five solid pots: each is planted
+  // from the tile next to its pot, facing it (a bump into the pot turns the player)
+  const first = (await state()).items.flower!;
+  let shown = false;
+  for (let n = 0; n < 5; n++) {
+    const s = await state();
+    const flower = n === 0 ? first : Object.values(s.items).find((i) => i.side === 'out' && i.kind.startsWith('flower-') && !i.placedOn && !i.carriedBy)!;
+    await go('out', flower.face, flower.x, flower.y);
+    await use('out');
+    await go('in', 4, 6, 9);
+    if (!shown) {
+      shown = true;
+      await go('out', 4, 5, 4);
+      await shot(4, 'unsolved'); // empty pots outside, a flower in hand; five flowers inside
+    }
+    const colour = flower.kind.replace('flower-', '');
+    const pot = (await sees('in', 4, 'f4-flowerpot')).find((o) => o.state === colour);
+    if (!pot) throw new Error(`the inside player sees no ${colour} flower on face 4`);
+    const beside = (p: Pose) => p.face === 4 && Object.values(MOVE_OF).some((m) => onTile({ face: 4, x: pot.x, y: pot.y })(stepPose(p, m[0], m[1]).pose));
+    await goTo('out', `next to the ${colour} pot`, beside);
+    await stepOnto('out', 4, pot.x, pot.y);
+    await use('out');
+  }
   await solved(4);
   await go('out', 4, 5, 4);
   await shot(4, 'solved');
