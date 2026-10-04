@@ -206,7 +206,8 @@ test('the committed bank: every clip is a real MP3, listed in the index, tracked
   for (const l of index.lines) assert.ok(existsSync(join(TTS_BANK_DIR, l.file)), l.text);
   // The clips of the old voice are still in the folder, and no line resolves to one of them.
   const mine = new Set(lines.map((l) => prod.where(l)!.file));
-  for (const l of index.lines.filter((x) => !mine.has(x.file))) assert.equal(prod.banked(l.text), null, l.text);
+  // (A line whose words did not change has a clip in both voices: it must resolve to the new one.)
+  for (const l of index.lines.filter((x) => !mine.has(x.file))) assert.notEqual(prod.where(l.text)?.file, l.file, l.text);
   assert.equal(prod.bankSize, lines.length);
   // Not ignored: the clips are part of the repo, so a deploy has them.
   const ignored = (() => {
