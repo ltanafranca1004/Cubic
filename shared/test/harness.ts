@@ -5,6 +5,7 @@ import {
   applyMove,
   defaultEnv,
   needsTick,
+  seedOf,
   objectsOn,
   pathTo,
   tick,
@@ -129,7 +130,7 @@ export function puzzleCtx(state: GameState, env: GameEnv, puzzle: AnyPuzzle, now
   const readOnly = (what: string) => () => assert.fail(`${puzzle.id}: isSolved() must not call ctx.${what}()`);
   return {
     world: env.world,
-    seed: state.seed,
+    seed: seedOf(state),
     state,
     now,
     solved: state.solved.includes(puzzle.face),
@@ -143,7 +144,7 @@ export function puzzleCtx(state: GameState, env: GameEnv, puzzle: AnyPuzzle, now
     emit: readOnly('emit'),
     strike: readOnly('strike'),
     teleport: readOnly('teleport'),
-    rand: (...keys) => mix(state.seed, ...keys),
+    rand: (...keys) => mix(seedOf(state), ...keys),
     faceSolved: (face) => state.solved.includes(face),
     spawnItem: readOnly('spawnItem'),
     giveItem: readOnly('giveItem'),
