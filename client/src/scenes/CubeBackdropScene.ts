@@ -213,7 +213,8 @@ export class CubeBackdropScene extends Phaser.Scene {
     // Hide the cube in the side selection scene (lobby) but keep background
     const finalAlpha = this.mode === 'side' ? 0 : alpha;
     this.cube.setPosition(Math.round(x), Math.round(y) + bob).setAlpha(finalAlpha).setScale(scale);
-    this.shadow.setPosition(Math.round(x), Math.round(y + this.half * 2.05 * scale)).setAlpha(alpha).setScale(scale);
+    // no cube, no shadow
+    this.shadow.setPosition(Math.round(x), Math.round(y + this.half * 2.05 * scale)).setAlpha(finalAlpha).setScale(scale);
   }
 
   /** The cube's canvas texture at this size. The faces are baked once per size. */

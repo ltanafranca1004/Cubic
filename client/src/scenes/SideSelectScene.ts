@@ -1,10 +1,13 @@
 import Phaser from 'phaser';
 import type { Role, Side } from '@cubic/shared';
 import { menuAction } from '../input/keymap';
+import { device } from '../style/scale';
+import { settings } from '../style/settings';
 import { C, EASE, ROLE, TIME, hex, type Ramp } from '../style/tokens';
 import type { LobbyPlayer, LobbyState } from '../ui/hooks';
 import { MenuScene, type SceneData } from './flow';
 import { Button, centre, hop, paint, seeded, shake, slice, text, textCentred, type Text, HAND } from './kit';
+import { CUBE_ART, OUT_STRIPS, sideAt, sideLayout, sideState, turtleIn, type Box, type SideLayout, type SideState } from './sideLayout';
 
 type Slot = Side | 'mid';
 
@@ -27,8 +30,12 @@ interface Marker {
  */
 export class SideSelectScene extends MenuScene {
   private zoom = 2;
+  /** Where the cubes, their faces and the turtles are at this screen size (sideLayout.ts). */
+  private layout!: SideLayout;
   private slotX!: Record<Slot, number>;
-  private cubes!: Record<Side, { image: Phaser.GameObjects.Image; hero: Phaser.GameObjects.Sprite; ring: Phaser.GameObjects.Graphics; top: number; heroY: number }>;
+  private cubes!: Record<Side, { image: Phaser.GameObjects.Image; hero: Phaser.GameObjects.Sprite; ring: Phaser.GameObjects.Graphics; top: number; heroY: number; state: SideState }>;
+  /** The cube the mouse is over. Never set by a finger: touch has no hover. */
+  private hover: Side | null = null;
   private markers!: Record<Role, Marker>;
   private badge!: Phaser.GameObjects.Image;
   private centreTitle!: Text;
@@ -50,8 +57,8 @@ export class SideSelectScene extends MenuScene {
     this.first = true;
     this.last = { host: null, guest: null, error: null };
     const half = Math.round(W / 2);
-    // the diorama is the game world seen closer: its art is shown at a whole multiple
-    this.zoom = H >= 340 ? 3 : 2;
+    this.layout = sideLayout(W, H);
+    this.zoom = this.layout.zoom;
     const z = this.zoom;
 
     // left: the open sky of the outside. right: the dark inside of the cube. Both are drawn
@@ -64,25 +71,40 @@ export class SideSelectScene extends MenuScene {
       this.tweens.add({ targets: mote, y: mote.y - 6 - rnd() * 10, alpha: 0.2, duration: 2400 + rnd() * 2600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
     }
 
-    this.slotX = { out: Math.round(W * 0.2), mid: half, in: Math.round(W * 0.8) };
-    const cubeH = this.textures.get('cube-out').getSourceImage().height * z;
-    const cubeTop = Math.round(H * 0.56 - cubeH / 2) + 12;
-    const make = (side: Side, heroRow: number): (typeof this.cubes)[Side] => {
+    this.slotX = this.layout.slotX;
+    const cubeTop = this.layout.cubeTop;
+    const make = (side: Side, key: string): (typeof this.cubes)[Side] => {
       const x = this.slotX[side];
       const ring = this.add.graphics();
-      const image = this.add.image(x, cubeTop, `cube-${side}`).setOrigin(0.5, 0).setScale(z);
-      // the hero's feet land on this row of the cube art
-      const heroY = cubeTop + heroRow * z;
-      const hero = this.add.sprite(x, heroY, `player-${side}`, 0).setOrigin(0.5, 1).setScale(z).play(`idle-${side}`);
+      const image = this.add.image(x, cubeTop, key).setOrigin(0.5, 0).setScale(z);
+      // the turtle stands in the middle of its side's face: the grass, or the room
+      const { anchor } = this.layout.spots[side];
+      const hero = this.add.sprite(anchor.x, anchor.y, `player-${side}`, 0).setOrigin(0.5, 0.5).setScale(z);
       image.setInteractive({ cursor: HAND });
       image.on('pointerdown', () => this.pick(side));
-      return { image, hero, ring, top: cubeTop, heroY };
+      return { image, hero, ring, top: cubeTop, heroY: anchor.y, state: 'idle' };
     };
-    this.cubes = { out: make('out', 9), in: make('in', 40) };
+    this.cubes = { out: make('out', this.deepCube()), in: make('in', 'cube-in') };
+    // Hover is read from where the mouse is, not from over / out events: after a re-fit the
+    // scene is rebuilt under a mouse that has not moved, and no event would say so.
+    this.hover = data.rebuilt ? this.pointed() : null;
+    const onMove = (p: Phaser.Input.Pointer) => this.setHover(p.wasTouch ? null : sideAt(this.layout, p.x, p.y));
+    const onOut = () => this.setHover(null);
+    this.input.on(Phaser.Input.Events.POINTER_MOVE, onMove);
+    this.input.on(Phaser.Input.Events.GAME_OUT, onOut);
     if (import.meta.env.DEV) {
       // where the two heroes stand now, in art pixels (tools/screens/check.ts)
       const at = (side: Side) => ({ x: this.cubes[side].hero.x, y: this.cubes[side].hero.y });
-      Object.assign(window, { __cubicHeroes: () => ({ out: at('out'), in: at('in') }) });
+      // what is really on screen: each side's state, its face and its turtle (tools/screens/side-select.ts)
+      const box = (r: Phaser.Geom.Rectangle): Box => ({ x: r.x, y: r.y, w: r.width, h: r.height });
+      const seen = (side: Side) => {
+        const { hero, image, state } = this.cubes[side];
+        return { state, alpha: hero.alpha, cube: box(image.getBounds()), face: this.layout.spots[side].face, turtle: box(hero.getBounds()) };
+      };
+      Object.assign(window, {
+        __cubicHeroes: () => ({ out: at('out'), in: at('in') }),
+        __cubicSide: () => ({ width: W, height: H, zoom: z, hover: this.hover, touch: device().touch, out: seen('out'), in: seen('in') }),
+      });
     }
 
     // titles sit on their own halves, in their side's voice
@@ -128,6 +150,64 @@ export class SideSelectScene extends MenuScene {
     this.keys((e) => this.key(e));
     this.begin(data);
     this.main.setFocus(true);
+  }
+
+  /**
+   * The outside cube with a deeper top: cube-out.png redrawn from its own rows
+   * (OUT_STRIPS), so the grass is deep enough for a whole turtle to stand on. Composited
+   * once into a plain texture: the same in WebGL and Canvas.
+   */
+  private deepCube(): string {
+    const key = 'cube-out:deep';
+    if (this.textures.exists(key)) return key;
+    const src = this.textures.get('cube-out').getSourceImage() as HTMLImageElement;
+    const canvas = document.createElement('canvas');
+    canvas.width = CUBE_ART.w;
+    canvas.height = CUBE_ART.h;
+    const g = canvas.getContext('2d')!;
+    let y = 0;
+    for (const [from, rows, mirrored] of OUT_STRIPS) {
+      g.setTransform(mirrored ? -1 : 1, 0, 0, 1, mirrored ? CUBE_ART.w : 0, 0);
+      g.drawImage(src, 0, from, CUBE_ART.w, rows, 0, y, CUBE_ART.w, rows);
+      y += rows;
+    }
+    this.textures.addCanvas(key, canvas);
+    return key;
+  }
+
+  /** The cube under the mouse right now, from the last place the browser saw it. */
+  private pointed(): Side | null {
+    const p = this.input.activePointer;
+    const e = p.event as MouseEvent | TouchEvent | undefined;
+    if (!e || p.wasTouch || !('clientX' in e)) return null;
+    const r = this.game.canvas.getBoundingClientRect();
+    if (!r.width || !r.height) return null;
+    return sideAt(this.layout, ((e.clientX - r.left) * this.W) / r.width, ((e.clientY - r.top) * this.H) / r.height);
+  }
+
+  private setHover(side: Side | null): void {
+    if (this.hover === side) return;
+    this.hover = side;
+    if (this.lobby) this.looks(this.lobby);
+  }
+
+  /**
+   * Every cube in its state: idle (the turtle waits, dimmed and still), hover (the mouse
+   * is over a free side: the turtle wakes, a paper frame) or selected (the owner's frame).
+   * The turtle is on the same spot in all three: the middle of its face.
+   */
+  private looks(l: LobbyState): void {
+    const touch = device().touch;
+    for (const side of ['out', 'in'] as Side[]) {
+      const owner: Role | null = l.host.side === side ? 'host' : l.guest?.side === side ? 'guest' : null;
+      const cube = this.cubes[side];
+      cube.state = sideState(owner !== null, this.hover === side, touch);
+      const look = turtleIn(this.layout, side, cube.state);
+      cube.hero.setAlpha(look.alpha);
+      if (!look.moving) cube.hero.stop().setFrame(0);
+      else if (!cube.hero.anims.isPlaying) cube.hero.play(`idle-${side}`);
+      this.ring(side, owner ? (owner === 'host' ? ROLE.p1 : ROLE.p2) : null, cube.state === 'hover');
+    }
   }
 
   private get lobby(): LobbyState | null {
@@ -210,12 +290,13 @@ export class SideSelectScene extends MenuScene {
     this.place('guest', l.guest, you === 'guest');
 
     // the chosen cube wears its player's colour
+    this.looks(l);
     for (const side of ['out', 'in'] as Side[]) {
       const owner: Role | null = l.host.side === side ? 'host' : l.guest?.side === side ? 'guest' : null;
-      this.ring(side, owner ? (owner === 'host' ? ROLE.p1 : ROLE.p2) : null);
       const picked = this.last[owner ?? 'host'] !== side && owner !== null;
-      if (picked && !this.first) {
-        hop(this, this.cubes[side].hero, this.cubes[side].heroY, 4 * this.zoom);
+      // a small hop where it stands (it lands on the same pixel); none with reduce motion
+      if (picked && !this.first && !settings().reduceMotion) {
+        hop(this, this.cubes[side].hero, this.cubes[side].heroY, 2 * this.zoom);
       }
     }
     this.last.host = l.host.side;
@@ -265,8 +346,8 @@ export class SideSelectScene extends MenuScene {
     paint(m.note, slot === 'mid' ? ROLE.ink : ROLE.paper, slot !== 'mid');
     m.root.setAlpha(p.connected ? 1 : 0.5);
     const x = this.slotX[slot];
-    let dx = 0;
-    let dy = 0;
+    let dx: number;
+    let dy: number;
     if (slot === 'mid') {
       dx = 0;
       dy = role === 'host' ? -20 : 20; // host above, guest below
@@ -274,8 +355,8 @@ export class SideSelectScene extends MenuScene {
       dx = role === 'host' ? -30 : 30;
       dy = 0;
     }
-    // (the inside hero is in the cube, so that arrow hangs over the cube itself)
-    const y = slot === 'mid' ? (m.y + dy) : Math.min(this.cubes[slot].heroY - 16 * this.zoom, this.cubes[slot].top) - 26 + dy;
+    // (both heroes stand within their cube, so the arrow hangs over the cube itself)
+    const y = slot === 'mid' ? (m.y + dy) : this.cubes[slot].top - 26 + dy;
     if (m.slot === slot) return;
     const from = m.slot;
     m.slot = slot;
@@ -284,15 +365,23 @@ export class SideSelectScene extends MenuScene {
     else this.tweens.add({ targets: m.root, x: x + dx, y, duration: TIME.quick, ease: EASE.out });
   }
 
-  /** Outline a cube in the colour of the player who picked it. */
-  private ring(side: Side, ramp: Ramp | null): void {
+  /** Outline a cube in the colour of the player who picked it, or in paper under the mouse. */
+  private ring(side: Side, ramp: Ramp | null, hover = false): void {
     const { ring, image, top } = this.cubes[side];
     ring.clear();
-    if (!ramp) return;
     const z = this.zoom;
     const w = image.displayWidth;
     const h = image.displayHeight;
     const x = image.x - w / 2;
+    if (!ramp) {
+      if (!hover) return;
+      // hover: a thinner frame, one cube pixel of paper with its ink edge
+      ring.fillStyle(hex(ROLE.ink));
+      ring.fillRect(x - 2 * z, top - 2 * z, w + 4 * z, h + 4 * z);
+      ring.fillStyle(hex(ROLE.paper));
+      ring.fillRect(x - z, top - z, w + 2 * z, h + 2 * z);
+      return;
+    }
     // a frame in the player's colour, two cube pixels wide, with its own ink edge
     ring.fillStyle(hex(ROLE.ink));
     ring.fillRect(x - 3 * z, top - 3 * z, w + 6 * z, h + 6 * z);
