@@ -25,6 +25,14 @@
 //
 // Exit code 1 if any step fails. A failed step saves a picture of every player.
 //
+// The puzzle run also checks what is DRAWN, not only the state (section "what is DRAWN"):
+//   ITEM-RENDER   the battery (inside, after the safe) and the flower (outside, after the
+//                 crate) lie in GameState.items AND their sprite is on that player's canvas
+//   CARRY-RENDER  the carried item's sprite is above the turtle's head, on the canvas
+//   LAVA-RENDER   face 6 inside: 99 hot lava tiles in the view AND each one mostly
+//                 lava-coloured on the canvas
+// Each is a step of its own, with a numbered picture in OUT.
+//
 // NEW PUZZLE? Add one entry to PUZZLE_SCRIPTS below. The run fails if a puzzle registered
 // in shared/src/puzzles/index.ts has no entry.
 import { SILENCE } from './quiet';
@@ -35,10 +43,13 @@ import { chromium, type Browser, type Page } from 'playwright';
 import {
   STEP_MS,
   FACES,
+  FACE_SIZE,
   PUZZLES,
   QUICK_CHATS,
   SPAWN,
+  TILE_PX,
   applyMove,
+  canonToScreen,
   compassDrift,
   defaultEnv,
   findPath,
@@ -93,8 +104,18 @@ type PuzzleStep =
    */
   | { who: Side; plan: (state: GameState) => PuzzleStep[] }
   | { wait: number }
+  /**
+   * Something `who` must SEE by now: checked in the state AND in the pixels of their own
+   * game canvas (see "what is DRAWN" below). It is a PASS / FAIL line of its own, and a
+   * failure does not stop the puzzle script. An item is named by id or by the start of its kind.
+   */
+  | { who: Side; drawn: Drawn }
+  /** A picture of that player's page for the report. */
+  | { who: Side; shot: string }
   /** Something that must be true by now (it is waited for, up to 4 s). */
   | { expect: string; check: (state: GameState) => boolean };
+
+type Drawn = { lying: string } | { carried: string } | { lava: 'hot' | 'cold' };
 
 interface PuzzleScript {
   /** The PuzzleModule id (shared/src/puzzles). The face comes from the module. */
@@ -160,9 +181,11 @@ const PUZZLE_SCRIPTS: PuzzleScript[] = [
         },
       },
       { expect: 'the safe is open and the battery is out', check: (state) => state.solved.includes(2) && !!state.items.battery },
+      { who: 'in', drawn: { lying: 'battery' } },
       { who: 'in', goto: { item: 'battery' } },
       { who: 'in', keys: 'e' },
       { expect: 'the inside player carries the battery', check: (state) => state.players.in.carrying === 'battery' },
+      { who: 'in', drawn: { carried: 'battery' } },
     ],
   },
   // Face 5. Sequence Laser.
@@ -189,7 +212,10 @@ const PUZZLE_SCRIPTS: PuzzleScript[] = [
         // inside: the battery (lying inside on face 2, or already in hand) goes into the emitter
         { who: 'in', plan: (state) => (state.items.battery?.carriedBy === 'in' ? [] : [{ who: 'in', goto: { item: 'battery' } }, { who: 'in', keys: 'e' }]) },
         { who: 'in', goto: { object: ['in', 5, 'target'], name: 'f5-emitter' } },
+        { who: 'in', drawn: { carried: 'battery' } },
         { who: 'in', keys: 'e' },
+        { expect: 'the battery is in the emitter', check: (state) => state.items.battery?.placedOn === 'f5-emitter' && state.players.in.carrying === null },
+        { who: 'in', shot: 'battery-placed-in-the-emitter' },
         { expect: 'the emitter has power', check: (state) => visibleObjects(state, 'in', 5).some((o) => o.type === 'f5-emitter' && o.state === 'powered') },
         // outside: E on REPLAY starts the playback again, then watch all of it (7 x 0.5 s)
         { who: 'out', goto: { object: ['out', 5, 'f5-replay'] } },
@@ -237,6 +263,7 @@ const PUZZLE_SCRIPTS: PuzzleScript[] = [
         ...push([9, 5], [9, 4]),
         ...push([9, 4], [9, 3]),
         { expect: 'the crate burnt and the flower is out', check: (state) => visibleObjects(state, 'out', 6).some((o) => o.type === 'f6-crate' && o.state === 'burnt') && state.items.flower?.side === 'out' },
+        { who: 'out', drawn: { lying: 'flower' } },
         // RESET takes the mirrors off whatever path tile they cover
         ...reset,
         // inside: the path is read from the OUTSIDE player's view (they say it out loud).
@@ -255,7 +282,8 @@ const PUZZLE_SCRIPTS: PuzzleScript[] = [
             const beside = structuredClone(state);
             for (const m of way) applyMove(beside, 'in', m[0], m[1], 0);
             const { face, x, y } = beside.players.in.pose;
-            return [{ who: 'in', goto: { tile: { face, x, y } } }, stepOnto('in', edge.x, edge.y), ...line.map((o) => stepOnto('in', o.x, o.y)), { who: 'in', keys: 'e' }];
+            // on the ring of face 6, the laser on and the button not pressed: the room must be a lake of hot lava
+            return [{ who: 'in', goto: { tile: { face, x, y } } }, stepOnto('in', edge.x, edge.y), { who: 'in', drawn: { lava: 'hot' } }, ...line.map((o) => stepOnto('in', o.x, o.y)), { who: 'in', keys: 'e' }];
           },
         },
         // the flower stays where it lies: face 4's script picks it up
@@ -276,6 +304,7 @@ const PUZZLE_SCRIPTS: PuzzleScript[] = [
         },
       },
       { expect: 'the outside player carries the flower', check: (state) => state.players.out.carrying !== null && !!state.items[state.players.out.carrying]?.kind.startsWith('flower-') },
+      { who: 'out', drawn: { carried: 'flower' } },
       {
         // the inside player sees which pot holds that colour and names it; the outside player plants it there
         who: 'in',
@@ -283,9 +312,11 @@ const PUZZLE_SCRIPTS: PuzzleScript[] = [
           const colour = state.items[state.players.out.carrying ?? '']?.kind.replace('flower-', '');
           const pot = visibleObjects(state, 'in', 4).find((o) => o.type === 'f4-flowerpot' && o.state === colour);
           if (!pot) throw new Error(`the inside player sees no ${colour} flower on face 4`);
-          return [{ who: 'out', goto: { tile: { face: 4, x: pot.x, y: pot.y } } }, { who: 'out', keys: 'e' }];
+          return [{ who: 'out', goto: { tile: { face: 4, x: pot.x, y: pot.y } } }, { who: 'out', drawn: { carried: 'flower' } }, { who: 'out', keys: 'e' }];
         },
       },
+      { expect: 'the flower is planted and blooms', check: (state) => state.players.out.carrying === null && visibleObjects(state, 'out', 4).some((o) => o.type === 'f4-pot' && !!o.state?.startsWith('bloom-')) },
+      { who: 'out', shot: 'flower-planted-in-the-pot' },
     ],
   },
 ];
@@ -1316,6 +1347,204 @@ async function rejoin(run: Run): Promise<void> {
   });
 }
 
+// ---------- what is DRAWN (the pixels of the real game canvas, never the state alone) ----------
+//
+// The dev build's GameScene gives three read-only hooks (client/src/game/GameScene.ts):
+//   __cubicView()    the finished game canvas after the next render (every scene, WebGL or
+//                    Canvas), copied at one pixel per art pixel: VIEW x VIEW
+//   __cubicSprite()  the 16x16 texture the scene draws for an item kind / an object state
+//   __cubicCarry()   the item sprites over the character: where, and of which item
+// A thing counts as drawn when its sprite's opaque pixels are on that canvas where the
+// state says it is. So a missing sprite, an item under the floor, a prop, the darkness or
+// another scene, a wrong tile or a wrong side all fail it.
+
+const VIEW = FACE_SIZE * TILE_PX;
+/**
+ * Above this share of a sprite's pixels on the canvas it is drawn. Not 1: the flower lies
+ * under the laser beam, which crosses its sprite as a one pixel line (13 of 84 pixels).
+ */
+const DRAWN_MIN = 0.8;
+/**
+ * How far a channel of a canvas pixel may be from the sprite's (0 to 255). The ambience
+ * scene lays the face's colour over the whole view at 7% (AmbienceScene `tint`), which
+ * moves a channel by up to 18. Floor showing where the sprite should be is much further off.
+ */
+const TINT = 24;
+/** The carried item rides this far above the character's top-left (CARRY_PX in client/src/game/turtle.ts). */
+const CARRY_PX = 11;
+/** Above this share of warm pixels a tile is hot lava (see `lavaGrid`). */
+const LAVA_MIN = 0.5;
+
+interface SpriteMatch {
+  /** Opaque pixels of the sprite, how many of them fall inside the view, and how many of those are on the canvas. */
+  opaque: number;
+  inView: number;
+  match: number;
+}
+
+/** In the page: the view's pixels. */
+const READ_VIEW = `const view = (await window.__cubicView()).getContext('2d').getImageData(0, 0, ${VIEW}, ${VIEW}).data;`;
+
+/** How much of a sprite is on `page`'s game canvas with its top-left at art pixel (x, y). */
+const spriteAt = (page: Page, what: { item: string } | { object: string; state?: string }, x: number, y: number) =>
+  js<SpriteMatch>(
+    page,
+    `(async () => {
+      ${READ_VIEW}
+      const c = document.createElement('canvas');
+      c.width = c.height = ${TILE_PX};
+      const g = c.getContext('2d');
+      g.drawImage(window.__cubicSprite(${JSON.stringify(what)}), 0, 0);
+      const s = g.getImageData(0, 0, ${TILE_PX}, ${TILE_PX}).data;
+      let opaque = 0, inView = 0, match = 0;
+      for (let j = 0; j < ${TILE_PX}; j++) for (let i = 0; i < ${TILE_PX}; i++) {
+        const k = (j * ${TILE_PX} + i) * 4;
+        if (s[k + 3] < 255) continue;
+        opaque++;
+        const vx = ${x} + i, vy = ${y} + j;
+        if (vx < 0 || vy < 0 || vx >= ${VIEW} || vy >= ${VIEW}) continue;
+        inView++;
+        const v = (vy * ${VIEW} + vx) * 4;
+        if (Math.max(Math.abs(view[v] - s[k]), Math.abs(view[v + 1] - s[k + 1]), Math.abs(view[v + 2] - s[k + 2])) <= ${TINT}) match++;
+      }
+      return { opaque, inView, match };
+    })()`,
+  );
+
+/**
+ * THE LAVA PROBE. For every screen tile of the game canvas, the share of its 256 pixels
+ * that are WARM: red at least 150 and red at least 80 over blue (the lava's vermilion,
+ * orange and amber; no floor, wall, rock or darkness of the inside is). Row by row,
+ * FACE_SIZE x FACE_SIZE numbers from 0 to 1. It looks at colour, not at one sprite, so it
+ * keeps working when the lava is redrawn (animated, glowing, lit through the dark).
+ */
+const lavaGrid = (page: Page) =>
+  js<number[]>(
+    page,
+    `(async () => {
+      ${READ_VIEW}
+      const out = [];
+      for (let ty = 0; ty < ${FACE_SIZE}; ty++) for (let tx = 0; tx < ${FACE_SIZE}; tx++) {
+        let warm = 0;
+        for (let j = 0; j < ${TILE_PX}; j++) for (let i = 0; i < ${TILE_PX}; i++) {
+          const v = ((ty * ${TILE_PX} + j) * ${VIEW} + tx * ${TILE_PX} + i) * 4;
+          if (view[v] >= 150 && view[v] - view[v + 2] >= 80) warm++;
+        }
+        out.push(warm / ${TILE_PX * TILE_PX});
+      }
+      return out;
+    })()`,
+  );
+
+const carryOf = (page: Page) =>
+  js<{ carried: { id: string; kind: string | null; x: number; y: number; alpha: number } | null; flying: object | null; transition: string | null; hero: { x: number; y: number } | null }>(
+    page,
+    `({ ...window.__cubicCarry(), hero: window.__cubicProps().hero })`,
+  );
+
+const share = (m: SpriteMatch) => `${m.match} of ${m.inView} sprite pixels on the canvas (${m.opaque} in the sprite)`;
+
+/** Wait for `look` to be true; when it never is, fail with the last thing it saw. */
+async function looked(what: string, look: (say: (text: string) => false) => Promise<boolean>): Promise<string> {
+  let last = 'never looked';
+  const say = (text: string): false => ((last = text), false);
+  try {
+    await until(what, () => look(say));
+  } catch {
+    throw new Error(`${what}: NOT DRAWN. ${last}`);
+  }
+  return last;
+}
+
+/**
+ * One "must be drawn" check as its own step: ITEM-RENDER (an item lying on the face),
+ * CARRY-RENDER (the item above the head) or LAVA-RENDER. Each checks the state first,
+ * then the pixels, and saves a picture of that player's page.
+ */
+async function seen(run: Run, page: Page, side: Side, what: Drawn, picture: (name: string, who: Side) => string): Promise<void> {
+  const who = side === 'out' ? 'outside' : 'inside';
+  const find = (state: GameState, name: string) => Object.values(state.items).find((i) => i.id === name || i.kind.startsWith(name));
+  if ('lying' in what) {
+    await step(run, `ITEM-RENDER: the ${what.lying} lies in the state and is drawn on the ${who} player's canvas`, async () => {
+      try {
+        return await looked(`the ${what.lying} on the floor`, async (say) => {
+          const state = await stateOf(page);
+          const it = find(state, what.lying);
+          const pose = state.players[side].pose;
+          if (!it) return say(`no ${what.lying} in GameState.items`);
+          if (it.side !== side || it.carriedBy || it.placedOn) return say(`the ${it.id} is on side ${it.side}, carried by ${it.carriedBy}, placed on ${it.placedOn}`);
+          if (it.face !== pose.face) return say(`the ${it.id} is on face ${it.face}, the player on face ${pose.face}`);
+          if (it.x === pose.x && it.y === pose.y) return say('the player stands on the item: it is under the turtle');
+          const [sx, sy] = canonToScreen(side, pose.face, pose.up, it.x, it.y);
+          const m = await spriteAt(page, { item: it.kind }, sx * TILE_PX, sy * TILE_PX);
+          say(`${it.kind} at face ${it.face} (${it.x},${it.y}), screen tile (${sx},${sy}): ${share(m)}`);
+          return m.opaque >= 20 && m.inView === m.opaque && m.match >= m.inView * DRAWN_MIN;
+        });
+      } finally {
+        await page.screenshot({ path: picture(`${what.lying}-lying`, side) });
+      }
+    });
+    return;
+  }
+  if ('carried' in what) {
+    await step(run, `CARRY-RENDER: the ${who} player carries the ${what.carried} and it is drawn above the turtle's head`, async () => {
+      try {
+        return await looked(`the ${what.carried} above the head`, async (say) => {
+          const state = await stateOf(page);
+          const id = state.players[side].carrying;
+          const it = id ? state.items[id] : undefined;
+          if (!it || !(it.id === what.carried || it.kind.startsWith(what.carried))) return say(`the ${who} player carries ${id ?? 'nothing'} in the state`);
+          const c = await carryOf(page);
+          if (c.transition || c.flying) return say('a face transition or the pickup hop is still playing');
+          if (!c.carried || !c.hero) return say('the carried sprite is not visible in the scene');
+          if (c.carried.id !== it.id || c.carried.alpha < 1) return say(`the carried sprite shows ${c.carried.id} at alpha ${c.carried.alpha}`);
+          const lift = c.hero.y - c.carried.y;
+          if (c.carried.x !== c.hero.x || lift < CARRY_PX - 1 || lift > CARRY_PX) return say(`the sprite is at (${c.carried.x},${c.carried.y}), the turtle at (${c.hero.x},${c.hero.y}): not above its head`);
+          const m = await spriteAt(page, { item: it.kind }, c.carried.x, c.carried.y);
+          say(`${it.kind} sprite at (${c.carried.x},${c.carried.y}), ${lift} px above the turtle at (${c.hero.x},${c.hero.y}): ${share(m)}`);
+          // on the top row of the screen the item is cut by the canvas edge: what is left of it must be there
+          return m.opaque >= 20 && m.inView >= m.opaque / 4 && m.match >= m.inView * DRAWN_MIN;
+        });
+      } finally {
+        await page.screenshot({ path: picture(`${what.carried}-carried`, side) });
+      }
+    });
+    return;
+  }
+  await step(run, `LAVA-RENDER: face 6 inside is ${what.lava} lava in the state, and its 10x10 interior is drawn as lava on the inside player's canvas`, async () => {
+    try {
+      const state = await stateOf(page);
+      const pose = state.players.in.pose;
+      check(side === 'in' && pose.face === 6, `the inside player is on face ${pose.face}, not on face 6`);
+      // the state: every interior tile but the button is a lava tile in that state, and no ring tile is
+      const lava = visibleObjects(state, 'in', 6).filter((o) => o.type === 'f6-lava');
+      const want = (FACE_SIZE - 2) ** 2 - objectsOn(defaultEnv.world, 'in', 6, 'button').length;
+      const ring = (o: { x: number; y: number }) => o.x === 0 || o.y === 0 || o.x === FACE_SIZE - 1 || o.y === FACE_SIZE - 1;
+      check(lava.length === want && !lava.some(ring), `the inside player's view has ${lava.length} lava tiles (${lava.filter(ring).length} on the ring), expected ${want} inside the ring`);
+      check(lava.every((o) => o.state === what.lava), `lava states in the view: ${[...new Set(lava.map((o) => o.state))].join(', ')}, expected all ${what.lava}`);
+      check((state.solved.includes(5) && !state.solved.includes(6)) === (what.lava === 'hot'), `solved faces [${state.solved}], but the lava is ${what.lava}`);
+      if (what.lava !== 'hot') return `${lava.length} cold lava tiles in the state (cold lava is dark rock: no colour check)`;
+      // the pixels: every lava tile the turtle and its item do not cover is mostly warm
+      await page.waitForTimeout(FLIP_MS);
+      const grid = await lavaGrid(page);
+      const [hx, hy] = canonToScreen('in', 6, pose.up, pose.x, pose.y);
+      const cold: string[] = [];
+      let least = 1;
+      for (const o of lava) {
+        const [sx, sy] = canonToScreen('in', 6, pose.up, o.x, o.y);
+        if (sx === hx && (sy === hy || sy === hy - 1)) continue;
+        const warm = grid[sy * FACE_SIZE + sx]!;
+        least = Math.min(least, warm);
+        if (warm < LAVA_MIN) cold.push(`(${o.x},${o.y}) ${Math.round(warm * 100)}%`);
+      }
+      check(cold.length === 0, `NOT DRAWN: ${cold.length} of ${lava.length} hot lava tiles have under ${LAVA_MIN * 100}% warm pixels on the canvas: ${cold.slice(0, 12).join(' ')}${cold.length > 12 ? ' ...' : ''}`);
+      return `${lava.length} hot lava tiles, the least warm one has ${Math.round(least * 100)}% warm pixels`;
+    } finally {
+      await page.screenshot({ path: picture(`lava-${what.lava}`, side) });
+    }
+  });
+}
+
 function resolveTarget(target: Target, state: GameState): TileRef {
   if ('tile' in target) return target.tile;
   if ('object' in target) {
@@ -1341,7 +1570,7 @@ const describe = (s: PuzzleStep) =>
         ? `${s.who} walks the ${s.follow.type} tiles the ${s.follow.by} player sees`
         : 'plan' in s
           ? `steps planned from the state the ${s.who} player has`
-          : 'keys' in s ? `${s.who} presses ${s.keys}` : 'wait' in s ? `wait ${s.wait} ms` : `expect ${s.expect}`;
+          : 'keys' in s ? `${s.who} presses ${s.keys}` : 'wait' in s ? `wait ${s.wait} ms` : 'drawn' in s ? `${s.who} must see ${JSON.stringify(s.drawn)}` : 'shot' in s ? `picture "${s.shot}"` : `expect ${s.expect}`;
 
 /** Every puzzle of the table solved with real keys, then the win screen. */
 async function puzzles(run: Run): Promise<void> {
@@ -1353,6 +1582,8 @@ async function puzzles(run: Run): Promise<void> {
   if (!(await step(run, 'setup: two players in a fresh game', async () => void ({ a, b } = await startGame(run, video))))) return;
   const page = (side: Side) => (side === 'out' ? a : b);
   const t0 = Date.now();
+  let pictures = 0;
+  const picture = (name: string, who: Side) => `${OUT}${tag}-${String(++pictures).padStart(2, '0')}-${slug(name)}-${who === 'out' ? 'A' : 'B'}.png`;
 
   await step(run, 'table: every registered puzzle has a playtest script', async () => {
     const missing = PUZZLES.map((p) => p.id).filter((id) => !PUZZLE_SCRIPTS.some((s) => s.id === id));
@@ -1399,7 +1630,11 @@ async function puzzles(run: Run): Promise<void> {
           await press(page(s.who), ...s.keys.split(' '));
           await settle(page(s.who));
         } else if ('wait' in s) await sleep(s.wait);
-        else await until(s.expect, async () => s.check((await snap(a)).server!) && s.check((await snap(b)).server!));
+        else if ('drawn' in s) await seen(run, page(s.who), s.who, s.drawn, picture);
+        else if ('shot' in s) {
+          await page(s.who).waitForTimeout(350); // the item's hop off the head
+          await page(s.who).screenshot({ path: picture(s.shot, s.who) });
+        } else await until(s.expect, async () => s.check((await snap(a)).server!) && s.check((await snap(b)).server!));
       };
       for (const [i, s] of script.steps.entries()) {
         try {

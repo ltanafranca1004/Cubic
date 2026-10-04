@@ -152,6 +152,14 @@ export const equationSafe: PuzzleModule<State> = {
     ctx.spawnItem({ id: BATTERY_ID, kind: BATTERY_KIND, side: 'in', face: FACE, x: BATTERY_AT.x, y: BATTERY_AT.y });
   },
 
+  // The dev tools' "Solve puzzle": the safe opens and the battery is out, as after the right answer.
+  devSolve(s, ctx) {
+    if (s.open) return;
+    keypadLock(s.pad, String(equationAnswer(ctx.seed)));
+    s.open = true;
+    if (!ctx.item(BATTERY_ID)) ctx.spawnItem({ id: BATTERY_ID, kind: BATTERY_KIND, side: 'in', face: FACE, x: BATTERY_AT.x, y: BATTERY_AT.y });
+  },
+
   onTick(s, ctx) {
     s.ticks++;
     s.birds.forEach((bird, i) => {

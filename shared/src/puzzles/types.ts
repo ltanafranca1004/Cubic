@@ -157,6 +157,14 @@ export interface PuzzleModule<S = unknown> {
 
   /** The INSIDE of this face is drawn fully lit (no darkness around the player). */
   bright?: boolean;
+
+  /**
+   * DEV ONLY (devSolve in game.ts: the dev tools' "Solve puzzle"). Put the puzzle in the
+   * state a real solve leaves it in and hand out what a real solve hands out. A puzzle the
+   * chain depends on needs it: without it a skipped face is only latched, its item never
+   * exists and the faces after it cannot be played. Never called by the game itself.
+   */
+  devSolve?(s: S, ctx: PuzzleCtx): void;
 }
 
 /** How often the server calls onTick. */

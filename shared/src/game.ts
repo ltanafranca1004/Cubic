@@ -298,14 +298,18 @@ export function objectiveFor(state: GameState, side: Side, env: GameEnv = defaul
 
 /**
  * DEV ONLY. Force-latch the puzzle on `face` as solved, whatever the puzzle itself thinks.
- * The puzzle's own state is not touched (a door it controls stays as it was).
+ * A puzzle with a `devSolve` hook first puts itself in its solved state and hands out what
+ * a real solve hands out (the battery, the flower), so the chain after it can be played.
+ * Without the hook the puzzle's own state is not touched (a door it controls stays as it was).
  */
 export function devSolve(state: GameState, face: FaceId, now: number = Date.now(), env: GameEnv = defaultEnv): GameEvent[] {
   const puzzle = env.puzzles.find((p) => p.face === face);
   if (state.wonAt !== null || !puzzle || state.solved.includes(face)) return [];
+  const events: GameEvent[] = [];
+  puzzle.devSolve?.(state.puzzles[puzzle.id], makeCtx(state, env, puzzle, now, events));
   state.solved.push(face);
   state.solved.sort();
-  const events: GameEvent[] = [{ type: 'solve', face, puzzle: puzzle.id }];
+  events.push({ type: 'solve', face, puzzle: puzzle.id });
   settle(state, env, now, events);
   return events;
 }
