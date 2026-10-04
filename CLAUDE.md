@@ -102,7 +102,7 @@ Every owned folder has a README that says exactly what goes there.
 
 - Faces by normal: 1 = +z, 2 = +x, 3 = -z, 4 = -x, 5 = +y (top), 6 = -y (bottom).
   Canonical up: faces 1-4 = +y, face 5 = -z, face 6 = +z.
-- A `Pose` is `{ side, face, up, x, y, dir }`. `x, y` are canonical tile coords (0-9, x
+- A `Pose` is `{ side, face, up, x, y, dir }`. `x, y` are canonical tile coords (0-11, x
   right, y down as drawn in the map). Both sides share them: inside `(x, y)` is directly
   behind outside `(x, y)`.
 - Screen right = `cross(up, normal)` outside, `cross(up, -normal)` inside (mirrored).
@@ -110,13 +110,28 @@ Every owned folder has a README that says exactly what goes there.
   Sideways: `up` unchanged.
 - Puzzles compare tiles, never screen directions.
 
+## Face transitions and sound by face (client only)
+
+- Walking over an edge plays a transition in `client/src/game/GameScene.ts` (pure math and
+  the input buffer in `client/src/game/transition.ts`): outside the cube rolls over the
+  edge (500 ms), inside the character hops the wall while the view slides (400 ms), and
+  the "Reduce motion" setting swaps both for a quick fade. Drawn with whole pixels on a 2D
+  canvas texture, so it is the same in WebGL and Canvas. The server state is untouched.
+- Keys pressed during a transition are buffered and applied after it, paced to stay under
+  the server's move budget (`LIMITS` in `server/src/rooms.ts`).
+- `client/src/audio/hearing.ts` decides who hears what: the partner's footsteps only when
+  they are on the same face number as you, and never the partner's face-change ding.
+- Check and GIFs: `tools/screens/transitions.ts` (output in `docs/screens/transitions/`).
+
 ## Map format
 
-12 maps: outside 1-6 and inside 1-6, each 10x10 tiles of 16px. Two sources, per face:
+12 maps: outside 1-6 and inside 1-6, each 12x12 tiles of 16px (`FACE_SIZE` in
+`shared/src/types.ts`). Two sources, per face:
 
-1. **String maps** in `shared/src/maps/default.ts`: 10 strings of 10 characters.
+1. **String maps** in `shared/src/maps/default.ts`: 12 strings of 12 characters.
    Terrain: `.` floor, `#` wall, `T` tree, `~` water (the last three are solid).
-   Objects (on floor): `P` plate, `D` door, `C` crystal, `O` portal, `I` item, `U` target.
+   Objects (on floor): `P` plate, `D` door, `C` crystal, `O` portal, `I` item, `R` rose
+   (an item), `U` target.
    Legend lives in `shared/src/maps/strings.ts`.
 2. **Tiled** `/maps/<side>-<face>.tmj` (e.g. `out-1.tmj`), bundled by `npm run maps`. A
    face with a `.tmj` ignores its string map. Tile layer `tiles` (CSV; terrain from the

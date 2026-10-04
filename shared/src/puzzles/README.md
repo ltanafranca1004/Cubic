@@ -13,7 +13,8 @@ so a module must be deterministic and must never touch sockets, the DOM, timers,
    `door`, `crystal`, `item`, `target`, or new types of your own.
 4. Register it in `index.ts` (`PUZZLES`). The portal on face 6 opens when every registered
    puzzle is solved.
-5. Add a test in `/shared/test` that solves it with `applyMove` (copy `puzzles.test.ts`).
+5. Add a solution script for it in `shared/test/solutions.ts`: a few lines that solve it
+   with real moves. `npm test` fails until it exists. How: [docs/puzzle-tests.md](../../../docs/puzzle-tests.md).
 
 ## The hooks
 
@@ -36,8 +37,8 @@ the game: `emit(name, data?)` (custom event for sound/effects), `strike(side)`,
 
 ## Coordinates
 
-Tiles are canonical `(x, y)`, 0-9, x right and y down as drawn in the map file. Both sides
-share them: inside `(x, y)` is the tile directly behind outside `(x, y)`. Players see the
+Tiles are canonical `(x, y)`, 0-11 (`FACE_SIZE` = 12), x right and y down as drawn in the
+map file. Both sides share them: inside `(x, y)` is the tile directly behind outside `(x, y)`. Players see the
 face rotated by their compass drift, and the inside player sees it mirrored, so never
 reason in "screen left/right" inside a puzzle. Compare tiles, not directions.
 

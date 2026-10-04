@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { GRID, TILE_PX, defaultEnv, type FaceId, type TileKind } from '@cubic/shared';
+import { FACE_SIZE, TILE_PX, defaultEnv, type FaceId, type TileKind } from '@cubic/shared';
 import { ENABLE_AI } from '../config';
 import { C, EASE, ROLE, TIME, hex } from '../style/tokens';
 import { MenuScene, type SceneData } from './flow';
@@ -7,7 +7,7 @@ import { Button, centre, paint, shake, slice, text, textCentred, type Text } fro
 
 /** Pixels per map tile in the cube net: each face is 40x40. */
 const NET_TILE = 4;
-const FACE_PX = GRID * NET_TILE;
+const FACE_PX = FACE_SIZE * NET_TILE;
 /**
  * The cube unfolded, as [column, row] per face. Faces 4 1 2 3 run around the cube's
  * waist; 5 (top) and 6 (bottom) hang off face 1, each the right way up for that edge.
@@ -119,8 +119,8 @@ export class ModeScene extends MenuScene {
         const cols = Math.floor(sheet.width / TILE_PX);
         const tiles = manifest.tilesets[`out-${face}`]!.tiles;
         const map = defaultEnv.world.out[face];
-        for (let y = 0; y < GRID; y++)
-          for (let x = 0; x < GRID; x++) {
+        for (let y = 0; y < FACE_SIZE; y++)
+          for (let x = 0; x < FACE_SIZE; x++) {
             const list = tiles[map.tiles[y]![x]!];
             const f = list[hash(face, x, y) % list.length]!;
             // the middle of the tile, one map tile to 4 pixels: its colours, not its detail

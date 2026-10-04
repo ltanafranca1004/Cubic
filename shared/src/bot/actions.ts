@@ -1,6 +1,6 @@
 import { screenToCanon, stepPose } from '../cube';
 import { defaultEnv, itemsOn, visibleObjects, type GameEnv } from '../game';
-import { GRID, type FaceId, type GameState, type Pose, type Side } from '../types';
+import { FACE_SIZE, type FaceId, type GameState, type Pose, type Side } from '../types';
 import { findPath, type Move } from './path';
 
 // The AI's body: high-level actions turned into ordinary steps. The server walks them one
@@ -28,7 +28,7 @@ export const BOT_ACTION_TYPES = ['goto', 'go_face', 'step_on', 'move', 'pick_up'
 export type BotStep = Move | 'interact';
 
 const DIRS: Record<string, Move> = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
-const MAX_LINE = GRID * 2;
+const MAX_LINE = FACE_SIZE * 2;
 
 /** Check an action that came from outside (the model). Returns null if it is not usable. */
 export function parseAction(raw: unknown): BotAction | null {
@@ -41,7 +41,7 @@ export function parseAction(raw: unknown): BotAction | null {
     case 'goto': {
       const col = int(args.col);
       const row = int(args.row);
-      return col !== null && row !== null && col >= 0 && col < GRID && row >= 0 && row < GRID ? { type: 'goto', col, row } : null;
+      return col !== null && row !== null && col >= 0 && col < FACE_SIZE && row >= 0 && row < FACE_SIZE ? { type: 'goto', col, row } : null;
     }
     case 'go_face': {
       const face = int(args.face);

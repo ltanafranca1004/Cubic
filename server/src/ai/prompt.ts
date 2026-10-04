@@ -1,4 +1,4 @@
-import type { ChatMessage, Goal, Observation, Side } from '@cubic/shared';
+import { FACE_SIZE, type ChatMessage, type Goal, type Observation, type Side } from '@cubic/shared';
 
 // Everything Gemini is told. It only ever receives observe() output for its own side:
 // never the other side's map, objects or position.
@@ -11,7 +11,7 @@ export const MAX_SAY_CHARS = 80;
 const RULES = `You are playing CUBIC, a two-player co-op puzzle game, as one of the two players. The other player is a human.
 
 THE WORLD
-- A cube with 6 faces. Each face is a 10x10 grid of tiles. One player walks on the OUTSIDE of the cube, the other is trapped INSIDE it.
+- A cube with 6 faces. Each face is a ${FACE_SIZE}x${FACE_SIZE} grid of tiles. One player walks on the OUTSIDE of the cube, the other is trapped INSIDE it.
 - Outside face N and inside face N are the two sides of the same wall. You and your partner never see each other's side.
 - Each of you sees only your own side of the face you are standing on. Your partner sees different things than you do: one of you sees the lock, the other sees the key. You solve puzzles by describing what you see and asking what they see.
 - The cube is not flat. Walking off an edge takes you to the next face and can turn your view. "Compass drift" is how far your up has turned. The inside player sees every wall from behind, so left and right are MIRRORED compared to the outside player. Never assume your left is your partner's left: describe things by what they are near, or by rows from the top.

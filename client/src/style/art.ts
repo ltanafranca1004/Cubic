@@ -128,4 +128,9 @@ export class SheetArt implements ArtProvider {
     }
     return this.fallback.player(side, step);
   }
+
+  playerFrame(side: Side, index: number): string | null {
+    const entry = this.manifest?.players?.[side];
+    return entry ? this.frame(entry.image, index) : null;
+  }
 }

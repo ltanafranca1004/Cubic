@@ -2,7 +2,7 @@ import { canonToScreen, compassDrift, neighbours, screenToCanon } from '../cube'
 import { defaultEnv, itemsOn, objectiveFor, portalOpen, visibleObjects, type GameEnv } from '../game';
 import { FACE_NAMES, tileAt } from '../maps';
 import type { TileKind } from '../maps/types';
-import { GRID, type FaceId, type GameState, type Side } from '../types';
+import { FACE_SIZE, type FaceId, type GameState, type Side } from '../types';
 import { signalBars, voiceMix } from '../voice';
 
 // What one side can perceive, as plain data for the AI partner. Built ONLY from that
@@ -19,9 +19,9 @@ export interface Observation {
   faceName: string;
   /** Degrees your "up" has turned from the face's own up. */
   compassDrift: number;
-  /** Your tile: col 0-9 from your left, row 0-9 from your top. */
+  /** Your tile: col 0 to FACE_SIZE-1 from your left, row 0 to FACE_SIZE-1 from your top. */
   position: { col: number; row: number };
-  /** 10 rows as you see them. '.' floor, '#' wall, 'T' tree, '~' water, '@' you, '*' something (see objects/items). */
+  /** FACE_SIZE rows as you see them. '.' floor, '#' wall, 'T' tree, '~' water, '@' you, '*' something (see objects/items). */
   grid: string[];
   objects: { type: string; state?: string; col: number; row: number }[];
   items: { kind: string; col: number; row: number }[];
@@ -51,9 +51,9 @@ export function observe(state: GameState, side: Side, env: GameEnv = defaultEnv)
   const items = itemsOn(state, side, face).map((i) => ({ kind: i.kind, ...toScreen(i.x, i.y) }));
 
   const grid: string[] = [];
-  for (let row = 0; row < GRID; row++) {
+  for (let row = 0; row < FACE_SIZE; row++) {
     let line = '';
-    for (let col = 0; col < GRID; col++) {
+    for (let col = 0; col < FACE_SIZE; col++) {
       const [x, y] = screenToCanon(side, face, up, col, row);
       if (col === position.col && row === position.row) line += '@';
       else if (objects.some((o) => o.col === col && o.row === row) || items.some((i) => i.col === col && i.row === row)) line += '*';

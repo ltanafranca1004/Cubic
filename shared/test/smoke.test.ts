@@ -3,7 +3,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { test } from 'node:test';
 import {
   FACES,
-  GRID,
+  FACE_SIZE,
   PUZZLES,
   SIDES,
   SOLID,
@@ -53,21 +53,21 @@ function solveAll(t: ReturnType<typeof solver>) {
 
 // ---------- maps ----------
 
-test('smoke: all 12 maps load (outside 1-6, inside 1-6) as 10x10 known terrain', () => {
+test('smoke: all 12 maps load (outside 1-6, inside 1-6) as FACE_SIZE x FACE_SIZE known terrain', () => {
   const world = loadWorld();
   let count = 0;
   each((side, face) => {
     const map = world[side][face];
     const where = `${side}-${face}`;
     assert.deepEqual([map.side, map.face], [side, face], where);
-    assert.equal(map.tiles.length, GRID, where);
+    assert.equal(map.tiles.length, FACE_SIZE, where);
     for (const row of map.tiles) {
-      assert.equal(row.length, GRID, where);
+      assert.equal(row.length, FACE_SIZE, where);
       for (const tile of row) assert.ok(TILE_KINDS.includes(tile), `${where}: unknown terrain "${tile}"`);
     }
     for (const o of map.objects) {
       assert.ok(o.type, `${where}: object without a type at ${key(o)}`);
-      assert.ok(Number.isInteger(o.x) && Number.isInteger(o.y) && o.x >= 0 && o.x < GRID && o.y >= 0 && o.y < GRID, `${where}: ${o.type} is off the map at ${key(o)}`);
+      assert.ok(Number.isInteger(o.x) && Number.isInteger(o.y) && o.x >= 0 && o.x < FACE_SIZE && o.y >= 0 && o.y < FACE_SIZE, `${where}: ${o.type} is off the map at ${key(o)}`);
     }
     count++;
   });

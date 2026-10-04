@@ -5,7 +5,7 @@ import { onSettings, setSetting, settings, type Settings } from '../style/settin
 // volumes to the AudioManager (style/audioApi), voice to the Voice class.
 
 type NumberKey = 'master' | 'music' | 'sfx' | 'voiceVolume';
-type ToggleKey = 'voiceOn' | 'micMuted';
+type ToggleKey = 'voiceOn' | 'micMuted' | 'reduceMotion';
 
 const SLIDERS: { key: NumberKey; label: string; icon: string }[] = [
   { key: 'master', label: 'Master volume', icon: 'speaker' },
@@ -25,6 +25,8 @@ const HTML = `
   <div class="cu-set"><i class="cu-ico chat"></i><label>Proximity chat</label>${toggle('voiceOn', 'Proximity chat')}</div>
   <div class="cu-set" data-needs-voice><i class="cu-ico speaker"></i><label>Chat volume</label>${slider('voiceVolume', 'Proximity chat volume')}</div>
   <div class="cu-set" data-needs-voice><i class="cu-ico micOff"></i><label>Mute my mic</label>${toggle('micMuted', 'Mute my microphone')}</div>
+  <div class="cu-rule"></div>
+  <div class="cu-set"><i class="cu-ico hand"></i><label>Reduce motion</label>${toggle('reduceMotion', 'Reduce motion')}</div>
   <div class="cu-actions"><button class="cu-btn" data-close><span>Done</span></button></div>
 </div>`;
 
