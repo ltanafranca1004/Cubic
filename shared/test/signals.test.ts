@@ -8,7 +8,6 @@ import {
   applyMove,
   canonToScreen,
   createGame,
-  defaultEnv,
   quickIndex,
   sameWall,
   signalsFor,
@@ -17,6 +16,7 @@ import {
   type QuickChat,
   type Side,
 } from '../src/index';
+import { fixtureEnv } from './fixture';
 
 // Quick-chat rules, and the Q key's drop-only interact.
 
@@ -78,25 +78,26 @@ test('quick chat: a bubble over the speaker, for a partner on the same face, for
 });
 
 test('Q (drop only) drops what you carry and never picks up; E still does both', () => {
-  const item = Object.values(createGame(0).items)[0];
-  assert.ok(item, 'the default map has an item to carry');
-  const s = createGame(0);
+  const env = fixtureEnv();
+  const s = createGame(0, env);
+  const item = Object.values(s.items)[0];
+  assert.ok(item, 'the fixture has an item to carry');
   put(s, item.side, item.face, item.x, item.y);
 
-  assert.deepEqual(applyInteract(s, item.side, 0, defaultEnv, 'drop'), [], 'Q with empty hands does nothing');
+  assert.deepEqual(applyInteract(s, item.side, 0, env, 'drop'), [], 'Q with empty hands does nothing');
   assert.equal(s.players[item.side].carrying, null);
 
-  assert.deepEqual(applyInteract(s, item.side, 0).map((e) => e.type), ['pickup'], 'E picks up');
+  assert.deepEqual(applyInteract(s, item.side, 0, env).map((e) => e.type), ['pickup'], 'E picks up');
   assert.equal(s.players[item.side].carrying, item.id);
-  assert.deepEqual(applyInteract(s, item.side, 0, defaultEnv, 'pick'), [], 'pick-only never drops');
+  assert.deepEqual(applyInteract(s, item.side, 0, env, 'pick'), [], 'pick-only never drops');
 
-  const dropped = applyInteract(s, item.side, 0, defaultEnv, 'drop').map((e) => e.type);
+  const dropped = applyInteract(s, item.side, 0, env, 'drop').map((e) => e.type);
   assert.ok(dropped.includes('drop') || dropped.includes('place'), 'Q drops');
   assert.equal(s.players[item.side].carrying, null);
 
-  applyInteract(s, item.side, 0);
+  applyInteract(s, item.side, 0, env);
   if (s.players[item.side].carrying) {
-    const again = applyInteract(s, item.side, 0).map((e) => e.type);
+    const again = applyInteract(s, item.side, 0, env).map((e) => e.type);
     assert.ok(again.includes('drop') || again.includes('place'), 'E still drops too');
   }
 });

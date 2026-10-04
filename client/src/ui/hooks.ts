@@ -45,9 +45,9 @@ export type LobbyStatus =
   /** Room created, nobody else here yet. Show the code. */
   | 'waiting'
   | 'partner-joined'
-  /** In a game, the partner's connection dropped: the server holds their seat for a while. */
+  /** In a game, the partner dropped or pressed Leave: the server holds their seat (see `partnerAway`). */
   | 'partner-away'
-  /** The partner is gone for good (pressed Leave, or the held seat ran out): the seat is free. */
+  /** The partner is gone for good (the held seat ran out): the seat is free. */
   | 'partner-left';
 
 /** One player in the lobby. */
@@ -134,6 +134,12 @@ export interface UIState {
   chat: ChatMessage[];
   /** The AI partner is thinking. */
   partnerTyping: boolean;
+  /**
+   * In a game, the partner's seat is held: their connection dropped (`reconnecting`) or
+   * they pressed Leave (`left`). `until` is when the server gives the seat up, in epoch ms
+   * on THIS clock: show `until - Date.now()` as m:ss.
+   */
+  partnerAway?: { kind: 'reconnecting' | 'left'; until: number } | null;
   /** null until the game starts. */
   hud: HudState | null;
   voice: VoiceState;

@@ -143,3 +143,88 @@ function outline(t: Target, ink: number): void {
     }
   }
 }
+
+// THE ROOM. The same six textures seen from INSIDE the cube: a camera on the view's z axis,
+// outside the open side, looks into the box in perspective. Only the inner side of a face
+// is drawn; a face that turns its back to the camera is left out, and what is beyond the
+// room stays empty (dark, on the HUD).
+
+export interface RoomOptions extends DrawOptions {
+  /** How far the camera is from the cube's centre, in half-edges (more than the cube's corner, 1.74). */
+  cam: number;
+}
+
+/** The faces whose inner side the camera sees. From outside a box these never overlap. */
+export function roomFaces(m: Mat3, cam: number): FaceId[] {
+  return FACES.filter((face) => cam * apply(m, NORMALS[face])[2] < 1 - 1e-4);
+}
+
+/**
+ * Where a cube-space point lands on the target, in perspective. `half` is half the edge of
+ * the open side (the square nearest the camera) when the room is seen straight on.
+ */
+export function projectRoom(m: Mat3, o: RoomOptions, p: V3): [number, number] {
+  const s = apply(m, p);
+  const k = (o.half * (o.cam - 1)) / (o.cam - s[2]);
+  return [o.cx + s[0] * k, o.cy - s[1] * k];
+}
+
+/** Draw the room into the target: one ray per pixel, so the texels stay sharp. The view must be a proper rotation. */
+export function drawRoom(t: Target, faces: CubeFaces, m: Mat3, o: RoomOptions): void {
+  const { width, height, px, id } = t;
+  const focal = o.half * (o.cam - 1);
+  for (const face of roomFaces(m, o.cam)) {
+    const tex = faces[face];
+    const size = tex.size;
+    const n = apply(m, NORMALS[face]);
+    const r = apply(m, canonRight(face));
+    const u = apply(m, CANON_UP[face]);
+    let x0 = width;
+    let x1 = -1;
+    let y0 = height;
+    let y1 = -1;
+    for (const [p, q] of [[-1, -1], [1, -1], [1, 1], [-1, 1]] as const) {
+      const k = focal / (o.cam - (n[2] + p * r[2] + q * u[2]));
+      const x = o.cx + (n[0] + p * r[0] + q * u[0]) * k;
+      const y = o.cy - (n[1] + p * r[1] + q * u[1]) * k;
+      x0 = Math.min(x0, Math.floor(x));
+      x1 = Math.max(x1, Math.ceil(x));
+      y0 = Math.min(y0, Math.floor(y));
+      y1 = Math.max(y1, Math.ceil(y));
+    }
+    x0 = Math.max(0, x0);
+    y0 = Math.max(0, y0);
+    x1 = Math.min(width - 1, x1);
+    y1 = Math.min(height - 1, y1);
+    // the wall's inner side is lit: it faces back into the room
+    const k = Math.round(shadeOf([-n[0], -n[1], -n[2]], o.light, o.ambient) * 256);
+    // the camera's height over the wall's plane (n . P = 1)
+    const above = 1 - o.cam * n[2];
+    for (let y = y0; y <= y1; y++) {
+      const dy = -(y + 0.5 - o.cy);
+      for (let x = x0; x <= x1; x++) {
+        const dx = x + 0.5 - o.cx;
+        // the ray through this pixel, from the camera at (0, 0, cam)
+        const along = dx * n[0] + dy * n[1] - focal * n[2];
+        if (along < 1e-9) continue;
+        const s = above / along;
+        const hx = s * dx - n[0];
+        const hy = s * dy - n[1];
+        const hz = o.cam - s * focal - n[2];
+        const p = hx * r[0] + hy * r[1] + hz * r[2];
+        if (p < -1 || p > 1) continue;
+        const q = hx * u[0] + hy * u[1] + hz * u[2];
+        if (q < -1 || q > 1) continue;
+        let tu = Math.floor((p + 1) * 0.5 * size);
+        let tv = Math.floor((1 - q) * 0.5 * size);
+        if (tu >= size) tu = size - 1;
+        if (tv >= size) tv = size - 1;
+        const c = tex.px[tv * size + tu]!;
+        const i = y * width + x;
+        px[i] = k >= 256 ? c | 0xff000000 : (0xff000000 | ((((c >> 16) & 0xff) * k) >> 8 << 16) | ((((c >> 8) & 0xff) * k) >> 8 << 8) | (((c & 0xff) * k) >> 8)) >>> 0;
+        id[i] = face;
+      }
+    }
+  }
+  if (o.ink !== null) outline(t, o.ink);
+}

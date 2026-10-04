@@ -16,6 +16,7 @@ import {
   type Role,
   type RoomInfo,
   type Seat,
+  type SeatAway,
   type ServerInfo,
   type ServerToClient,
   type Side,
@@ -49,6 +50,21 @@ export async function serverBlocksUs(): Promise<boolean> {
   }
 }
 const SEAT_KEY = 'cubic.seat';
+/**
+ * The seat we pressed Leave on. The server holds it for a while: joining that room again
+ * with its code sends this token along and gets the same seat back. Not used on a refresh
+ * (Leave means leave), and per tab like SEAT_KEY.
+ */
+const LEFT_KEY = 'cubic.left';
+
+type Saved = { code: string; token: string };
+function saved(key: string): Saved | null {
+  try {
+    return JSON.parse(sessionStorage.getItem(key) ?? 'null');
+  } catch {
+    return null;
+  }
+}
 
 type Pending = { seq: number; kind: 'move'; dx: number; dy: number } | { seq: number; kind: 'interact'; only?: InteractOnly };
 
@@ -96,6 +112,8 @@ export class Net {
   private pending: Pending[] = [];
   private seq = 0;
   private localId = 0;
+  /** The server's clock minus ours, from the last room info that carried the server's time. */
+  private skew = 0;
 
   constructor(
     private h: NetHandlers,
@@ -151,7 +169,7 @@ export class Net {
       this.h.onChange();
     });
     socket.on('room', (room) => {
-      this.room = room;
+      this.setRoom(room);
       this.sync();
       this.h.onChange();
     });
@@ -191,6 +209,21 @@ export class Net {
     this.state = s;
   }
 
+  private setRoom(room: RoomInfo): void {
+    this.room = room;
+    const away = room.seats.out.away ?? room.seats.in.away;
+    if (away) this.skew = away.now - Date.now();
+  }
+
+  /**
+   * The partner's seat is held for them (they dropped, or pressed Leave): why, and until
+   * when on OUR clock. Null when they are here, or when the seat is free.
+   */
+  partnerAway(): { kind: SeatAway['kind']; until: number } | null {
+    const away = this.side ? this.room?.seats[this.side === 'out' ? 'in' : 'out'].away : undefined;
+    return away ? { kind: away.kind, until: away.until - this.skew } : null;
+  }
+
   /** Find ourselves in the room: the lobby decides our role and side, not us. */
   private sync(): void {
     const m = this.room?.members;
@@ -214,7 +247,7 @@ export class Net {
     this.error = null;
     this.code = res.code;
     this.id = res.id;
-    this.room = res.room;
+    this.setRoom(res.room);
     this.chat = res.chat;
     this.server = res.state;
     // a new seat, or the same one after a reconnect: the server counts our moves from 0
@@ -226,6 +259,7 @@ export class Net {
     // sessionStorage, not localStorage: two windows of one browser must be two players.
     try {
       sessionStorage.setItem(SEAT_KEY, JSON.stringify({ code: res.code, token: res.token }));
+      sessionStorage.removeItem(LEFT_KEY);
     } catch {
       // storage blocked: reconnect after a refresh will not work, the game still does
     }
@@ -233,16 +267,9 @@ export class Net {
   }
 
   private tryRejoin(): void {
-    const read = (): { code: string; token: string } | null => {
-      try {
-        return JSON.parse(sessionStorage.getItem(SEAT_KEY) ?? 'null');
-      } catch {
-        return null;
-      }
-    };
-    const saved = read();
-    if (!saved || !this.socket) return;
-    this.socket.emit('room:rejoin', saved, (res) => {
+    const seat = saved(SEAT_KEY);
+    if (!seat || !this.socket) return;
+    this.socket.emit('room:rejoin', seat, (res) => {
       if (res.ok) this.adopt(res);
       else {
         this.error = res.error; // the room is gone (it emptied, or the server restarted): say why we are back on the menu
@@ -285,7 +312,10 @@ export class Net {
       this.h.onChange();
       return;
     }
-    if (this.begin()) this.socket!.emit('room:join', { code: code.trim().toUpperCase() }, (res) => this.adopt(res));
+    const room = code.trim().toUpperCase();
+    // the room we pressed Leave in: our token takes the held seat back
+    const left = saved(LEFT_KEY);
+    if (this.begin()) this.socket!.emit('room:join', { code: room, ...(left?.code === room ? { token: left.token } : {}) }, (res) => this.adopt(res));
   }
 
   playWithAI(side: Side): void {
@@ -318,8 +348,14 @@ export class Net {
   }
 
   leave(): void {
+    const seat = saved(SEAT_KEY);
     this.socket?.emit('room:leave');
     this.forget();
+    try {
+      if (seat) sessionStorage.setItem(LEFT_KEY, JSON.stringify(seat));
+    } catch {
+      // storage blocked: coming back with the code will be a new join
+    }
   }
 
   restart(): void {

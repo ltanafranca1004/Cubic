@@ -7,6 +7,7 @@ import {
   applyInteract,
   applyMove,
   createGame,
+  defaultEnv,
   needsTick,
   quickIndex,
   tick,
@@ -21,6 +22,7 @@ import {
   type RoomMode,
   type RoomPhase,
   type Seat,
+  type SeatAway,
   type Side,
   type StateUpdate,
 } from '@cubic/shared';
@@ -32,10 +34,16 @@ import {
 // A friend room starts in the LOBBY: the host (who made it) and the guest (who joined)
 // each pick a side, the guest readies up and the host starts. From then on the room is
 // PLAYING and the sides are locked. AI rooms skip the lobby.
+//
+// Grace: once the game runs, a player who drops (refresh, wifi, closed tab) or presses
+// Leave keeps their place, side and token for LIMITS.seatHoldMs. The other player plays
+// on and nothing resets. Back in time (same token) = same seat. When the window passes the
+// place is given up: whoever is left becomes the host, the seat opens for anyone with the
+// code, and a room with no human left (present or held) is closed.
 
 const CODE_LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // no I or O: they read as 1 and 0
 const CODE_LEN = 4;
-/** How long a disconnected player's seat is held for them once the game is running. */
+/** How long a seat is held for a player who dropped or pressed Leave, once the game is running. */
 export const SEAT_HOLD_MS = 60_000;
 const CHAT_HISTORY = 60;
 const CHAT_WINDOW_MS = 5_000;
@@ -43,9 +51,10 @@ const CHAT_PER_WINDOW = 5;
 /**
  * Tunable (tests change these). Move budget: a burst of moveBurst, refilled one per
  * moveRefillMs (~11 moves/s). lobbyHoldMs: how long a place in the lobby is held after a
- * disconnect (short: the room is blocked for a new guest meanwhile).
+ * disconnect (short: the room is blocked for a new guest meanwhile). seatHoldMs: the grace
+ * window of a running game.
  */
-export const LIMITS = { moveBurst: 5, moveRefillMs: 90, lobbyHoldMs: 15_000 };
+export const LIMITS = { moveBurst: 5, moveRefillMs: 90, lobbyHoldMs: 15_000, seatHoldMs: SEAT_HOLD_MS };
 /** How far past the last ack a move's seq may be (moves lost on the way leave small gaps). */
 const SEQ_JUMP_MAX = 1000;
 
@@ -62,6 +71,9 @@ interface Member {
   budget: number;
   budgetAt: number;
   chatTimes: number[];
+  /** Not here, and why: the place is held until `until` (this room's clock), then given up. */
+  away: SeatAway['kind'] | null;
+  until: number;
   dropTimer: NodeJS.Timeout | null;
 }
 
@@ -82,6 +94,9 @@ export interface RoomListener {
   onClosed?(): void;
 }
 
+/** A fresh seed per game: what the puzzles draw their codes, sequences and paths from. */
+const newSeed = (): number => randomBytes(4).readUInt32LE();
+
 export class Room {
   state: GameState;
   readonly chat: ChatMessage[] = [];
@@ -92,6 +107,7 @@ export class Room {
   private signalId = 0;
   private memberId = 0;
   private ticker: NodeJS.Timeout | null = null;
+  private closed = false;
 
   constructor(
     readonly code: string,
@@ -99,7 +115,7 @@ export class Room {
     private readonly onEmpty: (room: Room) => void,
     private readonly now: () => number = Date.now,
   ) {
-    this.state = createGame(this.now());
+    this.state = createGame(this.now(), defaultEnv, newSeed());
     // An AI game has nothing to wait for: the human chose a side with the button.
     this.phase = mode === 'ai' ? 'playing' : 'lobby';
     if (needsTick()) {
@@ -126,7 +142,10 @@ export class Room {
   info(): RoomInfo {
     const seat = (side: Side) => {
       const m = this.find(side);
-      return { taken: !!m, connected: !!m?.connected, isAI: !!m?.isAI };
+      const seat: RoomInfo['seats'][Side] = { taken: !!m, connected: !!m?.connected, isAI: !!m?.isAI };
+      // a held seat of a running game: the deadline, and our clock so the client can count down on its own
+      if (m?.away && this.phase === 'playing') seat.away = { kind: m.away, until: m.until, now: this.now() };
+      return seat;
     };
     const member = (role: Role): MemberInfo | null => {
       const m = this.byRole(role);
@@ -180,6 +199,8 @@ export class Room {
       budget: LIMITS.moveBurst,
       budgetAt: this.now(),
       chatTimes: [],
+      away: null,
+      until: 0,
       dropTimer: null,
     };
     this.members.push(m);
@@ -267,7 +288,7 @@ export class Room {
     const blocker = this.startBlocker();
     if (blocker) throw new Error(blocker);
     this.phase = 'playing';
-    this.state = createGame(this.now());
+    this.state = createGame(this.now(), defaultEnv, newSeed());
     for (const x of this.members) this.seatPlayer(x);
     this.emitRoom();
     this.emitState([]);
@@ -275,12 +296,13 @@ export class Room {
 
   // ---------- coming and going ----------
 
-  /** A player came back with their token. */
+  /** A player came back with their token: same place, same side, same game. */
   resume(id: number): Seat {
     const m = this.find(id);
     if (!m) throw new Error('That room is gone.');
     if (m.dropTimer) clearTimeout(m.dropTimer);
     m.dropTimer = null;
+    m.away = null;
     m.connected = true;
     // The page that comes back numbers its moves from 1 again. Keeping the old ack would
     // make it throw away every prediction until its count passed the old one.
@@ -294,25 +316,48 @@ export class Room {
   /** Socket dropped: hold the place for a while so a refresh can rejoin. */
   drop(who: Who): void {
     const m = this.find(who);
+    if (m) this.hold(m, 'reconnecting');
+  }
+
+  /**
+   * Leave pressed. In a running game the place is held like a dropped one, so the token
+   * still gets the same seat back within the window. In the lobby nothing is at stake (no
+   * side is locked, no game to lose): the place is given up at once, as is an AI's.
+   */
+  leave(who: Who): void {
+    const m = this.find(who);
     if (!m) return;
+    if (this.phase === 'lobby' || m.isAI) this.giveUp(m);
+    else this.hold(m, 'left');
+  }
+
+  /** Keep `m`'s place while they are not here. The window starts again with every call. */
+  private hold(m: Member, kind: SeatAway['kind']): void {
     m.connected = false;
     if (this.phase === 'lobby') {
       // Nobody can start a game with someone who is not there: their pick and ready go.
       m.ready = false;
       m.side = null;
     } else this.seatPlayer(m);
+    const ms = this.phase === 'lobby' ? LIMITS.lobbyHoldMs : LIMITS.seatHoldMs;
+    m.away = kind;
+    m.until = this.now() + ms;
     if (m.dropTimer) clearTimeout(m.dropTimer);
-    m.dropTimer = setTimeout(() => this.leave(m.id), this.phase === 'lobby' ? LIMITS.lobbyHoldMs : SEAT_HOLD_MS);
+    m.dropTimer = setTimeout(() => this.giveUp(m), ms);
     m.dropTimer.unref();
     this.emitRoom();
     this.emitState([]);
   }
 
-  /** Give the place up for good. If the host goes, whoever is left becomes the host. */
-  leave(who: Who): void {
-    const m = this.find(who);
-    if (!m) return;
+  /**
+   * The place is gone for good (the window passed, or Leave in the lobby): the token dies
+   * and the seat is free. If the host goes, whoever is left becomes the host, here or held.
+   * With no human left the room closes.
+   */
+  private giveUp(m: Member): void {
+    if (!this.members.includes(m)) return;
     if (m.dropTimer) clearTimeout(m.dropTimer);
+    m.dropTimer = null;
     this.members = this.members.filter((x) => x !== m);
     if (m.side) this.state.players[m.side].connected = false;
     if (!this.members.some((x) => !x.isAI)) {
@@ -326,11 +371,15 @@ export class Room {
     this.emitState([]);
   }
 
+  /** Delete the room: the tick, every held seat's timer, and whoever listens (sockets, the AI). */
   close(): void {
+    if (this.closed) return;
+    this.closed = true;
     if (this.ticker) clearInterval(this.ticker);
+    this.ticker = null;
     for (const m of this.members) if (m.dropTimer) clearTimeout(m.dropTimer);
     this.members = [];
-    for (const l of this.listeners) l.onClosed?.();
+    for (const l of [...this.listeners]) l.onClosed?.();
     this.listeners.clear();
     this.onEmpty(this);
   }
@@ -421,7 +470,7 @@ export class Room {
   /** New game in the same room (after a win). Everyone keeps their side. */
   restart(): void {
     if (this.phase !== 'playing' || this.state.wonAt === null) return;
-    this.state = createGame(this.now());
+    this.state = createGame(this.now(), defaultEnv, newSeed());
     for (const m of this.members) this.seatPlayer(m);
     this.emitState([]);
   }
@@ -450,6 +499,9 @@ export class Room {
 export class Rooms {
   private rooms = new Map<string, Room>();
 
+  /** `now` is every room's clock (tests pass their own). */
+  constructor(private readonly now: () => number = () => Date.now()) {}
+
   get size(): number {
     return this.rooms.size;
   }
@@ -458,7 +510,7 @@ export class Rooms {
     const roll = () => Array.from(randomBytes(CODE_LEN), (b) => CODE_LETTERS[b % CODE_LETTERS.length]).join('');
     let code = roll();
     while (this.rooms.has(code)) code = roll();
-    const room = new Room(code, mode, (r) => this.rooms.delete(r.code));
+    const room = new Room(code, mode, (r) => this.rooms.delete(r.code), this.now);
     this.rooms.set(code, room);
     return room;
   }

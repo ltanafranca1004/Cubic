@@ -1,4 +1,4 @@
-import { NORMALS, compassDrift, faceDistance, neighbours, upsOn, viewRight, type FaceId, type Side, type Vec } from '@cubic/shared';
+import { NORMALS, compassDrift, faceDistance, neg, neighbours, upsOn, viewRight, type FaceId, type Side, type Vec } from '@cubic/shared';
 import { axisAngle, fromRows, mul, rotAxis, rotX, rotY, transpose, type Mat3 } from './mat';
 import type { CubeMapDir } from './api';
 
@@ -38,6 +38,41 @@ const Q = Math.PI / 2;
  * the cube makes when the player walks off that edge of the screen.
  */
 export const QUARTER: Record<CubeMapDir, Mat3> = { left: rotY(Q), right: rotY(-Q), up: rotX(Q), down: rotX(-Q) };
+
+// THE INSIDE PLAYER'S HUD CUBE IS A ROOM. They stand in the cube, so their cube is drawn
+// from within: the face they are on is the floor at the back, and the four faces around it
+// are walls coming towards the camera. Crossing an edge there is a CONCAVE corner: the wall
+// ahead tips over towards them and becomes the floor, the opposite turn to the outside cube
+// rolling over its convex edge.
+
+/** How far the room's camera is from the cube's centre, in half-edges, on the view's z axis. */
+export const ROOM_CAM = 3.5;
+
+/**
+ * The inside camera: screen right is the same mirrored right as the game's view
+ * (viewRight), up is up, and the floor's normal points AWAY from the viewer. A proper
+ * rotation: the mirror is real here, it is the wall seen from behind.
+ */
+export function roomView(face: FaceId, up: Vec): Mat3 {
+  return fromRows(viewRight('in', face, up), up, neg(NORMALS[face]));
+}
+
+/** The view the HUD cube rests in for a pose: the cube from outside, the room from inside. */
+export const hudView = (side: Side, face: FaceId, up: Vec): Mat3 => (side === 'in' ? roomView(face, up) : poseView(side, face, up));
+
+/** The inside quarter turns: about the same screen axis as the outside ones, the other way round. */
+export const ROOM_QUARTER: Record<CubeMapDir, Mat3> = { left: rotY(-Q), right: rotY(Q), up: rotX(-Q), down: rotX(Q) };
+
+/** The quarter turn the HUD cube makes when its player walks off a screen edge. */
+export const hudQuarter = (side: Side, dir: CubeMapDir): Mat3 => (side === 'in' ? ROOM_QUARTER : QUARTER)[dir];
+
+/** The wall that rises to become the floor when the inside player walks off a screen edge. */
+export const risingWall = (face: FaceId, up: Vec, dir: CubeMapDir): FaceId => neighbours({ side: 'in', face, up })[dir];
+
+/** The face a room view has as its floor. */
+export function floorOf(view: Mat3): FaceId {
+  return facing([view[0], view[1], view[2], view[3], view[4], view[5], -view[6], -view[7], -view[8]]);
+}
 
 /** The face in front of a view, and the faces around it. */
 export function facing(view: Mat3): FaceId {

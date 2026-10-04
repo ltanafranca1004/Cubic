@@ -34,9 +34,10 @@ game.
 4. Move with WASD or the arrow keys (hold to keep walking). Walk off any edge to cross to
    the next face; the labels around the view say which face is where, and the cube in the
    HUD turns as your up turns (the compass drift).
-5. Example puzzle on face 1: the inside player stands on the plate (they see it top-left),
-   the door on the outside opens, the outside player walks in and takes the crystal.
-6. Face 6 has the portal. Once every puzzle is solved, both players step on it to win.
+5. Example puzzle on face 1: the outside player reads the three digits laid out in the
+   grass, the inside player walks onto the keys of the floor keypad and presses **E** on
+   each, then on ENTER.
+6. Six puzzles, one per face (below). The game is won the moment the last one is solved.
 7. Chat: Enter to type, Esc to close. Refreshing a window puts you back in your seat.
 
 ### Controls (the mouse is never needed)
@@ -107,8 +108,26 @@ key needs the `music_generation` permission and a paid plan. Model: `ELEVENLABS_
 ## Items
 
 Press **E** to pick up the item you are standing on, and **Q** (or E again) to drop it. You carry one
-at a time and it comes with you across faces. Example: the outside player carries the rose
-from face 1 to the pot on face 6.
+at a time and it comes with you across faces. Example: the inside player carries the
+battery from the safe on face 2 to the laser emitter on face 5. With empty hands and no
+item on your tile, **E** uses the tile: a key, a button, a flip tile.
+
+## The six puzzles
+
+Each player sees only their own half, so every one is solved by talking. Chain: 2, then 5,
+then 6, then 4. Faces 1 and 3 can be done at any time.
+
+| Face | Outside | Inside | Unlocks |
+| --- | --- | --- | --- |
+| 1 Grass / Keypad room | reads the number in the grass (only right when their view is upright) | types the three digits, ENTER | |
+| 2 Desert / Vault | counts bushes, rocks and birds | types 3 x bushes x 2 x birds x rocks, ENTER | the battery |
+| 3 Snow / Tile room | describes the symbol in the snow | flips floor tiles to copy it, mirrored | |
+| 4 Forest / Greenhouse | plants the flower in the pot the partner names | sees which pot holds that colour | |
+| 5 Rooftop / Laser room | calls the order the symbols light up in | battery into the emitter, then the symbols in that order | the laser |
+| 6 Cave / Lava room | pushes mirrors until the beam burns the crate, then calls the safe path | walks the path over the lava to the button | the flower |
+
+The lava of face 6 is only deadly while the laser is on (face 5 solved) and its button is
+not pressed yet; before and after it is cold rock.
 
 ## Play with the AI
 

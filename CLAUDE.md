@@ -34,7 +34,8 @@ server and Vite on the client both consume `/shared` as TS source).
   src/cube.ts         cube math: normals, view right, screen<->canonical, stepPose, compassDrift
   src/game.ts         createGame, applyMove, applyInteract, tick -> GameEvent[]
   src/maps/           map format + loaders (string maps, Tiled .tmj)
-  src/puzzles/        PuzzleModule interface + one file per puzzle
+  src/puzzles/        PuzzleModule interface + one file per puzzle, lib/ (shared building
+                      blocks), chain.ts (the items the chain hands from face to face)
   src/voice.ts        voiceMix(state): how loud the partner is, from cube distance
   src/bot/            the AI's body: observe(), pathTo()
 /server   Node + Socket.io (tsx). Rooms, validation, chat, voice signaling, AI partner.
@@ -91,9 +92,10 @@ Every owned folder has a README that says exactly what goes there.
 
 - **Types:** `shared/src/types.ts`. Changing them affects everyone: ask Luis.
 - **Puzzles:** `PuzzleModule` in `shared/src/puzzles/types.ts`: `init`, `isBlocked(side,
-  tile)`, `onEnter` / `onLeave` (tile), `onItem`, `onTick`, `isSolved`, `visible(side)`
-  (per-side visibility), `objective(side)`, plus `ctx.emit` for custom events. Example:
-  `plateDoor.ts`. Template: `_template.ts`. Register in `puzzles/index.ts`.
+  tile)`, `onEnter` / `onLeave` (tile), `onUse`, `onPush`, `onItem`, `onTick`, `isSolved`,
+  `visible(side)` (per-side visibility), `objective(side)`, `lines(side)`, `bright`, plus
+  `ctx.emit` for custom events. See "Puzzles" below. Example: `hiddenCode.ts`. Template:
+  `_template.ts`. Registered in `puzzles/index.ts`.
 - **UI:** `UIHost` / `UIState` / `UIActions` in `client/src/ui/hooks.ts`
   (`onCreateRoom`, `onJoinRoom(code)`, `onPlayWithAI(side)`, ...). Mock data in
   `client/src/ui/mock.ts`, shown with `?mock=lobby`, `?mock=hud` or `?mock=game`.
@@ -172,9 +174,11 @@ density and the pointer.
 
 1. **String maps** in `shared/src/maps/default.ts`: 12 strings of 12 characters.
    Terrain: `.` floor, `#` wall, `T` tree, `~` water (the last three are solid).
-   Objects (on floor): `P` plate, `D` door, `C` crystal, `O` portal, `I` item, `R` rose
-   (an item), `U` target.
-   Legend lives in `shared/src/maps/strings.ts`.
+   Objects (on floor): `I` item, `U` target, `0` to `9` and `e` keypad keys, `d` display
+   cell, `p` pot (a target), `u` face 5 symbol, `v` replay, `w` emitter (a target), `x`
+   rock, `y` crate, `z` reset, `Y` beam source, `X` button (`C`, the old stub crystal, is
+   still in the legend and on no map). The legend lives in `shared/src/maps/strings.ts`
+   (`LEGEND`), one section per face.
 2. **Tiled** `/maps/<side>-<face>.tmj` (e.g. `out-1.tmj`), bundled by `npm run maps`. A
    face with a `.tmj` ignores its string map. Tile layer `tiles` (CSV; terrain from the
    tile's `kind` property) + object layer `objects` (each object has a `type`). Details
@@ -182,6 +186,51 @@ density and the pointer.
 
 Both load into the same `FaceMap { side, face, tiles[y][x], objects[] }`. Objects never
 block by themselves; a puzzle's `isBlocked` decides.
+
+**EDGE RULE: nothing solid on the outer ring of any face** (row 0, row 11, column 0,
+column 11): no solid terrain there, and no puzzle may block a ring tile for either side, so
+a player crossing in from the next face can always step in. `shared/test/maps.test.ts`
+checks the terrain; boxes refuse the ring (`lib/push.ts`).
+
+## Puzzles
+
+Six, one per face, in `shared/src/puzzles` (`PUZZLES` in `index.ts`). Chain: 2 -> 5 -> 6 ->
+4; faces 1 and 3 stand alone. The game is won the moment all six are solved: there is no
+portal and no exit to walk to.
+
+| Face | id | Outside | Inside | Unlocks |
+| --- | --- | --- | --- | --- |
+| 1 Grass / Keypad room | `hidden-code` | reads the 3-digit number laid out in the grass; it only reads right at compass drift 0 | types it on the floor keypad, then ENTER | nothing |
+| 2 Desert / Vault | `equation-safe` | counts the berry bushes, round rocks and hopping birds (1 to 4 each) | types 3 x bushes x 2 x birds x rocks, then ENTER; the safe opens | the battery (inside), for face 5 |
+| 3 Snow / Tile room | `mirrored-glyph` | describes the symbol carved in the snow | flips floor tiles (E) until they match it, mirrored; CLEAR in the corner | nothing |
+| 4 Forest / Greenhouse | `botanical-mirror` | plants the flower in the pot the partner names | sees which of the five pots holds that colour | the last link (needs face 6's flower) |
+| 5 Rooftop / Laser room | `sequence-laser` | calls the order the seven symbols light up in (E on REPLAY shows it again) | puts the battery in the emitter, presses the symbols in that order | the laser beam on face 6 |
+| 6 Cave / Lava room | `laser-path` | pushes two mirrors so the beam burns the crate, then calls the safe path it reveals | walks that path over the lava to the button, E | the flower (outside), for face 4 |
+
+- A wrong code, press, pot or lava tile is a strike. Face 3 has none.
+- **Face 6's lava is deadly only while face 5 is solved and face 6 is not.** Before the
+  laser is on, and after the button is pressed, it is cold and walkable (so the bot and
+  the test scripts can cross it). While it is hot the inside player must stay on the ring.
+- Hooks beyond the basics: `onUse` (E on a tile with empty hands and no item to pick up:
+  keys, buttons, flip tiles), `onPush` (a step into a tile on the same face: move a box and
+  return true), `lines(side)` (beams drawn over the face), `bright` (the inside of the
+  face is drawn fully lit).
+- Randomness: `ctx.rand(...keys)` = `mix(ctx.seed, ...keys)`, and `ctx.seed` in `init`.
+  The seed (`GameState.seed`) is new for every game of a room and the same on the server
+  and both clients. Derive content from it instead of storing it.
+- `shared/src/puzzles/lib`: `keypad`, `flip`, `sequence`, `push`, `hazard`, `path`, `deps`.
+  `chain.ts`: the battery and the flower (ids, kinds, the flower's colour).
+- Art per face: `client/src/game/puzzleArt/faceN.ts` (`common.ts`, `items.ts`, `index.ts`
+  beside them).
+- Tests: `shared/test/<id>.test.ts`, `solutions.ts`; see `docs/puzzle-tests.md`.
+- `npm run art` (in `tools/`) currently exits with an error: the teammates' turtle sprites
+  are off-palette. It still writes every file first. Never modify the turtle sprites.
+
+## HUD cube and the player sprite (client only)
+
+The cube in the HUD is drawn by `client/src/cube`. The outside player's is a solid cube;
+the inside player's is drawn as a room, seen from within. Both turn with the compass
+drift. The turtle faces its screen direction and carries an item above its head.
 
 ## Biome layer (client only, outside faces)
 
@@ -202,7 +251,7 @@ When you move a map tile, run `npm test`: the biome test tells you what it now c
 
 ## Items (carryable)
 
-- Map object `type: "item"`, `name` = unique id, prop `kind` (e.g. `rose`). Press **E** to
+- Map object `type: "item"`, `name` = unique id, prop `kind` (e.g. `battery`). Press **E** to
   pick up the item on your tile, or to drop the one you carry. One item at a time. A
   carried item travels across face edges with the player and stays where it is dropped.
 - Map object `type: "target"`, `name` = id, prop `accepts` = item id or kind (empty =
@@ -210,6 +259,10 @@ When you move a map tile, run `npm test`: the biome test tells you what it now c
 - The server owns item state (`GameState.items`). Puzzles react through
   `onItem(s, ctx, ev)` with `ev.kind` = `picked` | `dropped` | `placed`; it fires for every
   face. Game events: `pickup`, `drop`, `place`.
+- A puzzle can also make, hand back or delete an item: `ctx.spawnItem`, `ctx.giveItem`,
+  `ctx.removeItem`. The game's two items are made that way: the battery (inside, face 2 to
+  the emitter on face 5) and the flower (outside, `flower-<colour>`, face 6 to a pot on
+  face 4). No map has an item of its own.
 - Items live on one side: the outside player cannot pick up an inside item.
 
 ## Proximity voice
@@ -245,6 +298,11 @@ elevenlabs, disk cache + voice bank in `server/src/ai/tts.ts`. Token and TTS cha
 usage are logged. New puzzle objects
 are visible to the AI automatically through `visible()`; describe new mechanics in
 `server/src/ai/prompt.ts` if the AI needs to know a rule.
+
+The AI has not been taught the six current puzzles yet: the puzzle block in `prompt.ts`
+is still a placeholder (between the `PUZZLES V2 PLACEHOLDER` markers). Its body also has
+no "use" action: `pick_up` and `drop` are refused without an item, so it cannot press E on
+a key, a button, a flip tile, REPLAY or RESET.
 
 ## Git workflow
 

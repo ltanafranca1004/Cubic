@@ -2,11 +2,15 @@ import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { io, type Socket } from 'socket.io-client';
 import { FACE_SIZE, defaultEnv, pathTo, visibleObjects, type ChatMessage, type ClientToServer, type GameEvent, type RoomInfo, type Seat, type ServerToClient, type Side, type StateUpdate, type FaceId, type TileRef } from '@cubic/shared';
+import { readCode } from '../../shared/src/puzzles/hiddenCode';
 import { createApp, type App } from '../src/app';
 import { LIMITS } from '../src/rooms';
+// face 4 (botanical-mirror): what a side sees, under its own name so the other faces' blocks can import theirs
+import { visibleObjects as seenOnFace4 } from '@cubic/shared';
+import { MOVES, findPath, stepPose } from '@cubic/shared'; // faces 5 and 6
 
 // Scripted two-client game over real sockets: rooms, codes, the lobby (pick sides, ready,
-// start), chat, validation, reconnect, the example puzzle and the portal win.
+// start), chat, validation, reconnect, items, every puzzle and the win.
 
 type Sock = Socket<ServerToClient, ClientToServer>;
 
@@ -145,6 +149,8 @@ test('GET /health returns 200', async () => {
 test('two clients play a whole game online', async () => {
   const a = client();
   const b = client();
+  /** The inside player's live client (a new one after the reconnect below). */
+  let bNow = () => b;
 
   // --- rooms and codes
   const seatA = await a.create();
@@ -192,15 +198,28 @@ test('two clients play a whole game online', async () => {
   a.sock.emit('move', { dx: 1, dy: 1, seq: 0 });
   await a.move(0, 1);
   assert.deepEqual([a.pose.x, a.pose.y], [start.x, start.y + 1]);
-  const crystal = find('out', 1, 'crystal');
-  assert.equal(pathTo(a.last.state, 'out', crystal), null); // door is shut
 
-  // --- the example puzzle, online: inside presses the plate, outside takes the crystal
-  await b.walkTo(find('in', 1, 'plate'));
-  await a.until(() => a.events.some((e) => e.type === 'puzzle' && e.name === 'door-open'), 'door-open reaches the other player');
-  await a.walkTo(crystal);
+  // --- THE PUZZLES, ONLINE. One block per puzzle, in chain order (1 and 3 stand alone, then
+  // 2 -> 5 -> 6 -> 4). Each client only uses what its own side can see. Replace a block
+  // with the real play when its puzzle replaces the stub; keep the `solved` line that ends it.
+  const solved = async (face: FaceId) => {
+    await a.until(() => a.last.state.solved.includes(face), `face ${face} solved for the outside player`);
+    await bNow().until(() => bNow().last.state.solved.includes(face), `face ${face} solved for the inside player`);
+  };
+
+  // ---------- face 1: hidden-code ----------
+  // outside reads the number laid out in the grass, inside types it on the floor keypad
+  const code = readCode(visibleObjects(a.last.state, 'out', 1));
+  assert.ok(code, 'the outside player sees the number');
+  assert.equal(readCode(visibleObjects(b.last.state, 'in', 1)), null, 'the inside player does not');
+  for (const name of [...code, 'enter']) {
+    await b.walkTo(find('in', 1, 'key', name));
+    await b.interact();
+  }
+  await a.until(() => a.events.some((e) => e.type === 'use' && e.side === 'in'), 'the use event reaches the other player');
   await b.until(() => b.events.some((e) => e.type === 'solve' && e.face === 1), 'solve reaches both');
   assert.deepEqual(a.last.state.solved, [1]);
+  // ---------- end face 1 ----------
 
   // --- walk around the cube: inside does a full lap through 4 faces (row 0 is clear)
   await b.walkTo({ face: 1, x: 8, y: 0 });
@@ -219,66 +238,157 @@ test('two clients play a whole game online', async () => {
   assert.equal(back.chat.length, a.chat.length);
   await a.until(() => !!a.room?.seats.in.connected, 'partner back');
 
-  // --- items online: outside carries the rose from face 1 to the pot on face 6
-  const rose = a.last.state.items.rose!;
-  await a.walkTo({ face: 1, x: rose.x, y: rose.y });
-  await a.interact();
-  assert.equal(a.last.state.players.out.carrying, 'rose');
-  await a.walkTo(find('out', 6, 'target'));
-  assert.equal(a.last.state.players.out.carrying, 'rose'); // it crossed the edges with them
-  await a.interact();
-  await b2.until(() => b2.events.some((e) => e.type === 'puzzle' && e.name === 'bloom'), 'item puzzle event reaches both');
-  assert.deepEqual(a.last.state.solved, [1, 6]);
-  assert.deepEqual([a.last.state.items.rose!.face, a.last.state.items.rose!.placedOn !== null], [6, true]);
+  bNow = () => b2;
 
-  // --- the three co-op puzzles, online. Each client only uses what its own side can see.
-  const sees = (c: Client, face: FaceId, type: string) => visibleObjects(c.last.state, c.side, face).filter((o) => o.type === type);
-  const outAt = (c: Client, t: TileRef) => {
-    const p = c.last.state.players.out.pose;
-    return p.face === t.face && p.x === t.x && p.y === t.y;
-  };
+  // --- items online: outside picks one up, carries it over an edge and drops it
+  const room = app.rooms.get(seatA.code)!;
+  // (the test owns the room: the items of the real game are handed out by the puzzles)
+  room.state.items.parcel = { id: 'parcel', kind: 'parcel', side: 'out', face: a.pose.face, x: a.pose.x, y: a.pose.y, carriedBy: null, placedOn: null, props: {} };
+  await a.interact();
+  assert.equal(a.last.state.players.out.carrying, 'parcel');
+  await a.walkTo({ face: 3, x: 5, y: 5 });
+  assert.equal(a.last.state.players.out.carrying, 'parcel'); // it crossed the edges with them
+  await a.interact();
+  await b2.until(() => b2.events.some((e) => e.type === 'drop' && e.side === 'out'), 'the drop reaches both');
+  assert.deepEqual([a.last.state.items.parcel!.face, a.last.state.items.parcel!.carriedBy, a.last.state.solved], [3, null, [1]]); // E put the item down: no use
+  delete room.state.items.parcel;
 
-  // code relay (face 3): inside reads the tablet from the plate, outside steps on that stone
-  await b2.walkTo(find('in', 3, 'plate'));
-  await a.until(() => sees(a, 3, 'glyph').every((g) => !g.state!.endsWith('-off')), 'the stones wake up for the outside player');
-  for (let i = 0; i < 4; i++) {
-    await b2.until(() => (b2.last.state.puzzles['glyph-code'] as { progress: number }).progress === i, `sign ${i} is showing`);
-    const sign = sees(b2, 3, 'tablet')[0]!.state;
-    const stone = sees(a, 3, 'glyph').find((g) => g.state === sign)!;
-    await a.walkTo({ face: 3, x: stone.x, y: stone.y });
+  // ---------- face 3: mirrored-glyph ----------
+  // outside reads the symbol off the snow, inside flips those tiles (a snake, row by row)
+  const symbol = visibleObjects(a.last.state, 'out', 3).filter((o) => o.type === 'f3-glyph');
+  assert.deepEqual(visibleObjects(b2.last.state, 'in', 3).filter((o) => o.type === 'f3-glyph'), []); // the inside player cannot see it
+  symbol.sort((p, q) => p.y - q.y || (p.y % 2 ? q.x - p.x : p.x - q.x));
+  for (const o of symbol) {
+    await b2.walkTo({ face: 3, x: o.x, y: o.y });
+    await b2.interact();
   }
-  await b2.until(() => b2.last.state.solved.includes(3), 'code relay solved for both');
+  await solved(3);
+  // ---------- end face 3 ----------
 
-  // mirror maze (face 4): outside reads the stones, inside walks them
-  await a.walkTo({ face: 4, x: 0, y: 0 });
-  await b2.walkTo(find('in', 4, 'entry'));
-  for (const stone of sees(a, 4, 'trail')) await b2.walkTo({ face: 4, x: stone.x, y: stone.y });
-  await a.until(() => a.last.state.solved.includes(4), 'mirror maze solved for both');
-  assert.equal(a.last.state.strikes, 0);
+  // ---------- face 2: equation-safe ----------
+  // The outside player counts, the inside player types the product. The battery stays lying.
+  {
+    const { visibleObjects } = await import('@cubic/shared');
+    const seen = (type: string) => visibleObjects(a.last.state, 'out', 2).filter((o) => o.type === type).length;
+    const answer = 3 * seen('f2-bush') * 2 * seen('f2-bird') * seen('f2-rock');
+    for (const name of [...String(answer), 'enter']) {
+      const key = visibleObjects(b2.last.state, 'in', 2).find((o) => o.type === 'key' && o.state === name)!;
+      await b2.walkTo({ face: 2, x: key.x, y: key.y });
+      await b2.interact();
+    }
+  }
+  await solved(2);
+  assert.equal(a.last.state.items.battery?.face, 2);
+  // ---------- end face 2 ----------
 
-  // skylight (face 5): outside holds pane a, inside crosses to the ring; pane b, inside takes the crystal
-  const crystal5 = find('in', 5, 'crystal');
-  const paneA = find('out', 5, 'skylight', 'a');
-  const paneB = find('out', 5, 'skylight', 'b');
-  await b2.walkTo({ face: 5, x: 0, y: 0 });
-  assert.equal(pathTo(b2.last.state, 'in', crystal5), null); // dark: no way in
-  await a.walkTo(paneA);
-  await b2.until(() => outAt(b2, paneA), 'pane a held');
-  const bridgeB = find('in', 5, 'bridge', 'b');
-  await b2.walkTo({ face: 5, x: bridgeB.x + 1, y: bridgeB.y }); // the dry ring, next to the second bridge
-  assert.equal(pathTo(b2.last.state, 'in', crystal5), null); // the second bridge is still dark
-  await a.walkTo(paneB);
-  await b2.until(() => outAt(b2, paneB), 'pane b held');
-  await b2.walkTo(crystal5);
-  await a.until(() => a.last.state.solved.includes(5), 'skylight solved for both');
-  assert.deepEqual(a.last.state.solved, [1, 3, 4, 5, 6]);
+  // ---------- face 5: sequence-laser ----------
+  {
+    const symbols = (c: Client) => visibleObjects(c.last.state, c.side, 5).filter((o) => o.type === 'f5-symbol');
+    // inside: the battery (lying inside on face 2, or already in hand) goes into the emitter
+    const battery = b2.last.state.items.battery;
+    assert.ok(battery, 'face 2 handed over the battery');
+    if (battery.carriedBy !== 'in') {
+      await b2.walkTo({ face: battery.face, x: battery.x, y: battery.y });
+      await b2.interact();
+    }
+    await b2.walkTo(find('in', 5, 'target', 'f5-emitter'));
+    await b2.interact();
+    // outside: E on REPLAY, then watch the symbols light up (0.5 s each, on the server's tick)
+    await a.walkTo(find('out', 5, 'f5-replay'));
+    await a.interact();
+    const order: string[] = [];
+    for (let i = 0; i < 120 && order.length < symbols(a).length; i++) {
+      const lit = symbols(a).find((o) => o.state?.endsWith('-lit'))?.state?.slice(0, -4);
+      if (lit && !order.includes(lit)) order.push(lit);
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    assert.equal(order.length, 7, 'the outside player saw every symbol light up');
+    assert.ok(symbols(b2).every((o) => !o.state?.endsWith('-lit')), 'the inside player never sees the sequence');
+    // inside: presses the buttons in the order the outside player calls out
+    for (const name of order) {
+      const button = symbols(b2).find((o) => o.state === name)!;
+      await b2.walkTo({ face: 5, x: button.x, y: button.y });
+      await b2.interact();
+    }
+    assert.ok(a.events.some((e) => e.type === 'puzzle' && e.name === 'laser'), 'the laser fires');
+  }
+  await solved(5);
+  // ---------- end face 5 ----------
 
-  // --- portal win
-  const portal = find('out', 6, 'portal');
-  await a.walkTo(portal);
-  await b2.walkTo(portal);
-  await a.until(() => a.events.some((e) => e.type === 'win'), 'win reaches both');
+  // ---------- face 6: laser-path ----------
+  {
+    const stepOnto = async (c: Client, x: number, y: number) => {
+      const m = MOVES.find(([dx, dy]) => ((p) => p.face === 6 && p.x === x && p.y === y)(stepPose(c.pose, dx, dy).pose));
+      assert.ok(m, `${c.side} is not next to face 6 ${x},${y}`);
+      await c.move(m[0], m[1]);
+    };
+    const reset = async () => {
+      await a.walkTo(find('out', 6, 'reset'));
+      await a.interact();
+    };
+    // outside: mirrors to their start, then three pushes bend the beam onto the crate
+    await reset();
+    for (const [from, box] of [[[3, 2], [4, 2]], [[9, 5], [9, 4]], [[9, 4], [9, 3]]] as const) {
+      await a.walkTo({ face: 6, x: from[0], y: from[1] });
+      await stepOnto(a, box[0], box[1]);
+    }
+    await b2.until(() => b2.events.some((e) => e.type === 'puzzle' && e.name === 'burn'), 'the crate burns');
+    assert.equal(a.last.state.items.flower?.side, 'out'); // left lying for face 4
+    await reset(); // the mirrors off whatever path tile they cover
+    // only the outside player sees the path; the inside player walks what they are told
+    const path = visibleObjects(a.last.state, 'out', 6).filter((o) => o.type === 'f6-path');
+    assert.ok(path.length > 1 && !visibleObjects(b2.last.state, 'in', 6).some((o) => o.type === 'f6-path'));
+    const edge = [[-1, 0], [1, 0], [0, -1], [0, 1]].map(([dx, dy]) => [path[0]!.x + dx!, path[0]!.y + dy!] as const).find(([x, y]) => x === 0 || y === 0 || x === FACE_SIZE - 1 || y === FACE_SIZE - 1)!;
+    // inside: round the lava to the face next door, then onto the ring tile beside the path's start
+    const beside = findPath(b2.last.state, 'in', (p) => p.face !== 6 && MOVES.some(([dx, dy]) => ((q) => q.face === 6 && q.x === edge[0] && q.y === edge[1])(stepPose(p, dx, dy).pose)), defaultEnv, (face) => face !== 6);
+    assert.ok(beside, 'a way to face 6 that stays off its lava');
+    for (const [dx, dy] of beside) await b2.move(dx, dy);
+    await stepOnto(b2, edge[0], edge[1]);
+    const strikes = b2.last.state.strikes;
+    for (const p of path) await stepOnto(b2, p.x, p.y);
+    await b2.interact(); // the button
+    assert.equal(b2.last.state.strikes, strikes, 'nobody fell in the lava');
+  }
+  await solved(6);
+  // ---------- end face 6 ----------
+
+  assert.equal(a.last.state.wonAt, null); // one face to go
+
+  // ---------- face 4: botanical-mirror ----------
+  {
+    // The flower face 6 left outside: the outside player fetches it (unless it is in hand already).
+    const flower = () => Object.values(a.last.state.items).find((i) => i.side === 'out' && i.kind.startsWith('flower-'))!;
+    assert.ok(flower(), 'face 6 is solved but there is no flower outside');
+    if (flower().carriedBy !== 'out') {
+      await a.walkTo({ face: flower().face, x: flower().x, y: flower().y });
+      await a.interact();
+    }
+    assert.equal(a.last.state.players.out.carrying, flower().id);
+    // Outside sees five empty pots and no colours; inside sees the five flowers and names the pot.
+    const colour = flower().kind.replace('flower-', '');
+    assert.ok(seenOnFace4(a.last.state, 'out', 4).every((o) => o.type === 'f4-pot' && o.state === 'empty'));
+    const pots = seenOnFace4(bNow().last.state, 'in', 4).filter((o) => o.type === 'f4-flowerpot');
+    assert.equal(new Set(pots.map((o) => o.state)).size, 5);
+    // A wrong pot first: a strike for both, and the flower is back in the outside hands.
+    const wrong = pots.find((o) => o.state !== colour)!;
+    const strikes = a.last.state.strikes;
+    await a.walkTo({ face: 4, x: wrong.x, y: wrong.y });
+    await a.interact();
+    await bNow().until(() => bNow().last.state.strikes === strikes + 1, 'the strike reaches the inside player');
+    assert.deepEqual([a.last.state.strikes, a.last.state.players.out.carrying, a.last.state.solved.includes(4)], [strikes + 1, flower().id, false]);
+    // The pot the inside player names.
+    const right = pots.find((o) => o.state === colour)!;
+    await a.walkTo({ face: 4, x: right.x, y: right.y });
+    await a.interact();
+  }
+  await solved(4);
+  // ---------- end face 4 ----------
+
+  // --- the win: no portal, the last solve ends the game for both
+  await a.until(() => a.events.some((e) => e.type === 'win'), 'win reaches the outside player');
+  await b2.until(() => b2.events.some((e) => e.type === 'win'), 'win reaches the inside player');
   assert.notEqual(a.last.state.wonAt, null);
+  assert.deepEqual([...a.last.state.solved].sort(), [1, 2, 3, 4, 5, 6]);
 
   // --- play again
   a.sock.emit('room:restart');

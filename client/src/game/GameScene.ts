@@ -1,10 +1,11 @@
 import Phaser from 'phaser';
-import { FACE_SIZE, TILE_PX, canonToScreen, itemsOn, screenToCanon, tileAt, visibleObjects, defaultEnv, type FaceId, type GameEvent, type GameState, type Side, type Vec } from '@cubic/shared';
+import { FACE_SIZE, TILE_PX, brightFace, canonToScreen, eq, itemsOn, linesOn, screenToCanon, tileAt, visibleObjects, defaultEnv, type FaceId, type GameEvent, type GameState, type Side, type Vec } from '@cubic/shared';
 import { inputPaused } from '../input/gate';
 import { settings } from '../style/settings';
 import { CodeArt, type ArtProvider } from './art';
 import { GameKeys } from './keys';
 import { InputBuffer, easeInOut, hopBoxes, hopFrame, mirrorStrip, rollPoint, rollStrips, rollWalker, transitionKind, transitionMs, upBeforeFlip, type Buffered, type TransitionKind } from './transition';
+import { CARRY_PX, ITEM_HOP_MS, WALK_HOLD_MS, carryBob, facingFromStep, facingOf, itemHop, playerFlip, type Facing } from './turtle';
 
 // The playable view. Shows ONLY the local player's side of the face they are on, rotated
 // and mirrored so their own "up" is screen-up: every screen cell is looked up through
@@ -23,8 +24,6 @@ const ANIM_MS = 250;
 const LIGHT_NEAR = 1.5;
 const LIGHT_FAR = FACE_SIZE * 0.55;
 const DARK_MAX = 0.92;
-/** Inside: how much of the darkness is left while a skylight is held (a `beam` object that is on). */
-const SKYLIGHT_DARK = 0.3;
 const BG = '#2e222f';
 /** Inside: the wall between two rooms, seen while hopping over it. */
 const WALL_PX = 10;
@@ -41,8 +40,6 @@ const wallTop = (upright: boolean): number => WALL_PX - 2 - (upright ? 1 : WALL_
 /** How high the inside player hops. */
 const HOP_PX = 14;
 const WALK_FRAME_MS = 90;
-/** The turtle sheets (sprites/player-*.png): 6 columns, 4-frame walk rows per direction. */
-const TURTLE = { cols: 6, down: 5, up: 6, right: 7, frames: 4 };
 const FACE_KEY = 'game:face';
 
 export interface GameInput {
@@ -68,6 +65,19 @@ interface Transition {
   from: { face: FaceId; up: Vec; sx: number; sy: number };
 }
 
+/**
+ * An item on its way between the tile we stand on and our head: up when picked up, down
+ * when dropped or placed. `sx, sy` is that tile on screen.
+ */
+interface ItemHop {
+  item: string;
+  up: boolean;
+  t0: number;
+  face: FaceId;
+  sx: number;
+  sy: number;
+}
+
 function layer(): CanvasRenderingContext2D {
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = VIEW_PX;
@@ -85,8 +95,18 @@ export class GameScene extends Phaser.Scene {
   private toG!: CanvasRenderingContext2D;
   private hero!: Phaser.GameObjects.Image;
   private carried!: Phaser.GameObjects.Image;
+  /** The item while it hops onto the head or off it. */
+  private flying!: Phaser.GameObjects.Image;
   private shadow!: Phaser.GameObjects.Rectangle;
   private trans: Transition | null = null;
+  private hop: ItemHop | null = null;
+  /** The way the character faces on screen: the last step taken, kept while standing. */
+  private facing: Facing = 'down';
+  /** The pose the last step was measured from (the state itself changes in place). */
+  private seen: { face: FaceId; up: Vec; x: number; y: number } | null = null;
+  private stepAt = -WALK_HOLD_MS;
+  /** The last step asked for: a bump turns the character that way without moving it. */
+  private lastMove: { dx: number; dy: number } | null = null;
   private dirty = true;
   private frame = 0;
   /** What the keys mean (the player's bindings) and which are held: ./keys.ts. */
@@ -113,7 +133,8 @@ export class GameScene extends Phaser.Scene {
     if (import.meta.env.DEV) Object.assign(window, { __cubicFace: () => this.face.canvas });
     this.shadow = this.add.rectangle(0, 0, 10, 2, 0x000000, 0.25).setOrigin(0, 0).setVisible(false);
     this.hero = this.add.image(0, 0, this.art.player('out', 0)).setOrigin(0, 0).setVisible(false);
-    this.carried = this.add.image(0, 0, this.art.item('rose')).setOrigin(0, 0).setVisible(false);
+    this.carried = this.add.image(0, 0, this.art.item('default')).setOrigin(0, 0).setVisible(false);
+    this.flying = this.add.image(0, 0, this.art.item('default')).setOrigin(0, 0).setVisible(false);
     const down = (e: KeyboardEvent) => this.keyDown(e);
     const up = (e: KeyboardEvent) => this.keyUp(e);
     const blur = () => this.releaseAll();
@@ -134,6 +155,9 @@ export class GameScene extends Phaser.Scene {
   setState(state: GameState | null, me: Side): void {
     if (!state || me !== this.me) {
       this.trans = null;
+      this.hop = null;
+      this.seen = null;
+      this.facing = 'down';
       this.buffer.clear();
     }
     this.state = state;
@@ -146,7 +170,62 @@ export class GameScene extends Phaser.Scene {
     for (const e of events) {
       if (e.type === 'flip' && e.side === this.me) this.startTransition(e.from, e.to, e.dx, e.dy);
       if (e.type === 'strike' && settings().screenShake) this.cameras.main.shake(250, 0.01);
+      if ('side' in e && e.side === this.me) this.heroEvent(e);
     }
+  }
+
+  /** Remember where the character stands: the next step is measured from here. */
+  private see(): void {
+    const pose = this.state?.players[this.me].pose;
+    this.seen = pose ? { face: pose.face, up: pose.up, x: pose.x, y: pose.y } : null;
+  }
+
+  /** Something the local player did: which way the character now faces, and what the item does. */
+  private heroEvent(e: GameEvent): void {
+    const state = this.state;
+    if (!state) return;
+    const player = state.players[this.me];
+    const pose = player.pose;
+    if (e.type === 'step') {
+      // The step as it looks ON SCREEN, so the inside player's mirrored view faces the right way.
+      const seen = this.seen;
+      const facing = seen && seen.face === pose.face && eq(seen.up, pose.up) ? facingFromStep(this.me, pose.face, pose.up, seen, pose) : null;
+      if (facing) this.facing = facing;
+      this.stepAt = this.time.now;
+      this.see();
+    } else if (e.type === 'flip') {
+      this.facing = facingOf(e.dx, e.dy) ?? this.facing;
+      this.stepAt = this.time.now;
+      this.see();
+    } else if (e.type === 'bump') {
+      if (this.lastMove) this.facing = facingOf(this.lastMove.dx, this.lastMove.dy) ?? this.facing;
+    } else if (e.type === 'pickup' || e.type === 'drop' || e.type === 'place') {
+      const up = e.type === 'pickup';
+      const item = state.items[e.item];
+      // A puzzle may already have changed its mind (ctx.giveItem puts a wrongly placed item
+      // back in the hands, ctx.removeItem takes it away): then nothing hops, the sprites
+      // just follow `carrying`.
+      const here = !!item && (up ? player.carrying === item.id : !item.carriedBy && item.side === this.me && item.face === pose.face && item.x === pose.x && item.y === pose.y);
+      this.hop = null;
+      if (here && !this.trans && !settings().reduceMotion) {
+        const [sx, sy] = canonToScreen(this.me, pose.face, pose.up, pose.x, pose.y);
+        this.hop = { item: e.item, up, t0: this.time.now, face: pose.face, sx, sy };
+      }
+      this.dirty = true;
+    }
+  }
+
+  /** The item hop still playing, or null. It ends at once when the game no longer agrees with it. */
+  private hopNow(time: number): ItemHop | null {
+    const hop = this.hop;
+    if (!hop) return null;
+    const item = this.state?.items[hop.item];
+    const player = this.state?.players[this.me];
+    const ok = !!item && !!player && !this.trans && player.pose.face === hop.face && time - hop.t0 < ITEM_HOP_MS && (hop.up ? player.carrying === hop.item : !item.carriedBy);
+    if (ok) return hop;
+    this.hop = null;
+    this.dirty = true; // the dropped item is on the floor from now on
+    return null;
   }
 
   /** We just stepped (dx,dy) over an edge from `from` onto `to`: the state already has us there. */
@@ -164,6 +243,7 @@ export class GameScene extends Phaser.Scene {
       // The tile we left: one step back, on the far end of the old face, seen with the old up.
       from: { face: from, up: upBeforeFlip(to, pose.up, dy), sx: (sx - dx + FACE_SIZE) % FACE_SIZE, sy: (sy - dy + FACE_SIZE) % FACE_SIZE },
     };
+    this.hop = null;
     this.dirty = true;
   }
 
@@ -173,8 +253,13 @@ export class GameScene extends Phaser.Scene {
 
   private send(input: Buffered): void {
     if (!this.state) return;
-    if (input.kind === 'move') this.input_?.onMove(input.dx, input.dy);
+    if (input.kind === 'move') this.move(input.dx, input.dy);
     else this.input_?.onInteract(input.only);
+  }
+
+  private move(dx: number, dy: number): void {
+    this.lastMove = { dx, dy };
+    this.input_?.onMove(dx, dy);
   }
 
   /** A fresh key press: now, or after the transition (and after whatever already waits). */
@@ -216,8 +301,10 @@ export class GameScene extends Phaser.Scene {
     const held = this.keys.heldDir();
     if (held && this.state && !this.trans && !this.buffer.length && now >= this.nextMoveAt) {
       this.nextMoveAt = now + REPEAT_MS;
-      this.input_?.onMove(held.dx, held.dy);
+      this.move(held.dx, held.dy);
     }
+    this.see();
+    this.hopNow(time);
 
     const frame = Math.floor(time / ANIM_MS);
     if (frame !== this.frame) {
@@ -225,7 +312,7 @@ export class GameScene extends Phaser.Scene {
       this.dirty = true;
     }
     if (this.trans) this.drawTransition(this.trans, time);
-    else if (this.dirty) this.drawFace();
+    else this.drawFace(time);
     this.dirty = false;
   }
 
@@ -254,18 +341,18 @@ export class GameScene extends Phaser.Scene {
       put(this.art.object(me, o.type, o.state, this.frame), sx, sy);
     }
     for (const it of itemsOn(state, me, face)) {
+      if (it.id === this.hop?.item) continue; // on its way down from the head: the sprite shows it
       const [sx, sy] = canonToScreen(me, face, up, it.x, it.y);
       put(this.art.item(it.kind), sx, sy);
     }
 
-    if (me === 'in') {
-      // The inside is dark: light falls off by tile distance from the player. Daylight
-      // through a held skylight lifts most of it, for the whole room.
-      const lift = objects.some((o) => o.type === 'beam' && o.state === 'on') ? SKYLIGHT_DARK : 1;
+    if (me === 'in' && !brightFace(face)) {
+      // The inside is dark: light falls off by tile distance from the player. A room whose
+      // puzzle is `bright` is drawn fully lit instead.
       for (let sy = 0; sy < FACE_SIZE; sy++) {
         for (let sx = 0; sx < FACE_SIZE; sx++) {
           const d = Math.hypot(sx - at.sx, sy - at.sy);
-          const dark = Phaser.Math.Clamp((d - LIGHT_NEAR) / (LIGHT_FAR - LIGHT_NEAR), 0, 1) * DARK_MAX * lift;
+          const dark = Phaser.Math.Clamp((d - LIGHT_NEAR) / (LIGHT_FAR - LIGHT_NEAR), 0, 1) * DARK_MAX;
           if (dark <= 0) continue;
           g.fillStyle = `rgba(46, 34, 47, ${dark})`;
           g.fillRect(sx * T, sy * T, T, T);
@@ -274,45 +361,94 @@ export class GameScene extends Phaser.Scene {
       g.fillStyle = 'rgba(249, 194, 43, 0.12)';
       g.fillRect(at.sx * T - 4, at.sy * T - 4, T + 8, T + 8);
     }
+
+    // The puzzle's lines (laser beams), from tile centre to tile centre: one pixel wide,
+    // whole pixels, over the darkness (a beam is its own light).
+    for (const line of linesOn(state, me, face)) {
+      const centre = ([x, y]: readonly [number, number]) => canonToScreen(me, face, up, x, y).map((c) => Math.floor(c * T + T / 2)) as [number, number];
+      let [x, y] = centre(line.from);
+      const [x1, y1] = centre(line.to);
+      const dx = Math.abs(x1 - x);
+      const dy = -Math.abs(y1 - y);
+      let err = dx + dy;
+      g.fillStyle = line.colour;
+      for (;;) {
+        g.fillRect(x, y, 1, 1);
+        if (x === x1 && y === y1) break;
+        const e2 = 2 * err;
+        if (e2 >= dy) {
+          err += dy;
+          x += x1 > x ? 1 : -1;
+        }
+        if (e2 <= dx) {
+          err += dx;
+          y += y1 > y ? 1 : -1;
+        }
+      }
+    }
   }
 
-  /** The character (and what they carry) with its top-left at x,y. */
-  private placeHero(x: number, y: number, key: string, flip: boolean): void {
+  /** Mirror the character? Only to face left when its sheet has a row per direction. */
+  private flip(): boolean {
+    return playerFlip(this.art.playerFacing?.(this.me) ?? false, this.facing, this.state!.players[this.me].pose.dir);
+  }
+
+  /**
+   * The character with its top-left at x,y, and its item: riding above the head (`bob`
+   * pixels lower on every other step), or hopping between the head and the tile.
+   */
+  private placeHero(x: number, y: number, key: string, flip: boolean, bob: number): void {
     const state = this.state!;
     const player = state.players[this.me];
     this.hero.setTexture(key).setPosition(x, y).setFlipX(flip).setVisible(true);
     this.shadow.setPosition(x + 3, y + 14).setVisible(this.me === 'out');
     const item = player.carrying ? state.items[player.carrying] : null;
-    this.carried.setVisible(!!item);
-    if (item) this.carried.setTexture(this.art.item(item.kind)).setPosition(x, y - 11);
+    const head = { x, y: y - CARRY_PX + bob };
+    const hop = this.hop;
+    const flying = hop ? state.items[hop.item] : null;
+    // (the item being lifted is not on the head yet)
+    this.carried.setVisible(!!item && !(hop?.up && item.id === hop.item));
+    if (item) this.carried.setTexture(this.art.item(item.kind)).setPosition(head.x, head.y);
+    this.flying.setVisible(!!hop && !!flying);
+    if (hop && flying) {
+      const tile = { x: hop.sx * TILE_PX, y: hop.sy * TILE_PX };
+      const k = (this.time.now - hop.t0) / ITEM_HOP_MS;
+      const at = hop.up ? itemHop(k, tile, head) : itemHop(k, { x: tile.x, y: tile.y - CARRY_PX }, tile);
+      this.flying.setTexture(this.art.item(flying.kind)).setPosition(at.x, at.y);
+    }
   }
 
-  /** The current face, standing still. */
-  private drawFace(): void {
-    const g = this.face.context;
+  /** The current face, standing still: painted when something changed, the sprites every frame. */
+  private drawFace(time: number): void {
     const state = this.state;
     if (!state) {
+      if (!this.dirty) return;
+      const g = this.face.context;
       g.fillStyle = BG;
       g.fillRect(0, 0, VIEW_PX, VIEW_PX);
       this.face.refresh();
-      for (const o of [this.hero, this.shadow, this.carried]) o.setVisible(false);
+      for (const o of [this.hero, this.shadow, this.carried, this.flying]) o.setVisible(false);
       return;
     }
     const player = state.players[this.me];
     const { face, up } = player.pose;
     const [sx, sy] = canonToScreen(this.me, face, up, player.pose.x, player.pose.y);
-    this.paint(g, face, up, { sx, sy });
-    this.face.refresh();
-    this.placeHero(sx * TILE_PX, sy * TILE_PX, this.art.player(this.me, player.steps), player.pose.dir < 0);
+    if (this.dirty) {
+      this.paint(this.face.context, face, up, { sx, sy });
+      this.face.refresh();
+    }
+    const walking = time - this.stepAt < WALK_HOLD_MS;
+    this.placeHero(sx * TILE_PX, sy * TILE_PX, this.art.player(this.me, player.steps, this.facing), this.flip(), carryBob(walking, player.steps));
   }
 
-  /** The character mid-step: the turtle's walk row for the direction walked. */
-  private walkKey(t: Transition, elapsed: number): { key: string; flip: boolean } {
+  /** The character mid-step over an edge: the walk towards the direction walked. */
+  private walkKey(t: Transition, elapsed: number): { key: string; flip: boolean; bob: number } {
     const player = this.state!.players[this.me];
     const tick = Math.floor(elapsed / WALK_FRAME_MS);
-    const row = t.dx ? TURTLE.right : t.dy < 0 ? TURTLE.up : TURTLE.down;
-    const key = this.art.playerFrame?.(this.me, row * TURTLE.cols + (tick % TURTLE.frames));
-    return key ? { key, flip: t.dx < 0 } : { key: this.art.player(this.me, player.steps + tick), flip: player.pose.dir < 0 };
+    const facing = facingOf(t.dx, t.dy) ?? this.facing;
+    const key = this.art.playerWalk?.(this.me, facing, tick);
+    const bob = carryBob(true, tick);
+    return key ? { key, flip: facing === 'left', bob } : { key: this.art.player(this.me, player.steps + tick, facing), flip: this.flip(), bob };
   }
 
   /**
@@ -376,11 +512,11 @@ export class GameScene extends Phaser.Scene {
       g.drawImage(to, 0, 0);
       g.globalAlpha = 1;
       this.face.refresh();
-      this.placeHero(sx * T, sy * T, this.art.player(this.me, state.players[this.me].steps), pose.dir < 0);
+      this.placeHero(sx * T, sy * T, this.art.player(this.me, state.players[this.me].steps, this.facing), this.flip(), 0);
       return;
     }
 
-    const { key, flip } = this.walkKey(t, elapsed);
+    const { key, flip, bob } = this.walkKey(t, elapsed);
     if (t.kind === 'hop') {
       // The view slides to the next room while the character jumps the wall between the two.
       // All of it is painted here, in whole pixels (the sprites are hidden): floor, shadow,
@@ -432,10 +568,10 @@ export class GameScene extends Phaser.Scene {
       } else g.drawImage(image(key), b.x, b.y, b.w, b.h);
       const player = state.players[this.me];
       const item = player.carrying ? state.items[player.carrying] : null;
-      if (item) g.drawImage(image(this.art.item(item.kind)), at.carried.x, at.carried.y);
+      if (item) g.drawImage(image(this.art.item(item.kind)), at.carried.x, at.carried.y + bob);
       g.restore();
       this.face.refresh();
-      for (const o of [this.hero, this.shadow, this.carried]) o.setVisible(false);
+      for (const o of [this.hero, this.shadow, this.carried, this.flying]) o.setVisible(false);
       return;
     }
 
@@ -461,6 +597,6 @@ export class GameScene extends Phaser.Scene {
     const p = rollPoint(turn, V, walker.face, walker.along, (sideways ? sy : sx) * T + T / 2);
     const along = Math.round((forward ? p.along : V - p.along) - T / 2);
     const across = Math.round(p.across - T / 2);
-    this.placeHero(sideways ? along : across, sideways ? across : along, key, flip);
+    this.placeHero(sideways ? along : across, sideways ? across : along, key, flip, bob);
   }
 }

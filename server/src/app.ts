@@ -160,6 +160,8 @@ export function createApp(opts: AppOptions = {}): App {
       onQuick: (q) => io.to(room.code).emit('quick', q),
       onRoom: (r) => io.to(room.code).emit('room', r),
       onTyping: (from, on) => io.to(room.code).emit('typing', { from, on }),
+      // the room is deleted: nothing of it stays behind in socket.io
+      onClosed: () => io.in(room.code).socketsLeave(room.code),
     });
   }
 
@@ -204,6 +206,23 @@ export function createApp(opts: AppOptions = {}): App {
         if (r && r === room && r.mode === 'friend' && r.phase === 'playing' && r.isConnected('out') && r.isConnected('in') && partner()) io.to(r.code).emit('voice:ready');
       }, 50);
     };
+    /** Back into the place member `id` holds in `r` (a refresh, a reconnect, or a Leave taken back in time). */
+    const comeBack = (r: Room, id: number): Seat => {
+      // A newer tab/socket replaces the old one for this place.
+      for (const sid of io.sockets.adapter.rooms.get(r.code) ?? []) {
+        const other = io.sockets.sockets.get(sid);
+        if (other && other.id !== socket.id && other.data?.id === id) {
+          other.data.replaced = true;
+          other.disconnect(true);
+        }
+      }
+      if (room === r && me === id) return r.resume(id);
+      detach(true);
+      enter(r);
+      const seat = attach(r, r.resume(id));
+      voiceReady();
+      return seat;
+    };
     const safe = (ack: unknown, fn: () => Seat) => {
       if (typeof ack !== 'function') return;
       try {
@@ -239,6 +258,10 @@ export function createApp(opts: AppOptions = {}): App {
         if (!r) throw new Error('Room not found. Check the code.');
         // Already in it: leaving first would close the room (if we are alone) and seat us in the dead one.
         if (r === room && me !== null) return r.resume(me);
+        // Their own token: the place they left (or dropped from) is still theirs. Anyone
+        // else finds a held seat taken.
+        const held = typeof msg?.token === 'string' ? r.idOfToken(msg.token) : null;
+        if (held !== null) return comeBack(r, held);
         if (r.mode !== 'friend' || r.isFull()) throw new Error('That room is full.');
         detach(true);
         enter(r);
@@ -266,20 +289,7 @@ export function createApp(opts: AppOptions = {}): App {
         const r = rooms.get(msg?.code);
         const id = r && typeof msg?.token === 'string' ? r.idOfToken(msg.token) : null;
         if (!r || id === null) throw new Error('That room is gone.');
-        // A newer tab/socket replaces the old one for this place.
-        for (const sid of io.sockets.adapter.rooms.get(r.code) ?? []) {
-          const other = io.sockets.sockets.get(sid);
-          if (other && other.id !== socket.id && other.data?.id === id) {
-            other.data.replaced = true;
-            other.disconnect(true);
-          }
-        }
-        if (room === r && me === id) return r.resume(id);
-        detach(true);
-        enter(r);
-        const seat = attach(r, r.resume(id));
-        voiceReady();
-        return seat;
+        return comeBack(r, id);
       }),
     );
 

@@ -69,8 +69,11 @@ assets/
   animate. `default` is used when there is no state. `sides.in` / `sides.out` replace
   `frames` for that side. The `unknown` entry is drawn for a type with no art.
 - `items`: key is the item `kind`; `default` is used for a kind with no art.
-- `players`: frames face right; the game flips them for left. `idle` plays while the
-  player stands still.
+- `players`: `walk` frames face right; the game flips them for left. `idle` plays while the
+  player stands still. A sheet with a walk per direction also lists `walkDown`, `walkUp`
+  and `walkRight` (left is `walkRight` mirrored): the game then plays the row for the way
+  the player walks on their own screen. Optional `idleUp` / `idleRight` keep that facing
+  while standing; without them `idle` (facing down) plays.
 - `biomes`: the biome layer of the outside faces, read by `client/src/world/biomes`.
   `props.image` is a sheet of cells one tile wide and two high (`cellWidth`, `cellHeight`,
   `columns`): the lower half sits on the prop's tile, the upper half hangs over the tile
@@ -81,7 +84,7 @@ assets/
   east 2, south 4, west 8). Which prop goes where is not in the manifest: it is
   `client/src/world/biomes/decor.ts`.
 - `audio`: keys are `step`, `bump`, `flip`, `push`, `solve`, `strike`, `win`, `pickup`,
-  `drop`, `place`, or a puzzle event name such as `door-open`.
+  `drop`, `place`, `use`, or a puzzle event name such as `chime`.
 
 Paths are relative to this folder. Missing keys fall back to the placeholder art/sound.
 The reader is `client/src/style/art.ts`.

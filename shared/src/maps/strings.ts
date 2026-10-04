@@ -11,31 +11,55 @@ export const LEGEND: Readonly<Record<string, { tile: TileKind } | { object: stri
   '#': { tile: 'wall' },
   T: { tile: 'tree' },
   '~': { tile: 'water' },
-  P: { object: 'plate' },
-  D: { object: 'door' },
-  C: { object: 'crystal' },
-  O: { object: 'portal' },
   // Carryable item and a target to drop it on. In string maps the item id is
-  // "<side><face>-<x>-<y>" and targets accept anything; use Tiled for named ones.
+  // "<side><face>-<x>-<y>" and targets accept anything; give `name` / `props` for named ones.
   I: { object: 'item' },
   U: { object: 'target' },
-  R: { object: 'item', name: 'rose', props: { kind: 'rose' } },
-  // Code relay (face 3): the six sign stones outside, the tablet and its lamps inside.
-  1: { object: 'glyph', name: 'sun' },
-  2: { object: 'glyph', name: 'moon' },
-  3: { object: 'glyph', name: 'star' },
-  4: { object: 'glyph', name: 'drop' },
-  5: { object: 'glyph', name: 'bolt' },
-  6: { object: 'glyph', name: 'ring' },
-  G: { object: 'tablet' },
-  L: { object: 'lamp' },
-  // Skylight (face 5): a pane outside lights the bridge with the same name inside.
-  S: { object: 'skylight', name: 'a' },
-  s: { object: 'skylight', name: 'b' },
-  B: { object: 'bridge', name: 'a' },
-  b: { object: 'bridge', name: 'b' },
-  // Mirror maze (face 4): the doorway of the trap room.
-  E: { object: 'entry' },
+  // The stub puzzles' crystal (every face until its real puzzle lands).
+  C: { object: 'crystal' },
+
+  // Each puzzle adds its own characters in its own section below, and nowhere else.
+  // A character means one thing on every face: check the other sections before picking one.
+  // ---------- face 1: hidden-code ----------
+  // The floor keypad (inside): a key per digit, ENTER, and the cells of the display.
+  '0': { object: 'key', name: '0' },
+  '1': { object: 'key', name: '1' },
+  '2': { object: 'key', name: '2' },
+  '3': { object: 'key', name: '3' },
+  '4': { object: 'key', name: '4' },
+  '5': { object: 'key', name: '5' },
+  '6': { object: 'key', name: '6' },
+  '7': { object: 'key', name: '7' },
+  '8': { object: 'key', name: '8' },
+  '9': { object: 'key', name: '9' },
+  e: { object: 'key', name: 'enter' },
+  d: { object: 'display' },
+
+  // ---------- face 2: equation-safe ----------
+
+  // ---------- face 3: mirrored-glyph ----------
+
+  // ---------- face 4: botanical-mirror ----------
+  // A pot: a target that takes anything (the flower is made during the game, so it cannot
+  // be named here); the puzzle hands back whatever is not the flower.
+  p: { object: 'target' },
+
+  // ---------- face 5: sequence-laser ----------
+  // A symbol tile (seven per side, same tiles; the i-th in map order is the i-th symbol).
+  u: { object: 'f5-symbol' },
+  v: { object: 'f5-replay' },
+  // The laser emitter: a target. The puzzle hands back anything that is not the battery.
+  w: { object: 'target', name: 'f5-emitter' },
+
+  // ---------- face 6: laser-path ----------
+  // A rock (stops the beam and the player), the wooden crate the beam burns, the RESET
+  // tile, where the beam comes up, and the button in the lava. The mirrors move, so they
+  // are not map objects: their start tiles are in the module.
+  x: { object: 'f6-rock' },
+  y: { object: 'f6-crate' },
+  z: { object: 'reset' },
+  Y: { object: 'f6-source' },
+  X: { object: 'button' },
 };
 
 /** Build a FaceMap from FACE_SIZE strings of FACE_SIZE legend characters. Throws on bad input. */

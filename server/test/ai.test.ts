@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
-import { faceDistance, parseAction, planAction, type Side } from '@cubic/shared';
+import { defaultEnv, devSolve, faceDistance, parseAction, planAction, type Side } from '@cubic/shared';
 import { AiPlayer, FALLBACK_LINE, parseReply } from '../src/ai/aiPlayer';
 import type { Brain } from '../src/ai/gemini';
 import { MAX_SAY_CHARS, idleHint, parsePersona, systemPrompt } from '../src/ai/prompt';
-import { scriptedBrain } from '../src/ai/scripted';
+import { SCRIPTED_LINES, scriptedBrain } from '../src/ai/scripted';
 import { LIMITS, Rooms, type Room } from '../src/rooms';
 
 LIMITS.moveBurst = 1e9;
@@ -51,21 +51,25 @@ test('parseReply: validates the JSON shape', () => {
 });
 
 test('the AI takes the empty seat, talks, and walks its action at walking speed', async () => {
-  const { room, ai, prompts } = setup('out', ['{"say":"I see a plate. Going to stand on it.","action":{"type":"step_on","object":"plate"}}']);
+  const { room, ai, prompts } = setup('out', ['{"say":"I see a keypad. Going over to it.","action":{"type":"step_on","object":"key"}}']);
   assert.deepEqual(room.info().seats.in, { taken: true, connected: true, isAI: true });
   await until(() => room.chat.length === 1, 'the AI to speak');
   assert.deepEqual([room.chat[0]!.from, room.chat[0]!.isAI], ['in', true]);
-  const plate = JSON.parse(prompts[0]!).observation.objects[0];
-  assert.equal(plate.type, 'plate');
-  await until(() => (room.state.puzzles['plate-door'] as { pressed: boolean }).pressed, 'the AI to reach the plate');
-  assert.ok(room.state.players.in.steps >= 8); // it walked there step by step, no teleport
+  assert.ok(JSON.parse(prompts[0]!).observation.objects.some((o: { type: string }) => o.type === 'key'));
+  const keys = defaultEnv.world.in[1].objects.filter((o) => o.type === 'key');
+  const start = { ...room.state.players.in.pose };
+  const on = () => keys.find((k) => k.x === room.state.players.in.pose.x && k.y === room.state.players.in.pose.y);
+  await until(() => !!on(), 'the AI to reach a key of the keypad');
+  // it walked there step by step, no teleport
+  assert.ok(room.state.players.in.steps >= Math.abs(on()!.x - start.x) + Math.abs(on()!.y - start.y) && room.state.players.in.steps > 0);
   assert.equal(ai.calls >= 1, true);
 });
 
 test('the prompt only contains the AI side of the world', async () => {
   const { prompts } = setup('out', []);
   await until(() => prompts.length === 1, 'first think');
-  for (const hidden of ['"door"', '"crystal"', '"rose"', 'players', 'puzzles']) assert.ok(!prompts[0]!.includes(hidden), hidden);
+  // (add the object types only the other side sees here, once the puzzles have some)
+  for (const hidden of ['players', 'puzzles', '"seed"']) assert.ok(!prompts[0]!.includes(hidden), hidden);
 });
 
 test('malformed replies, errors and timeouts get the fallback line and never crash', async () => {
@@ -97,9 +101,8 @@ test('rate limit: a burst of chat does not mean a burst of Gemini calls', async 
 test('a failing Gemini (429) backs off and the scripted partner plays that turn', async () => {
   const quota = Object.assign(new Error('429 RESOURCE_EXHAUSTED'), { status: 429 });
   const { room, ai, logs } = setup('out', [quota, quota, quota], { fallback: scriptedBrain('default'), minThinkMs: 30 });
-  // Gemini never answered, yet the AI still found the plate and stood on it.
-  await until(() => (room.state.puzzles['plate-door'] as { pressed: boolean }).pressed, 'the scripted fallback to act');
-  assert.ok(room.chat.some((m) => m.isAI && /plate/.test(m.text)));
+  // Gemini never answered, yet the AI still took its turn.
+  await until(() => room.chat.some((m) => m.isAI && m.text === SCRIPTED_LINES.default.idle), 'the scripted fallback to act');
   assert.ok(!room.chat.some((m) => m.text === FALLBACK_LINE));
   assert.ok(logs.some((l) => l.includes('429') && l.includes('backing off 6s')));
   // Backed off: no second call right away even though events keep arriving.
@@ -126,7 +129,7 @@ test('AI_FAKE scripted partner works with no keys, in both personas, within the 
     const room = rooms.create('ai');
     room.sit('out');
     new AiPlayer(room, 'in', scriptedBrain(persona), { minThinkMs: 20, idleMs: 1e9, stepMs: 1, log: () => {} });
-    await until(() => (room.state.puzzles['plate-door'] as { pressed: boolean }).pressed, `${persona} scripted AI on the plate`);
+    await until(() => room.chat.some((m) => m.isAI && m.text === SCRIPTED_LINES[persona].idle), `${persona} scripted AI to speak`);
     assert.ok(room.chat.length > 0 && room.chat.every((m) => m.text.length <= MAX_SAY_CHARS));
   }
 });
@@ -147,17 +150,25 @@ test('persona changes the tone, not the rules or what the bot knows', () => {
 });
 
 test('an impossible action is reported back instead of executed', async () => {
-  const { room, prompts } = setup('in', ['{"say":null,"action":{"type":"step_on","object":"crystal"}}']);
+  const { room, prompts } = setup('in', ['{"say":null,"action":{"type":"step_on","object":"unicorn"}}']);
   const before = { ...room.state.players.out.pose };
   await until(() => prompts.length >= 2, 'the follow-up think');
-  assert.match(JSON.parse(prompts[1]!).lastActionResult, /cannot be reached/);
+  assert.match(JSON.parse(prompts[1]!).lastActionResult, /cannot see any "unicorn"/);
   assert.deepEqual(room.state.players.out.pose, before);
 });
 
-test('the AI leaves with the human', () => {
-  const { room, logs } = setup('out', []);
-  room.leave('out');
-  assert.ok(logs.some((l) => l.includes('stopped')));
+test('the AI leaves with the human, once the human\'s seat is no longer held', async () => {
+  const old = LIMITS.seatHoldMs;
+  LIMITS.seatHoldMs = 40;
+  try {
+    const { room, logs } = setup('out', []);
+    room.leave('out');
+    assert.ok(!logs.some((l) => l.includes('stopped')), 'the room is kept while the seat is held');
+    await until(() => logs.some((l) => l.includes('stopped')), 'the AI to stop');
+    assert.equal(rooms.get(room.code), undefined);
+  } finally {
+    LIMITS.seatHoldMs = old;
+  }
 });
 
 
@@ -189,8 +200,9 @@ test('scripted partner (AI_FAKE): after face 1 is solved it stays within one fac
   room.listen({ onState: () => (farthest = Math.max(farthest, apart(room))) });
 
   await pass(10_000);
-  assert.ok((room.state.puzzles['plate-door'] as { pressed: boolean }).pressed, 'the AI is on the plate');
-  walk(room, 'out', { type: 'step_on', object: 'crystal' });
+  // face 1 gets solved (it takes both players: forced here), and the human's last move is now
+  room.devApply((state, now) => devSolve(state, 1, now));
+  room.move('out', 0, 1);
   assert.deepEqual(room.state.solved, [1]);
 
   const solvedAt = Date.now(); // the human's last move
@@ -254,9 +266,12 @@ test('the leash: if the human slipped away unheard, the AI turns back at the fir
 });
 
 test('carrying an item lifts the leash: the puzzle needs the two apart', async () => {
-  const { room } = setup('in', [say(null, { type: 'step_on', object: 'rose' }), say(null, { type: 'pick_up' }), say(null, { type: 'go_face', face: 3 })]);
-  await until(() => room.state.players.out.pose.face === 3, 'the AI to carry the rose to the far face');
-  assert.equal(room.state.players.out.carrying, 'rose');
+  const { room } = setup('in', [say(null, { type: 'pick_up' }), say(null, { type: 'go_face', face: 3 })]);
+  // an item under the AI's feet (the test owns the room: the puzzles hand items out later in the game)
+  const { face, x, y } = room.state.players.out.pose;
+  room.state.items.parcel = { id: 'parcel', kind: 'parcel', side: 'out', face, x, y, carriedBy: null, placedOn: null, props: {} };
+  await until(() => room.state.players.out.pose.face === 3, 'the AI to carry the item to the far face');
+  assert.equal(room.state.players.out.carrying, 'parcel');
   assert.equal(apart(room), 2);
 });
 
@@ -303,12 +318,12 @@ test('the turn tells the brain its goal, and nothing about the other side', asyn
   assert.equal(turn.goal.kind, 'puzzle');
   assert.match(turn.goal.advice, /not solved yet/);
   assert.match(systemPrompt(), /Stay within one face of your partner/);
-  for (const hidden of ['"door"', '"crystal"', 'partnerFace', '"pose"', '"x"', '"y"']) assert.ok(!prompts[0]!.includes(hidden), hidden);
+  for (const hidden of ['partnerFace', '"pose"', '"x"', '"y"']) assert.ok(!prompts[0]!.includes(hidden), hidden);
 });
 
 test('a throw inside the AI is contained: it is logged, and an AI that keeps failing is stopped', async () => {
   // its body: every step throws (a timer callback: uncaught, this would end the process)
-  const walk = setup('out', ['{"say":null,"action":{"type":"step_on","object":"plate"}}']);
+  const walk = setup('out', ['{"say":null,"action":{"type":"step_on","object":"key"}}']);
   walk.room.move = () => {
     throw new Error('boom in step');
   };
