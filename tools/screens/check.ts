@@ -273,8 +273,10 @@ async function blockedOrigin(browser: Browser): Promise<void> {
   await page.routeWebSocket(/socket\.io/, (ws) => ws.close());
   await page.goto(`${BASE}/?renderer=canvas`);
   await expect(tag, 'the client knows it is blocked, not waiting for a cold start', () => page.evaluate(() => !window.__cubic.online && window.__cubic.blocked), 10_000);
+  await expect(tag, 'the title is up', async () => (await labelsOf(page)) === 'PLAY', 15_000);
   await page.keyboard.press('Enter');
-  await page.waitForTimeout(2200);
+  await expect(tag, 'Play still works', async () => (await buttons(page)).some((b) => b.label === 'CREATE LOBBY'), 10_000);
+  await page.waitForTimeout(1500);
   const line = await statusLine(page);
   if (!/CLIENT_ORIGIN/.test(line) || /WAKING/.test(line)) fail(`${tag}: the mode screen says "${line}"`);
   else console.log(`   ok: the mode screen says "${line}"`);
