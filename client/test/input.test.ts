@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { CONTROLS, STICK_DEADZONE, gameAction, keyDir, menuAction, padEdges, padInputs, padKey, pasteCode, stepFocus, typeCode, type GameAction, type KeyLike, type PadLike } from '../src/input/keymap';
+import { controls, STICK_DEADZONE, gameAction, keyDir, menuAction, padEdges, padInputs, padKey, pasteCode, stepFocus, typeCode, type GameAction, type KeyLike, type PadLike } from '../src/input/keymap';
 import { netCellLabel, textScale } from '../src/ui/a11y';
 import { CAPTION_MAX_MS, CAPTION_MIN_MS, SPEAK_HOLD_MS, caption, captionMs, clearCaption, onCaption, showCaption, speakStep } from '../src/ui/captions';
 
@@ -49,8 +49,9 @@ test('game keys: browser shortcuts (Ctrl, Cmd, Alt) are never game keys', () => 
 
 test('the pause menu documents every game action', () => {
   const all: GameAction['type'][] = ['move', 'interact', 'drop', 'quick', 'mute', 'talk', 'chat', 'pause', 'map'];
-  assert.deepEqual([...new Set(CONTROLS.map((c) => c.action))].sort(), [...all].sort());
-  for (const c of CONTROLS) assert.ok(c.keys && c.does, c.action);
+  assert.deepEqual([...new Set(controls().map((c) => c.action))].sort(), [...all].sort());
+  for (const c of controls()) assert.ok(c.keys && c.does, c.action);
+  assert.ok(!controls().some((c) => /ping/i.test(c.does)), 'no ping');
 });
 
 // ---------- menus ----------
@@ -155,10 +156,33 @@ test('the cube net says its states in words, not only in colour', () => {
 test('colour cues come with a shape or a word in the HUD', () => {
   const ui = src('ui/cubicUI.ts') + src('cube/hud.ts'); // the cube HUD draws the face states
   const css = src('ui/css.ts');
-  for (const shape of ['cu-tick', 'cu-pip', 'cu-ring']) {
+  for (const shape of ['cu-tick', 'cu-pip']) {
     assert.ok(ui.includes(shape), `${shape} is drawn`);
     assert.ok(css.includes(`.${shape}`), `${shape} is styled`);
   }
+  assert.match(ui, /Portal open/, 'the open portal is said in words');
+});
+
+test('every text and every box that holds text scales with the text size', () => {
+  const css = src('ui/css.ts') + src('ui/onboarding/css.ts');
+  assert.match(css, /font: 16t\/13t "m5x7"/, 'the base font is in the text unit');
+  // no font size, line height or text row is left in the fixed unit
+  for (const fixed of css.match(/(?:font|line-height): ?[^;]*\du\b[^;]*;/g) ?? []) assert.fail(`not scaled with the text: ${fixed}`);
+  assert.match(css, /data-motion="reduce"[^{]*\{ animation: none !important; transition: none !important; \}/, 'reduce motion stops the DOM animations');
+  assert.ok(!/@keyframes cu-drop \{[^}]*opacity/.test(css), 'a panel dropping in never changes its opacity');
+});
+
+test('the keys of the UI go through the one resolver, and so do the game scene\'s', () => {
+  const ui = src('ui/cubicUI.ts');
+  assert.match(ui, /const action = gameAction\(e\);\n\s+switch \(action\?\.type\) \{\n\s+case 'map':/);
+  for (const type of ['quick', 'mute']) assert.match(ui, new RegExp(`case '${type}':`), type);
+  assert.ok(!/case 'drop'/.test(ui), 'drop is the game scene\'s: it is buffered with the moves');
+  assert.ok(!/e\.key === 'Tab'\) releaseMap/.test(ui), 'the map key is read through the binding on release too');
+  const scene = src('game/GameScene.ts');
+  assert.match(scene, /this\.keys\.down\(e\)/);
+  assert.match(scene, /this\.keys\.up\(e\)/);
+  assert.ok(!/e\.key\b/.test(scene), 'the scene reads no key by name');
+  for (const file of ['ui/cubicUI.ts', 'ui/pauseMenu.ts', 'ui/onboarding/index.ts', 'ui/onboarding/rules.ts']) assert.ok(!/hold v|'Q drop'|Q drop</i.test(src(file)), `${file} names no key by hand`);
 });
 
 test('captions: longer lines stay longer, inside the limits', () => {

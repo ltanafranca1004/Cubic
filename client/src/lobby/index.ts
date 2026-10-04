@@ -10,7 +10,8 @@ const STATUS: Record<UIState['status'], string> = {
   connecting: 'Connecting...',
   waiting: 'Waiting for your partner. Share the code.',
   'partner-joined': 'Partner joined.',
-  'partner-left': 'Partner left. Holding their seat...',
+  'partner-away': 'Partner disconnected. Holding their seat...',
+  'partner-left': 'Partner left.',
 };
 
 const clock = (ms: number) => {

@@ -63,6 +63,7 @@ export const mockGameUIState: UIState = {
     objective: 'A crystal sits behind a sealed door. Its mechanism is somewhere inside.',
     solved: [2],
     puzzleTotal: PUZZLES.length,
+    puzzleFaces: PUZZLES.map((p) => p.face).sort((a, b) => a - b),
     portalOpen: false,
     strikes: 1,
     elapsedMs: 83_000,

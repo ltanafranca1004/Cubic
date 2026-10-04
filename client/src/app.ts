@@ -44,6 +44,7 @@ export function hudOf(state: GameState, me: Side, now: number): HudState {
     objective: objectiveFor(state, me),
     solved: [...state.solved],
     puzzleTotal: defaultEnv.puzzles.length,
+    puzzleFaces: defaultEnv.puzzles.map((p) => p.face).sort((a, b) => a - b),
     portalOpen: portalOpen(state),
     strikes: state.strikes,
     elapsedMs: Math.max(0, (state.wonAt ?? now) - state.startedAt),
@@ -167,7 +168,9 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
   function uiState(): UIState {
     const room = net.room;
     const partner = net.role ? room?.members[net.role === 'host' ? 'guest' : 'host'] : undefined;
-    const status: UIState['status'] = net.busy ? 'connecting' : !net.role ? 'idle' : partner?.connected ? 'partner-joined' : partner || playing() ? 'partner-left' : 'waiting';
+    // In a game a partner who is still a member but not connected dropped (the server holds
+    // the seat for a refresh); one who pressed Leave is no longer a member at all.
+    const status: UIState['status'] = net.busy ? 'connecting' : !net.role ? 'idle' : partner?.connected ? 'partner-joined' : partner ? (playing() ? 'partner-away' : 'partner-left') : playing() ? 'partner-left' : 'waiting';
     const inGame = !!net.side && !!net.state && playing();
     return {
       screen: inGame ? 'game' : 'lobby',
@@ -215,7 +218,7 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
 
   game = createGameView(gameEl, {
     onMove: (dx, dy) => playing() && net.move(dx, dy),
-    onInteract: () => playing() && net.interact(),
+    onInteract: (only) => playing() && net.interact(only),
     onTalk: (down) => voice.setTalkKey(down),
   });
   handle = ui.mount(root, actions);

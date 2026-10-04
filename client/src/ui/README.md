@@ -28,7 +28,8 @@ handle.update(state);                   // on every change
 | File | What |
 | --- | --- |
 | `cubicUI.ts` | The active `UIHost`. Starts the menu stage (`../scenes`), and is the DOM on top of it: top bar (leave, room code, gear), HUD, chat, voice, win screen. |
-| `settingsPanel.ts` | The panel behind the gear: master / music / SFX volume, proximity chat on/off and volume, mic mute, hints on/off. Same panel on every screen. |
+| `settingsPanel.ts` | The panel behind the gear, three tabs in one box: SOUND (volumes, voice chat, mic mode), ACCESS (text size, high contrast, reduce motion, screen shake, hints), CONTROLS (one row per action: click its key, press a new one; a key in use swaps; RESET TO DEFAULTS). Same panel on every screen. Settings and bindings are saved in `localStorage` (`style/settings.ts`). |
+| `copy.ts` | `copyText()`: the clipboard, with a fallback. The lobby's COPY button and the C key use it. |
 | `onboarding/` | The hint layer over the HUD: side intro card, controls hint, the three context hints, the narrator's caption. `rules.ts` decides what shows (pure, tested in `test/onboarding.test.ts`), `index.ts` draws it, `anchors.ts` holds the HUD selectors the hints point at, `caption.ts` is the one `showCaption(text)` function. Narrator lines: `../content/narrator.ts`. Mounted once in `app.ts`. |
 | `css.ts` | The stylesheet. Sizes are in art pixels (`4u`), on the same pixel grid as the canvases. |
 | `hooks.ts` | The contract above. |
@@ -48,11 +49,22 @@ handle.update(state);                   // on every change
 | Quick-chat bubbles over the game view | `cubicUI.ts` | `signals` |
 | Captions and the "Partner speaking" tag | `captions.ts` (store), `cubicUI.ts` | |
 
-Movement keys (WASD / arrows), E (pick up) and V (push to talk) are handled by the
-game, not the UI. While a text input is focused, a panel is open or Tab holds the cube map
+Which key does what is the player's choice (`../input/bindings.ts`, changed in the settings'
+CONTROLS tab): every key path asks `gameAction(e)` and every place that shows a key reads
+the live binding (`keyLabel(action)`). Esc, Enter and the arrow keys are fixed. Gamepad and
+touch are not rebindable: they send synthetic key events, which are always read with the
+default keys (or use `sendAction(action, 'keydown' | 'keyup')`).
+
+Text: `css.ts` has two units. `4u` is art pixels at the UI scale (art, gaps), `4t` is art
+pixels at the text scale (all text, and every box that holds text), which the Text size
+setting moves one whole step down (S) or up (L). The Phaser menus (title, mode, join popup,
+side select) are bitmap text placed by hand on a 480x270 screen and do not scale.
+
+Movement keys (WASD / arrows by default), pick up, drop and push to talk are handled by the
+game (`../game/keys.ts`, buffered during a face transition), not the UI. While a text input is focused, a panel is open or Tab holds the cube map
 (`../input/gate.ts`) the game ignores them. Every other key is the UI's: what a key means
-is in `../input/keymap.ts` (pure, tested), `cubicUI.ts` acts on it (Q drop, 1 to 4
-quick chat, M mute, Tab cube map, Esc pause), and `focus.ts` keeps the keyboard focus
+is in `../input/keymap.ts` (pure, tested), `cubicUI.ts` acts on it (quick chat, mute, the cube map, Esc pause: Esc first closes the
+side card if it is up), and `focus.ts` keeps the keyboard focus
 inside the open panel. The gamepad (`../input/gamepad.ts`) sends the same keys.
 
 Captions: `showCaption(text, { speaker?, ms? })` and `clearCaption()` from `captions.ts`

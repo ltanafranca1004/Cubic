@@ -1,6 +1,7 @@
 import { FACE_SIZE, NO_SIGNALS, TILE_PX, type SignalView } from '@cubic/shared';
 import { cubeMap } from '../cube/api';
 import { createCubeHud } from '../cube/hud';
+import { keyLabel } from '../input/bindings';
 import { mountGamepad } from '../input/gamepad';
 import { isMapHeld, setMapHeld } from '../input/gate';
 import { gameAction } from '../input/keymap';
@@ -11,19 +12,24 @@ import { bindSettings, onSettings, setSetting, settings } from '../style/setting
 import { textScale } from './a11y';
 import { caption, onCaption, onPartnerSpeaking, partnerSpeaking, type Caption } from './captions';
 import { CSS } from './css';
+import { copyText } from './copy';
 import { focusFirst, modalKey, topModal } from './focus';
 import type { EdgeLabel, HudState, UIActions, UIHandle, UIHost, UIState } from './hooks';
+import { dismissSideCard } from './onboarding';
 import { createPauseMenu } from './pauseMenu';
 import { createSettingsPanel } from './settingsPanel';
 
 // THE UI. A full-window Phaser stage draws the menus (scenes/); this file is the DOM on
 // top of it: the top bar (room code, settings gear) that is the same on every screen, and
 // in game the view on the left (the game canvas, with the neighbouring face named on each
-// edge) and ONE column on the right: where you are, the objective, voice, time and chat.
+// edge) and ONE column on the right: where you are, the objective, voice and chat (the
+// time is in the top bar, which is the head of the column).
 //
-// It also owns the keys that are not movement: Esc (pause, back out of a panel), Enter
-// (chat), Q, 1 to 4, M and Tab in game, and the focus inside every DOM panel. What a
-// key means is decided in input/keymap.ts; this file only acts on the answer.
+// It also owns the keys that do not change the world: Esc (pause, back out of a panel),
+// Enter (chat), the quick chats, mute and the cube map in game, C (copy the room code) in
+// the lobby, and the focus inside every DOM panel. What a key means is decided in
+// input/keymap.ts with the player's bindings (input/bindings.ts); this file only acts on
+// the answer. Steps, pick up and drop are the game scene's (game/keys.ts).
 
 const clock = (ms: number) => {
   const s = Math.floor(ms / 1000);
@@ -33,10 +39,18 @@ const clock = (ms: number) => {
 const HTML = `
 <div class="cu-stage" id="cu-stage"></div>
 <header class="cu-top">
-  <div class="cu-top-side"><button class="cu-btn light" id="cu-howtoplay"><span>How to Play</span></button></div>
   <div class="cu-top-side"><button class="cu-btn light" id="cu-leave" hidden><span>Leave</span></button></div>
-  <div class="cu-room" id="cu-room" hidden><span class="k" id="cu-room-k">Room</span><span class="v" id="cu-room-v"></span></div>
-  <div class="cu-top-side r"><button class="cu-gear" id="cu-gear" aria-label="Settings" title="Settings"></button></div>
+  <div class="cu-top-mid">
+    <div class="cu-room" id="cu-room" hidden><span class="k" id="cu-room-k">Room</span><span class="v" id="cu-room-v"></span></div>
+    <button class="cu-btn light" id="cu-copy" hidden><span></span></button>
+  </div>
+  <div class="cu-top-side r">
+    <div class="cu-stats" id="cu-stats" hidden>
+      <div class="cu-stat" title="Time"><i class="cu-ico clock"></i><span id="cu-clock">0:00</span></div>
+      <div class="cu-stat x" id="cu-strikebox" title="Strikes" hidden><i class="cu-ico cross"></i><span id="cu-strikes">0</span></div>
+    </div>
+    <button class="cu-gear" id="cu-gear" aria-label="Settings" title="Settings"></button>
+  </div>
 </header>
 <div class="cu-banner" id="cu-banner" hidden><span></span></div>
 <main class="cu-hud" id="cu-hud">
@@ -59,10 +73,6 @@ const HTML = `
       <p class="cu-obj" id="cu-obj"></p>
     </div>
     <div class="cu-panel cu-voice" id="cu-voice"></div>
-    <div class="cu-stats">
-      <div class="cu-stat" title="Time"><i class="cu-ico clock"></i><span id="cu-clock">0:00</span></div>
-      <div class="cu-stat x" id="cu-strikebox" title="Strikes" hidden><i class="cu-ico cross"></i><span id="cu-strikes">0</span></div>
-    </div>
     <div class="cu-panel cu-chat">
       <div class="cu-log" id="cu-log" aria-live="polite"></div>
       <input class="cu-field" id="cu-chat" maxlength="200" placeholder="Enter to chat" autocomplete="off" aria-label="Chat message" />
@@ -93,14 +103,20 @@ export const cubicUI: UIHost = {
 
     // Whole pixels everywhere. The menus share one scale with their canvas; in game the
     // DOM has the HUD's scale and the game view its own zoom (style/scale.ts).
+    const scaleNow = () => (el.dataset.screen === 'game' ? hudScale() : uiScale());
     const rescale = () => {
-      const u = el.dataset.screen === 'game' ? hudScale() : uiScale();
+      const u = scaleNow();
       const s = settings();
       el.style.setProperty('--u', String(u));
       el.style.setProperty('--z', String(viewZoom()));
-      el.style.setProperty('--cursor', `url("${asset(`ui/cursor-${Math.min(4, u)}.png`)}") 0 0`);
-      // accessibility settings that are looks: reading text size, contrast, less motion
+      // one cursor per UI scale (CSS cursors cannot be scaled): the arrow, and the hand
+      // for what can be clicked, with its hot spot on the fingertip
+      const c = Math.min(4, u);
+      el.style.setProperty('--cursor', `url("${asset(`ui/cursor-${c}.png`)}") 0 0`);
+      el.style.setProperty('--cursor-hand', `url("${asset(`ui/cursor-hand-${c}.png`)}") ${5 * c} 0`);
+      // accessibility settings that are looks: text size, contrast, less motion
       el.style.setProperty('--tu', String(textScale(u, s.textSize)));
+      el.dataset.text = s.textSize;
       el.dataset.contrast = s.highContrast ? 'high' : 'normal';
       el.dataset.motion = s.reduceMotion ? 'reduce' : 'full';
     };
@@ -133,7 +149,7 @@ export const cubicUI: UIHost = {
       },
       leave: () => actions.onLeaveRoom(),
     });
-    const panel = createSettingsPanel(el);
+    const panel = createSettingsPanel(el, { sizeDiffers: (a, b) => textScale(scaleNow(), a) !== textScale(scaleNow(), b) });
     const settingsEl = $('cu-settings');
     $('cu-gear').addEventListener('click', () => panel.toggle());
     const gearOff = panel.onToggle((open) => {
@@ -154,12 +170,32 @@ export const cubicUI: UIHost = {
     $('cu-leave').addEventListener('click', () => actions.onLeaveRoom());
     $('cu-winleave').addEventListener('click', () => actions.onLeaveRoom());
     $('cu-again').addEventListener('click', () => actions.onPlayAgain());
-    $('cu-room').addEventListener('click', () => {
-      if (state?.roomCode) void navigator.clipboard?.writeText(state.roomCode).catch(() => {});
-    });
-    $('cu-howtoplay').addEventListener('click', () => {
-      alert('How to Play\n\nOne player walks the OUTSIDE of a cube, the other is trapped INSIDE it. Each sees only their own side of the same six walls, and they solve puzzles by talking through the wall (proximity voice + chat).\n\nIf there is no second player, a Gemini-powered AI plays the other side.');
-    });
+    // The room code: COPY next to it in the lobby (a real button: click, tap, or C), and a
+    // click on the code itself copies too. The button says COPIED for a moment.
+    const copyBtn = $<HTMLButtonElement>('cu-copy');
+    const COPY_LABEL = 'Copy (C)';
+    let copiedTimer = 0;
+    copyBtn.firstElementChild!.textContent = COPY_LABEL;
+    const copyCode = () => {
+      const code = state?.mode === 'ai' ? null : state?.roomCode;
+      if (!code) return;
+      void copyText(code).then((ok) => {
+        if (!copyBtn.hidden) copyBtn.style.minWidth = `${copyBtn.offsetWidth}px`; // the bar does not jump when the word changes
+        copyBtn.firstElementChild!.textContent = ok ? 'Copied' : 'Not copied';
+        copyBtn.classList.toggle('in', ok);
+        copyBtn.classList.toggle('light', !ok);
+        $('cu-room').title = ok ? 'Copied' : 'Room code';
+        window.clearTimeout(copiedTimer);
+        copiedTimer = window.setTimeout(() => {
+          copyBtn.firstElementChild!.textContent = COPY_LABEL;
+          copyBtn.classList.remove('in');
+          copyBtn.classList.add('light');
+          $('cu-room').title = 'Room code: click to copy';
+        }, 1500);
+      });
+    };
+    $('cu-room').addEventListener('click', copyCode);
+    copyBtn.addEventListener('click', copyCode);
 
     const chat = $<HTMLInputElement>('cu-chat');
     chat.addEventListener('keydown', (e) => {
@@ -180,7 +216,9 @@ export const cubicUI: UIHost = {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       const modal = topModal(el);
       if (modal) {
-        if (e.key === 'Escape') {
+        // a key button in the settings is waiting for its new key: every key is its answer
+        if (panel.isOpen() && panel.captureKey(e)) eat(e);
+        else if (e.key === 'Escape') {
           // settings: close (back to the pause menu if it came from there). pause: resume.
           // The win screen has no back: pick Leave or Play again.
           if (panel.isOpen()) panel.toggle(false);
@@ -204,13 +242,26 @@ export const cubicUI: UIHost = {
           return;
         }
       }
-      if (!inGame() || isTyping()) return; // the chat field has its own keys
+      if (isTyping()) return; // the chat field has its own keys
+      if (!inGame()) {
+        // the lobby: C copies the room code (the button says so)
+        if (state?.lobby && !copyBtn.hidden && e.key.toLowerCase() === 'c' && !e.repeat) {
+          copyCode();
+          eat(e);
+        }
+        return;
+      }
       const action = gameAction(e);
       if (action?.type === 'chat') {
         e.preventDefault();
         releaseMap();
         chat.focus();
       } else if (action?.type === 'pause') {
+        // Esc closes the side card first, if it is up; the next Esc pauses
+        if (dismissSideCard()) {
+          eat(e);
+          return;
+        }
         releaseMap();
         pause.open();
         focusFirst(pause.el);
@@ -221,7 +272,7 @@ export const cubicUI: UIHost = {
     const onKeyUpCapture = (e: KeyboardEvent) => {
       if (e.key === ' ' && topModal(el)) e.preventDefault();
     };
-    // Bubble phase: the in-game keys that are not movement. The dev tools (?dev) take
+    // Bubble phase: the in-game keys that are the UI's. The dev tools (?dev) take
     // their own keys (1 to 6, Tab in hot-seat) in the capture phase, so those never get here.
     const onGameKey = (e: KeyboardEvent) => {
       if (!inGame() || topModal(el) || isTyping()) return;
@@ -237,9 +288,6 @@ export const cubicUI: UIHost = {
         case 'move':
           if (isMapHeld()) cubeMap.rotate(action.dir); // while the map is up the arrows turn it
           break;
-        case 'drop':
-          actions.onDrop();
-          break;
         case 'quick':
           actions.onQuickChat(action.index);
           break;
@@ -249,7 +297,7 @@ export const cubicUI: UIHost = {
       }
     };
     const onGameKeyUp = (e: KeyboardEvent) => {
-      if (e.key === 'Tab') releaseMap();
+      if (isMapHeld() && gameAction(e)?.type === 'map') releaseMap();
     };
     window.addEventListener('keydown', onKey, true);
     window.addEventListener('keyup', onKeyUpCapture, true);
@@ -323,7 +371,8 @@ export const cubicUI: UIHost = {
     function renderVoice(s: UIState): void {
       const v = s.voice;
       const set = settings();
-      const sig = [v.mic, v.mode, v.muted, s.mode, set.voiceOn, set.micMuted, set.micMode].join('|');
+      const talkKey = keyLabel('talk'); // the live binding
+      const sig = [v.mic, v.mode, v.muted, s.mode, set.voiceOn, set.micMuted, set.micMode, talkKey].join('|');
       if (sig !== voiceSig) {
         voiceSig = sig;
         const controls = !set.voiceOn
@@ -331,7 +380,7 @@ export const cubicUI: UIHost = {
           : v.mic === 'on'
             ? `<div class="cu-vbtns">
                  <button class="cu-btn ${set.micMuted ? 'danger' : 'light'}" data-act="mute"><i class="cu-ico ${set.micMuted ? 'micOff' : 'mic'}"></i><span>${set.micMuted ? 'Muted' : 'Mute'}</span></button>
-                 <button class="cu-btn light" data-act="mode"><span>${v.mode === 'push' ? 'Hold V' : 'Open mic'}</span></button>
+                 <button class="cu-btn light" data-act="mode"><span>${v.mode === 'push' ? `Push to talk (${talkKey})` : 'Open mic'}</span></button>
                </div>`
             : v.mic === 'denied'
               ? `<div class="cu-warn">Microphone blocked. Allow it for this site (the lock icon in the address bar), then try again. Chat still works.</div>
@@ -348,7 +397,7 @@ export const cubicUI: UIHost = {
       if (bars) bars.style.backgroundPosition = `calc(${-16 * v.signal}px * var(--u)) 0`;
       const link = voice.querySelector('#cu-link');
       // the dot's colour is never the only sign: the words say it too
-      if (link) link.textContent = v.mic !== 'on' ? '' : v.muted ? 'muted' : v.talking ? 'talking' : v.link === 'relay' ? 'relayed' : v.link === 'connecting' ? 'connecting' : v.mode === 'push' ? 'hold V' : 'open';
+      if (link) link.textContent = v.mic !== 'on' ? '' : v.muted ? 'muted' : v.talking ? 'talking' : v.link === 'relay' ? 'relayed' : v.link === 'connecting' ? 'connecting' : v.mode === 'push' ? 'quiet' : 'open';
     }
 
     function renderEdge(id: string, e: EdgeLabel): void {
@@ -370,7 +419,7 @@ export const cubicUI: UIHost = {
       faceNo.dataset.face = faceNo.textContent = String(hud.face);
       faceNo.title = `Face ${hud.face}`;
       $('cu-face').textContent = hud.faceName;
-      // progress: puzzles solved of all there are; the pips say which faces; then the portal
+      // progress: puzzles solved of all there are; a pip per puzzle says which faces; then the portal
       const done = Math.min(hud.solved.length, hud.puzzleTotal);
       $('cu-progn').textContent = `${done}/${hud.puzzleTotal}`;
       $('cu-prog').title = `${done} of ${hud.puzzleTotal} puzzles solved${hud.portalOpen ? ': the portal is open' : ''}`;
@@ -382,14 +431,18 @@ export const cubicUI: UIHost = {
       renderEdge('cu-er', hud.edges.right);
       $('cu-obj').textContent = hud.objective;
       const carry = $('cu-carry');
-      const carrySig = hud.carrying?.kind ?? '';
+      const dropKey = keyLabel('drop'); // the live binding
+      const carrySig = hud.carrying ? `${hud.carrying.kind}|${dropKey}` : '';
       if (carry.dataset.t !== carrySig) {
         carry.dataset.t = carrySig;
-        const frame = ITEM_FRAMES[carrySig] ?? ITEM_DEFAULT_FRAME;
-        carry.innerHTML = hud.carrying ? `<i class="cu-item" style="background-position: calc(${-16 * frame}px * var(--u)) 0"></i><span></span><span class="cu-dim">Q drop</span>` : `<i class="cu-ico hand"></i><span class="cu-dim">Empty hands</span>`;
-        if (hud.carrying) carry.querySelector('span')!.textContent = hud.carrying.kind;
+        const frame = ITEM_FRAMES[hud.carrying?.kind ?? ''] ?? ITEM_DEFAULT_FRAME;
+        carry.innerHTML = hud.carrying ? `<i class="cu-item" style="background-position: calc(${-16 * frame}px * var(--u)) 0"></i><span></span><span class="cu-dim"><b></b> drop</span>` : `<i class="cu-ico hand"></i><span class="cu-dim">Empty hands</span>`;
+        if (hud.carrying) {
+          carry.querySelector('span')!.textContent = hud.carrying.kind;
+          carry.querySelector('b')!.textContent = dropKey;
+        }
       }
-      cube.update({ side: s.side ?? 'out', face: hud.face, drift: hud.drift, partnerFace: hud.partnerFace ?? null, solved: hud.solved, portalOpen: hud.portalOpen });
+      cube.update({ side: s.side ?? 'out', face: hud.face, drift: hud.drift, partnerFace: hud.partnerFace ?? null, solved: hud.solved, portalOpen: hud.portalOpen, puzzleFaces: hud.puzzleFaces });
       $('cu-clock').textContent = clock(hud.elapsedMs);
       // no puzzle hands out strikes yet: they show only once there is one
       $('cu-strikebox').hidden = hud.strikes <= 0;
@@ -449,11 +502,25 @@ export const cubicUI: UIHost = {
         if (inRoom) {
           $('cu-room-k').textContent = next.mode === 'ai' ? 'Solo' : 'Room';
           $('cu-room-v').textContent = next.mode === 'ai' ? 'AI' : (next.roomCode ?? '');
+          // a friend room's code can be copied: by a click on it, and in the lobby by COPY
+          $('cu-room').classList.toggle('cu-click', next.mode !== 'ai');
+          if (!$('cu-room').title) $('cu-room').title = 'Room code: click to copy';
         }
+        copyBtn.hidden = !(inRoom && !!next.lobby && next.mode !== 'ai');
+        $('cu-stats').hidden = !inGame;
         $('cu-leave').hidden = !inGame;
 
         const hud = next.hud;
-        const banner = !inGame ? '' : !next.online ? 'Connection lost. Reconnecting...' : next.status === 'partner-left' ? 'Partner left. Holding their seat...' : '';
+        // the seat is held only for a partner whose connection dropped; one who pressed Leave is gone
+        const banner = !inGame
+          ? ''
+          : !next.online
+            ? 'Connection lost. Reconnecting...'
+            : next.status === 'partner-away'
+              ? 'Partner disconnected. Holding their seat...'
+              : next.status === 'partner-left'
+                ? 'Partner left. Anyone with the room code can join.'
+                : '';
         $('cu-banner').hidden = !banner;
         $('cu-banner').firstElementChild!.textContent = banner;
         const won = inGame && !!hud?.won;
@@ -489,6 +556,7 @@ export const cubicUI: UIHost = {
         releaseMap();
         pause.destroy();
         window.removeEventListener('resize', rescale);
+        window.clearTimeout(copiedTimer);
         gearOff();
         settingsOff();
         cube.destroy();

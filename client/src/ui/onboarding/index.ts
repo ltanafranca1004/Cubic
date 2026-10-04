@@ -1,13 +1,15 @@
 import { voiceMix, type GameState, type RoomInfo, type Side } from '@cubic/shared';
+import { gameAction } from '../../input/keymap';
 import { onSettings, settings } from '../../style/settings';
 import { ANCHOR } from './anchors';
 import { showCaption } from './caption';
 import { ONBOARDING_CSS } from './css';
-import { createOnboarding, EMPTY_VIEW, HINT_TEXT, type ContextHint, type GameSnapshot, type OnboardingView } from './rules';
+import { controlsHint, createOnboarding, EMPTY_VIEW, HINT_TEXT, type ContextHint, type GameSnapshot, type OnboardingView } from './rules';
 
 // ONBOARDING: the side intro card, the controls hint, the three context hints and the
 // narrator's captions. One DOM layer over the HUD that never takes a click, so the gear,
-// Leave and every menu work exactly as before.
+// Leave and every menu work exactly as before. The one exception is the side card while
+// it is up: it has a GOT IT button, and Esc or a click anywhere else closes it too.
 //
 // rules.ts decides what shows (pure, tested). This file only reads the game a few times a
 // second, asks the rules, and draws the answer next to the HUD elements in anchors.ts.
@@ -20,10 +22,11 @@ export interface OnboardingSource {
 }
 
 const TICK_MS = 100;
-/** Keys that count as "interacted": E, and Q (drop) once it is bound. */
-const INTERACT_KEYS = new Set(['e', 'q']);
+/** Close the side card if it is up (Esc does this before it would pause). True if it was. */
+let dismissCard: () => boolean = () => false;
+export const dismissSideCard = (): boolean => dismissCard();
 
-type Where = { anchor: keyof typeof ANCHOR; place: 'center' | 'above' | 'over' | 'right' | 'left' };
+type Where = { anchor: keyof typeof ANCHOR; place: 'center' | 'top' | 'bottom' | 'above' | 'over' | 'right' | 'left' };
 const HINT_AT: Record<ContextHint, Where> = {
   cube: { anchor: 'cube', place: 'right' },
   edge: { anchor: 'view', place: 'center' }, // the player is at an edge, so the middle is free
@@ -31,7 +34,7 @@ const HINT_AT: Record<ContextHint, Where> = {
 };
 
 const HTML = `
-<div class="cu-panel cu-onb-card" role="status"><i></i><div><h3></h3><p></p></div></div>
+<div class="cu-panel cu-onb-card" role="status"><header><h3></h3><button class="cu-chipbtn" type="button"><span></span></button></header><p></p></div>
 <div class="cu-panel cu-onb-keys" role="note" aria-label="Controls"></div>
 <div class="cu-panel cu-onb-hint" role="status"><i class="cu-ico left"></i><span></span><i class="cu-ico right"></i></div>`;
 
@@ -50,27 +53,64 @@ export function mountOnboarding(root: HTMLElement, source: OnboardingSource): ()
   const keys = layer.querySelector<HTMLElement>('.cu-onb-keys')!;
   const hint = layer.querySelector<HTMLElement>('.cu-onb-hint')!;
 
-  for (const row of HINT_TEXT.controls) {
-    const div = document.createElement('div');
-    row.keys.forEach((k, i) => {
-      if (i) div.append('/');
-      const kbd = document.createElement('kbd');
-      kbd.textContent = k;
-      div.append(kbd);
-    });
-    const does = document.createElement('span');
-    does.textContent = row.does;
-    div.append(does);
-    keys.append(div);
+  /** The controls hint shows the keys as they are bound now: redrawn when they change. */
+  let keysSig = '';
+  function renderKeys(): void {
+    const rows = controlsHint();
+    const sig = JSON.stringify(rows);
+    if (sig === keysSig) return;
+    keysSig = sig;
+    keys.replaceChildren(
+      ...rows.map((row) => {
+        const div = document.createElement('div');
+        row.keys.forEach((k, i) => {
+          if (i) div.append('/');
+          const kbd = document.createElement('kbd');
+          kbd.className = 'cu-kbd';
+          kbd.textContent = k;
+          div.append(kbd);
+        });
+        const does = document.createElement('span');
+        does.textContent = row.does;
+        div.append(does);
+        return div;
+      }),
+    );
   }
+  renderKeys();
   card.querySelector('p')!.textContent = HINT_TEXT.cardLine;
+  const gotIt = card.querySelector<HTMLButtonElement>('button')!;
+  gotIt.firstElementChild!.textContent = HINT_TEXT.cardDismiss;
 
   const rules = createOnboarding();
   let view: OnboardingView = EMPTY_VIEW;
   let interacted = false;
+  let dismissed = false;
+
+  /** Close the side card now. True if it was up. */
+  const dismiss = (): boolean => {
+    if (!view.card) return false;
+    dismissed = true;
+    gotIt.blur();
+    tick();
+    return true;
+  };
+  dismissCard = dismiss;
+  // GOT IT: a real button, so a mouse click, a tap, and Enter or Space once it has the
+  // focus all press it. It never takes the focus by itself: the movement keys stay the game's.
+  gotIt.addEventListener('click', (e) => {
+    e.stopPropagation();
+    dismiss();
+  });
+  /** A press anywhere outside the card closes it too (and still does what it would have done). */
+  const onPress = (e: PointerEvent) => {
+    if (view.card && !card.contains(e.target as Node)) dismiss();
+  };
+  window.addEventListener('pointerdown', onPress, true);
 
   const onKey = (e: KeyboardEvent) => {
-    if (e.repeat || !INTERACT_KEYS.has(e.key.toLowerCase())) return;
+    const type = gameAction(e)?.type; // (the live bindings; null for a repeat)
+    if (type !== 'interact' && type !== 'drop') return;
     if (document.activeElement instanceof HTMLInputElement) return; // typing in the chat
     if (host.dataset.screen === 'game') interacted = true;
   };
@@ -105,6 +145,8 @@ export function mountOnboarding(root: HTMLElement, source: OnboardingSource): ()
     let y = a.top + (a.height - h) / 2;
     if (at.place === 'above') y = a.top - h - 18 * u; // clear of the view and of the edge label over it
     if (at.place === 'over') y = a.top;
+    if (at.place === 'top') y = a.top + 8 * u;
+    if (at.place === 'bottom') y = a.bottom - h; // it grows upwards with a larger text, never out of the view
     if (at.place === 'right') x = a.right + 5 * u;
     if (at.place === 'left') x = a.left - w - 5 * u;
     x = Math.max(2 * u, Math.min(window.innerWidth - w - 2 * u, x));
@@ -113,8 +155,8 @@ export function mountOnboarding(root: HTMLElement, source: OnboardingSource): ()
   }
 
   function layout(): void {
-    if (view.card) place(card, { anchor: 'view', place: 'center' });
-    if (view.controls) place(keys, { anchor: 'keys', place: 'over' });
+    if (view.card) place(card, { anchor: 'view', place: 'top' });
+    if (view.controls) place(keys, { anchor: 'keys', place: 'bottom' });
     if (view.hint) place(hint, HINT_AT[view.hint]);
     // The captions (narrator, AI) sit at the bottom, where the controls hint is: while it
     // is up they stack on top of it instead of covering it.
@@ -123,8 +165,10 @@ export function mountOnboarding(root: HTMLElement, source: OnboardingSource): ()
   }
 
   function tick(): void {
-    const next = rules.step({ now: Date.now(), hints: settings().hints, game: snapshot(), interacted });
+    const next = rules.step({ now: Date.now(), hints: settings().hints, game: snapshot(), interacted, dismissed });
     interacted = false;
+    dismissed = false;
+    renderKeys();
     layer.classList.toggle('still', settings().reduceMotion);
 
     // Content changes only when something comes on: what is leaving keeps its text while it fades.
@@ -163,6 +207,8 @@ export function mountOnboarding(root: HTMLElement, source: OnboardingSource): ()
     settingsOff();
     window.removeEventListener('resize', layout);
     window.removeEventListener('keydown', onKey, true);
+    window.removeEventListener('pointerdown', onPress, true);
+    dismissCard = () => false;
     showCaption(null);
     host.style.removeProperty('--subs-lift');
     layer.remove();

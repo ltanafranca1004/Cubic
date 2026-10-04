@@ -1,6 +1,9 @@
 // INPUT MAPPING. What every key and gamepad button means, as pure functions with no DOM
 // and no Phaser, so the rules can be tested (client/test/input.test.ts). The listeners
-// that feed them live in ui/cubicUI.ts (keys), input/gamepad.ts (pad) and the menu scenes.
+// that feed them live in ui/cubicUI.ts (keys), game/keys.ts (movement and the buffered
+// actions), input/gamepad.ts (pad) and the menu scenes. Which key is which game action is
+// in input/bindings.ts (the player can change them); the menus keep fixed keys.
+import { actionFor, keyFor, keyLabel, type BindAction, type Bindings } from './bindings';
 
 /** The parts of a KeyboardEvent the mapping reads. */
 export interface KeyLike {
@@ -11,6 +14,8 @@ export interface KeyLike {
   ctrlKey?: boolean;
   metaKey?: boolean;
   altKey?: boolean;
+  /** False on a synthetic event (gamepad, touch): those speak the default keys (bindings.ts). */
+  isTrusted?: boolean;
 }
 
 export type Dir = 'up' | 'down' | 'left' | 'right';
@@ -59,26 +64,33 @@ export function gameAction(e: KeyLike): GameAction | null {
   return a;
 }
 
+const BOUND: Record<BindAction, GameAction> = {
+  up: { type: 'move', dir: 'up' },
+  down: { type: 'move', dir: 'down' },
+  left: { type: 'move', dir: 'left' },
+  right: { type: 'move', dir: 'right' },
+  interact: { type: 'interact' },
+  drop: { type: 'drop' },
+  talk: { type: 'talk' },
+  mute: { type: 'mute' },
+  map: { type: 'map' },
+  quick1: { type: 'quick', index: 0 },
+  quick2: { type: 'quick', index: 1 },
+  quick3: { type: 'quick', index: 2 },
+  quick4: { type: 'quick', index: 3 },
+};
+
 function rawGameAction(e: KeyLike): GameAction | null {
-  const dir = keyDir(e);
-  if (dir) return { type: 'move', dir };
-  const digit = /^(?:Digit|Numpad)([1-4])$/.exec(e.code ?? '') ?? /^([1-4])$/.exec(e.key);
-  if (digit) return { type: 'quick', index: (Number(digit[1]) - 1) as 0 | 1 | 2 | 3 };
-  switch (e.key.toLowerCase()) {
-    case 'e':
-      return { type: 'interact' };
-    case 'q':
-      return { type: 'drop' };
-    case 'm':
-      return { type: 'mute' };
-    case 'v':
-      return { type: 'talk' };
-    case 'enter':
+  // the player's bindings first (bindings.ts), then the keys that are never rebound
+  const bound = actionFor(e);
+  if (bound) return BOUND[bound];
+  const arrow = keyDir(e, false);
+  if (arrow) return { type: 'move', dir: arrow };
+  switch (e.key) {
+    case 'Enter':
       return { type: 'chat' };
-    case 'escape':
+    case 'Escape':
       return { type: 'pause' };
-    case 'tab':
-      return { type: 'map' };
     default:
       return null;
   }
@@ -182,6 +194,7 @@ export function padKey(input: PadInput, where: 'game' | 'menu'): string {
       return 'ArrowLeft';
     case 'right':
       return 'ArrowRight';
+    // (default keys: a synthetic event is read with the default bindings, see bindings.ts)
     case 'a':
       return where === 'game' ? 'e' : 'Enter';
     case 'b':
@@ -199,21 +212,36 @@ export function padEdges(before: readonly PadInput[], now: readonly PadInput[]):
 // ---------- the controls reference (pause menu) ----------
 
 export interface ControlLine {
-  keys: string;
-  pad?: string;
+  /** What it does, as a short name. */
   does: string;
+  /** The key or keys, as shown: the live binding. */
+  keys: string;
+  /** The same on a gamepad, if it has one. */
+  pad?: string;
   /** The game action this line documents (the test checks none is missing). */
   action: GameAction['type'];
 }
 
-export const CONTROLS: readonly ControlLine[] = [
-  { keys: 'WASD / Arrows', pad: 'Stick / D-pad', does: 'Move', action: 'move' },
-  { keys: 'E', pad: 'A', does: 'Pick up / use', action: 'interact' },
-  { keys: 'Q', pad: 'B', does: 'Drop', action: 'drop' },
-  { keys: '1 2 3 4', does: 'Here! / Wait / Yes / No', action: 'quick' },
-  { keys: 'Enter', does: 'Chat (Enter sends, Esc closes)', action: 'chat' },
-  { keys: 'V (hold)', does: 'Push to talk', action: 'talk' },
-  { keys: 'M', does: 'Mute mic', action: 'mute' },
-  { keys: 'Tab (hold)', does: 'Cube map (arrows turn it)', action: 'map' },
-  { keys: 'Esc', pad: 'Start', does: 'Pause', action: 'pause' },
-];
+/** The four move keys as one word when they are single letters ("WASD"), else spaced. */
+export function moveKeys(b?: Readonly<Bindings>): string {
+  const keys = (['up', 'left', 'down', 'right'] as const).map((a) => keyLabel(a, b));
+  return keys.join(keys.every((k) => k.length === 1) ? '' : ' ');
+}
+
+/** The controls as they are bound right now. Short lines: the pause menu shows them as a table. */
+export function controls(b?: Readonly<Bindings>): ControlLine[] {
+  const k = (a: BindAction) => keyLabel(a, b);
+  return [
+    { does: 'Move', keys: `${moveKeys(b)} / Arrows`, pad: 'Stick', action: 'move' },
+    { does: 'Pick up / use', keys: k('interact'), pad: 'A', action: 'interact' },
+    { does: 'Drop', keys: k('drop'), pad: 'B', action: 'drop' },
+    { does: 'Quick chat', keys: (['quick1', 'quick2', 'quick3', 'quick4'] as const).map(k).join(' '), action: 'quick' },
+    { does: 'Chat', keys: 'Enter', action: 'chat' },
+    { does: 'Push to talk', keys: k('talk'), action: 'talk' },
+    { does: 'Mute mic', keys: k('mute'), action: 'mute' },
+    { does: 'Cube map', keys: k('map'), action: 'map' },
+    { does: 'Pause', keys: 'Esc', pad: 'Start', action: 'pause' },
+  ];
+}
+
+export { keyFor };
