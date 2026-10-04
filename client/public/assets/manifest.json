@@ -655,6 +655,21 @@
       "frames": {
         "default": 62
       }
+    },
+    "f3-glyph": {
+      "image": "sprites/objects.png",
+      "frames": {
+        "default": 63
+      }
+    },
+    "f3-tile": {
+      "image": "sprites/objects.png",
+      "frames": {
+        "default": 64,
+        "off": 64,
+        "on": 65,
+        "done": 66
+      }
     }
   },
   "items": {
