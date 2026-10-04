@@ -159,6 +159,25 @@ export class GameScene extends Phaser.Scene {
           transition: this.trans?.kind ?? null,
           hero: this.hero.visible ? { x: this.hero.x, y: this.hero.y } : null,
         }),
+        // What the player really gets to see, for the playtest's "is it drawn" checks:
+        // the finished game canvas (every scene, either renderer) copied after the next
+        // render at one pixel per art pixel, the texture the scene draws for an item kind or
+        // an object, and where the item sprites over the character are.
+        __cubicView: () =>
+          new Promise<HTMLCanvasElement>((done) =>
+            this.game.events.once(Phaser.Core.Events.POST_RENDER, () => {
+              const g = layer();
+              g.imageSmoothingEnabled = false;
+              g.drawImage(this.game.canvas, 0, 0, VIEW_PX, VIEW_PX);
+              done(g.canvas);
+            }),
+          ),
+        __cubicSprite: (what: { item: string } | { object: string; state?: string }) =>
+          this.textures.get('item' in what ? this.art.item(what.item) : this.art.object(this.me, what.object, what.state, this.frame)).getSourceImage(),
+        __cubicCarry: () => {
+          const sprite = (o: Phaser.GameObjects.Image, id: string | null | undefined) => (o.visible && id ? { id, kind: this.state?.items[id]?.kind ?? null, x: o.x, y: o.y, alpha: o.alpha } : null);
+          return { carried: sprite(this.carried, this.state?.players[this.me].carrying), flying: sprite(this.flying, this.hop?.item), transition: this.trans?.kind ?? null };
+        },
       });
     this.shadow = this.add.rectangle(0, 0, 10, 2, 0x000000, 0.25).setOrigin(0, 0).setVisible(false);
     this.hero = this.add.image(0, 0, this.art.player('out', 0)).setOrigin(0, 0).setVisible(false);

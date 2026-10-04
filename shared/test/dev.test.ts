@@ -1,17 +1,19 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { FIX, fixtureEnv } from './fixture';
-import { CANON_UP, FACES, applyInteract, applyMove, compassDrift, createGame, devSolve, devTeleport, isBlocked, pathTo, portalOpen, type GameState, type Side, type TileRef } from '../src/index';
+import { CANON_UP, FACES, applyInteract, applyMove, compassDrift, createGame, defaultEnv, devSolve, devTeleport, isBlocked, pathTo, portalOpen, visibleObjects, type GameEnv, type GameState, type Side, type TileRef } from '../src/index';
+import { BATTERY_ID, FLOWER_ID, flowerKind } from '../src/puzzles/chain';
+import { EQUATION_TILES } from '../src/puzzles/equationSafe';
 
 // The dev-only engine helpers behind the dev tools (teleport, solve current puzzle).
 
 // On the fixture world (./fixture.ts), with its portal.
 const env = fixtureEnv({ portal: true });
 
-function go(state: GameState, side: Side, target: TileRef): void {
-  const path = pathTo(state, side, target, env);
+function go(state: GameState, side: Side, target: TileRef, world: GameEnv = env): void {
+  const path = pathTo(state, side, target, world);
   assert.ok(path, `no path for ${side}`);
-  for (const [dx, dy] of path) applyMove(state, side, dx, dy, 1000, env);
+  for (const [dx, dy] of path) applyMove(state, side, dx, dy, 1000, world);
 }
 
 test('devSolve force-latches a face once, without touching the puzzle state', () => {
@@ -76,6 +78,30 @@ test('devTeleport carries the held item along and tells the puzzles the tile was
   const events = devTeleport(s, 'in', 3, 1000, env);
   assert.ok(events.some((e) => e.type === 'puzzle' && e.name === 'door-close'));
   assert.equal(isBlocked(s, 'out', door, env), true);
+});
+
+test('devSolve on the real game hands out what the chain carries: the battery (face 2) and the flower (face 6)', () => {
+  const s = createGame(0);
+  const seen = (side: Side, face: 2 | 6, type: string) => visibleObjects(s, side, face).find((o) => o.type === type)?.state;
+  assert.deepEqual(devSolve(s, 2, 1000), [{ type: 'solve', face: 2, puzzle: 'equation-safe' }]);
+  const battery = s.items[BATTERY_ID]!;
+  const spot = { x: EQUATION_TILES.battery.x, y: EQUATION_TILES.battery.y };
+  assert.deepEqual({ side: battery.side, face: battery.face, x: battery.x, y: battery.y, carriedBy: battery.carriedBy }, { side: 'in', face: 2, ...spot, carriedBy: null });
+  assert.equal(seen('in', 2, 'f2-safe'), 'open');
+  // the inside player can pick it up, like after a real solve
+  go(s, 'in', { face: 2, ...spot }, defaultEnv);
+  applyInteract(s, 'in', 1000);
+  assert.equal(s.players.in.carrying, BATTERY_ID);
+
+  devSolve(s, 5, 1000);
+  assert.equal(seen('in', 6, 'f6-lava'), 'hot');
+  devSolve(s, 6, 1000);
+  const flower = s.items[FLOWER_ID]!;
+  assert.deepEqual({ side: flower.side, face: flower.face, kind: flower.kind, carriedBy: flower.carriedBy }, { side: 'out', face: 6, kind: flowerKind(s.seed!), carriedBy: null });
+  assert.equal(seen('out', 6, 'f6-crate'), 'burnt');
+  assert.equal(seen('in', 6, 'f6-lava'), 'cold'); // solved: the lava is not deadly any more
+  assert.deepEqual(s.solved, [2, 5, 6]);
+  assert.equal(Object.keys(s.items).length, 2); // one battery, one flower
 });
 
 test('devSolve on the last puzzle wins at once in a world without a portal', () => {

@@ -128,9 +128,13 @@ function settleBeam(s: State, ctx: PuzzleCtx): void {
   if (s.burnt || !ctx.faceSolved(5)) return;
   const crate = ctx.objects('out', FACE, 'f6-crate')[0];
   if (!crate || !beam(s, ctx).tiles.some((t) => at(t, crate))) return;
-  s.burnt = true;
+  burn(s, ctx, crate);
   ctx.emit('burn');
-  // the flower lands on the floor tile beside the crate, off the ring
+}
+
+/** The crate is ash: the path exists and the flower lands on the floor tile beside it, off the ring. */
+function burn(s: State, ctx: PuzzleCtx, crate: XY): void {
+  s.burnt = true;
   const spot = around(crate).find((n) => !ring(n)) ?? crate;
   if (!ctx.state.items[FLOWER_ID]) ctx.spawnItem({ id: FLOWER_ID, kind: flowerKind(ctx.seed), side: 'out', face: FACE, x: spot.x, y: spot.y });
 }
@@ -182,6 +186,13 @@ export const laserPath: PuzzleModule<State> = {
 
   // The lava lights the room: the inside player sees all of it, not only the tiles nearby.
   bright: true,
+
+  // The dev tools' "Solve puzzle": the crate is burnt, the flower is out and the lava is cold, as after the button.
+  devSolve(s, ctx) {
+    const crate = ctx.objects('out', FACE, 'f6-crate')[0];
+    if (!s.burnt && crate) burn(s, ctx, crate);
+    s.done = true;
+  },
 
   visible(s, ctx, side) {
     const out: VisibleObject[] = [];
