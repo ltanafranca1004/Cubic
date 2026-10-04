@@ -416,3 +416,94 @@ harness, so they cannot sit beside the script in `src`). Each plays either side.
 - `talk.ts`: bare numbers of up to four digits and the words these scripts read are plain,
   so they never earn a `huh`.
 <!-- ---- end faces 1-3 ---- -->
+
+<!-- BUDGET SECTION: START (ai/budget). Where this section and the text above disagree, this section is right. -->
+
+## Budget, safety and logging (`server/src/ai/budget.ts`, `wire.ts`, `relay.ts`, `bank.ts`)
+
+Both APIs are on small plans shared by every solo room. `createAiPartner(env)` in
+`server/src/ai/wire.ts` builds the one advisor, the one voice and the one `Budget`;
+`server/src/index.ts` only calls `ai.join(room, humanSide, send)` from `onAiRoom`. A
+two-player room never reaches any of it (`server/test/soloOnly.test.ts` plays one over
+sockets with both API clients replaced by throwing spies).
+
+### Gemini
+
+- ONE model (`GEMINI_MODEL`, default `gemini-3.5-flash`), never switched, never retried.
+  Thinking at the minimum (`thinkingLevel: MINIMAL`; `thinkingBudget: 0` for a `gemini-2*`
+  id), `maxOutputTokens` 512 so text comes back after the thought tokens. An empty reply or
+  `finishReason: MAX_TOKENS` logs `[gemini] warning ...`.
+- Called ONLY on four events (`AiPlayer`), never on a timer and never per move:
+  `chat` (a human line that is not plain protocol words), `solved` (rewords `solved` /
+  `win`), `strike` (the strike counter went up), `stuck` (no solve, no strike and no human
+  chat line for 60 s while the human is connected and the game is not won; once per quiet
+  period, and the time the human is disconnected does not count). The greeting is scripted.
+- Refused = the scripted line, at once. No queue (the old "pending" message is gone), no retry.
+  Fallback lines for `strike` / `stuck` are `eventLine()` in `scripted.ts` (banked).
+- Caps: 8 calls a minute and `GEMINI_DAILY_CAP` a day over all rooms, 25 per game (a restart
+  in the same room is a new game), one at a time and one per 6 s per room. A 429 stops every
+  room's calls for 10 minutes.
+- The prompt is a summary (`turnPrompt`): side, event, face, face name, objective, solved
+  faces, strikes, where the partner is, what the body is doing, the script's line or what the
+  human said, the last 3 chat lines. No grid, no objects. System + turn + schema stay under
+  800 tokens at chars / 3 (`server/test/budget.test.ts`). The reply is `{ say, heard }`: one or
+  two sentences within 80 characters.
+- Gemini never moves the body and never presses anything: the reply has no `action`, the
+  suggested-move code (`ADVICE_TYPES`, `adviceStep`) is gone, and an `action` sent anyway is
+  not read. `heard` still becomes protocol tokens for the scripts.
+
+### Voice
+
+- Relay lines: a script says `relay(ctx, '<id>.relay', pieces)` (`relayKit.ts`; words
+  `'{words}'`, `args.words = relayText(pieces)`). The server takes the said text apart again
+  (`relayPieces`, greedy longest match against `VOCAB`) and sends socket event `tts:chain`
+  `{ chatId, mime, pieces, clips, gapMs }` (`TtsChain` in `shared/src/types.ts`): one banked
+  clip per piece. The client (`Voice.playChain`) plays them in order through the voice gain,
+  90 ms apart; the caption is `relayText(pieces)`. If any piece has no clip the whole line
+  goes out as `speak` (browser voice). A relay line never reaches ElevenLabs or Gemini.
+- Live ElevenLabs only for Gemini's own lines, only with `TTS_MODE=elevenlabs`: 5 per game
+  and `ELEVENLABS_DAILY_CHARS` a day over all rooms; over a cap = browser voice. Every bought
+  clip is cached on disk by voice + model + text, so no text is bought twice.
+  `TTS_SESSION_LINES` is gone.
+- Bank clips bought from now on are named `sha256(voice \n model \n exact text)[:24].mp3`.
+  The clips already committed (named by normalized text) keep resolving and are never
+  bought again.
+- `npm run tts:bank -w server` is a DRY RUN: it lists every missing clip and the exact
+  characters, makes no network call, writes nothing, exits 0. `-- --buy` buys them and
+  refuses (exit 1) over 4000 characters in one run. The list is read at run time:
+  `fixedLines()` (core, event and puzzle lines without a placeholder) + `bank-lines.txt` +
+  `VOCAB`.
+
+### Counters and logs
+
+Daily counters live in `server/.data/usage.json` (gitignored), reset at UTC midnight, and
+fall back to memory on a disk that cannot be written. Render's free plan wipes the disk on
+every restart and spin-down, so there the daily caps hold per process, not per day.
+
+```
+[gemini] room=ABCD reason=chat in=312 out=41 day=17/200 min=3/8 game=4/25
+[gemini] room=ABCD reason=stuck in=0 out=0 day=18/200 min=4/8 game=5/25 error=timeout
+[gemini] 429 room=ABCD: no Gemini calls for 10 minutes, on the whole server
+[gemini] fallback room=ABCD reason=chat why=day_cap more=12
+[eleven] room=ABCD chars=64 day=380/2000 game=2/5
+[eleven] fallback room=ABCD chars=64 why=game_cap
+[usage] day=2026-10-04 gemini_calls=17/200 tokens_in=5300 tokens_out=700 eleven_calls=6 eleven_chars=380/2000
+```
+
+`why` is `disabled` | `paused_429` | `minute_cap` | `day_cap` | `game_cap`; the same reason is
+logged at most once a minute (`more=` counts the ones in between). `[usage]` is
+`budget.summaryLine()`: logged at start, every hour if something changed, and on SIGTERM /
+SIGINT. There is no HTTP endpoint for it.
+
+### Env vars added (all optional)
+
+| Var | Default | Effect |
+| --- | --- | --- |
+| `GEMINI_ENABLED` | on | `false` = every line scripted, zero Gemini calls |
+| `GEMINI_DAILY_CAP` | 200 | Gemini calls per UTC day, all solo rooms |
+| `ELEVENLABS_ENABLED` | on | `false` = banked clips + browser voice, zero ElevenLabs calls |
+| `ELEVENLABS_DAILY_CHARS` | 2000 | characters per UTC day, all solo rooms |
+
+Removed: `TTS_SESSION_LINES`.
+
+<!-- BUDGET SECTION: END -->

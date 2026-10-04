@@ -351,7 +351,8 @@ function solo(replies: () => string = () => reply('Mm.')) {
   };
   const logs: string[] = [];
   const budget = new Budget({ log: (l) => logs.push(l) });
-  const ai = new AiPlayer(room, 'in', brain, { budget, log: () => {} });
+  // no puzzle scripts: what is counted here must not depend on what a script does with a line
+  const ai = new AiPlayer(room, 'in', brain, { budget, scripts: [], log: () => {} });
   const said = () => room.chat.filter((m) => m.isAI).map((m) => m.text);
   const events = () => prompts.map((p) => p.event);
   return { room, ai, budget, logs, said, events };

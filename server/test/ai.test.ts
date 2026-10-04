@@ -214,7 +214,7 @@ test('rate limit (429): no retry, the script answers, and NO room calls Gemini f
   const blog: string[] = [];
   const budget = new Budget({ log: (l) => blog.push(l) });
   const a = setup('out', [quota, reply('never')], { humanOn: FAR, budget });
-  const b = setup('in', [reply('Hello over there.')], { budget });
+  const b = setup('in', [reply('Hello over there.')], { budget, scripts: [] });
   await pass(400);
   a.room.say('out', 'tell me about this place');
   await pass(600);
@@ -224,7 +224,7 @@ test('rate limit (429): no retry, the script answers, and NO room calls Gemini f
   b.room.say('in', 'hello there, how are you doing');
   await pass(3000);
   assert.equal(b.ai.calls, 0); // another room, same pause
-  assert.ok(b.said().includes(L('huh')));
+  assert.ok(b.said().includes(L('huh')), b.said().join(' | '));
   assert.ok(blog.some((l) => l.includes('fallback') && l.includes('why=paused_429')));
   await pass(GEMINI_PAUSE_MS - 10_000, 1000);
   a.room.say('out', 'are you still there, partner of mine');
