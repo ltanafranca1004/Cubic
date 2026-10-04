@@ -13,6 +13,10 @@ rooms. Every visual decision serves that sentence. The tokens live in
    1920x1080, x3 at 1280x720) and the HUD column beside it its own (`hudScale`). No
    fractional scaling, no smoothing, positions rounded to whole pixels
    (`pixelArt: true`, `roundPixels: true`, `image-rendering: pixelated`).
+   On a phone or tablet the grid is the device pixel instead of the CSS pixel
+   (`client/src/style/fit.ts`): an art pixel is still a whole number of real pixels (five
+   of them on an iPhone 14, which CSS calls 1.667), so the view can fill a 340px high
+   screen instead of stopping at x1.
 2. **One palette.** Every pixel we ship is a Resurrect 64 colour. The art generator fails
    the build if a PNG has any other colour.
 3. **Two worlds, one kit.** The outside player's screen is a sky with light panels. The

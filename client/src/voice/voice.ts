@@ -65,6 +65,10 @@ export class Voice {
   private recorder: MediaRecorder | null = null;
   private relaySeq = 0;
   private relayIn: { el: HTMLAudioElement; sb: SourceBuffer | null; queue: ArrayBuffer[]; node: MediaElementAudioSourceNode } | null = null;
+  /** The one <audio> the relayed stream plays through, and its node (an element gets only one). */
+  private relayEl: HTMLAudioElement | null = null;
+  private relayNode: MediaElementAudioSourceNode | null = null;
+  private primed = false;
 
   private timer: number;
   private lastSnapshot = '';
@@ -460,7 +464,8 @@ export class Voice {
       if (chunk.seq !== 0) return; // joined mid-stream: wait for the next header
       this.openRelayStream(chunk.mime);
     }
-    const r = this.relayIn!;
+    const r = this.relayIn;
+    if (!r) return; // this browser cannot play the relay (iPhone Safari has no MediaSource)
     r.queue.push(chunk.data);
     this.pumpRelay();
   }
@@ -470,11 +475,15 @@ export class Voice {
       this.relayIn.node.disconnect();
       this.relayIn.el.pause();
     }
+    this.relayIn = null;
+    if (typeof MediaSource === 'undefined') return;
     const { bus } = this.graph();
-    const el = new Audio();
+    // Always the same element: the one a tap has started once (prime()), so that this
+    // play(), which no tap starts, is allowed on iOS.
+    const el = (this.relayEl ??= new Audio());
     const ms = new MediaSource();
     el.src = URL.createObjectURL(ms);
-    const node = audioContext().createMediaElementSource(el);
+    const node = (this.relayNode ??= audioContext().createMediaElementSource(el));
     node.connect(bus);
     const stream = { el, sb: null as SourceBuffer | null, queue: [] as ArrayBuffer[], node };
     this.relayIn = stream;
@@ -504,6 +513,37 @@ export class Voice {
     const end = el.buffered.end(el.buffered.length - 1);
     if (end - el.currentTime > RELAY_MAX_LAG_S) el.currentTime = end - 0.15;
     if (el.paused) void el.play().catch(() => {});
+  }
+
+  // ---------- playing from a tap ----------
+
+  /**
+   * Call from inside a tap (touchend, click). A phone, iOS above all, lets a page start
+   * sound only from a user gesture, and the partner's voice arrives whenever it arrives.
+   * So the first tap starts everything once, silently: the AudioContext (the WebRTC stream
+   * and the AI's clips play through it), the element the relayed stream plays through, and
+   * speechSynthesis (the AI's browser voice). After that they may play by themselves.
+   */
+  prime(): void {
+    if (this.primed) return;
+    this.primed = true;
+    try {
+      audioContext(); // resumes it, inside the gesture
+      const el = (this.relayEl ??= new Audio());
+      if (!this.relayIn) {
+        el.src = silence();
+        el.play().catch(() => {
+          this.primed = false; // not a gesture after all: the next tap tries again
+        });
+      }
+      if (typeof speechSynthesis !== 'undefined') {
+        const hush = new SpeechSynthesisUtterance(' ');
+        hush.volume = 0;
+        speechSynthesis.speak(hush);
+      }
+    } catch {
+      this.primed = false;
+    }
   }
 
   // ---------- AI partner speech ----------
@@ -543,4 +583,28 @@ export class Voice {
     this.closeCall();
     for (const t of this.micStream?.getTracks() ?? []) t.stop();
   }
+}
+
+let silentUrl: string | null = null;
+/** A twentieth of a second of silence as a WAV file, to start an <audio> element with. */
+function silence(): string {
+  if (silentUrl) return silentUrl;
+  const samples = 400;
+  const wav = new DataView(new ArrayBuffer(44 + samples));
+  const text = (at: number, value: string) => [...value].forEach((c, i) => wav.setUint8(at + i, c.charCodeAt(0)));
+  text(0, 'RIFF');
+  wav.setUint32(4, 36 + samples, true);
+  text(8, 'WAVEfmt ');
+  wav.setUint32(16, 16, true);
+  wav.setUint16(20, 1, true); // PCM
+  wav.setUint16(22, 1, true); // mono
+  wav.setUint32(24, 8000, true);
+  wav.setUint32(28, 8000, true);
+  wav.setUint16(32, 1, true);
+  wav.setUint16(34, 8, true); // 8 bit: 128 is silence
+  text(36, 'data');
+  wav.setUint32(40, samples, true);
+  for (let i = 0; i < samples; i++) wav.setUint8(44 + i, 128);
+  silentUrl = URL.createObjectURL(new Blob([wav.buffer], { type: 'audio/wav' }));
+  return silentUrl;
 }

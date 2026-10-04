@@ -13,7 +13,8 @@ export function routeSfx(to: () => AudioNode): void {
 /** Shared AudioContext (also used by voice chat). Created on first use after a gesture. */
 export function audioContext(): AudioContext {
   ctx ??= new AudioContext();
-  if (ctx.state === 'suspended') void ctx.resume();
+  // not only 'suspended': iOS puts it in 'interrupted' after a call or a trip to another app
+  if (ctx.state !== 'running') void ctx.resume().catch(() => {});
   return ctx;
 }
 
