@@ -42,6 +42,7 @@ import {
   findPath,
   neighbours,
   objectsOn,
+  stepPose,
   visibleObjects,
   type FaceId,
   type GameState,
@@ -104,21 +105,6 @@ interface PuzzleScript {
  * instead of hardcoding tiles, so a map edit does not break the script. After the last
  * step the puzzle's face must be latched in `state.solved`.
  */
-/** A stub puzzle: one player walks to its crystal and presses E. Replace the entry with the real script. */
-const stub = (id: string, face: FaceId): PuzzleScript => ({
-  id,
-  steps: [
-    {
-      who: 'out',
-      plan: (state) => {
-        const side = (['out', 'in'] as const).find((sd) => visibleObjects(state, sd, face).some((o) => o.type === 'crystal'));
-        if (!side) throw new Error(`no crystal on face ${face}`);
-        return [{ who: side, goto: { object: [side, face, 'crystal'] } }, { who: side, keys: 'e' }];
-      },
-    },
-  ],
-});
-
 // In chain order: 1 and 3 stand alone, then 2 -> 5 -> 6 -> 4.
 const PUZZLE_SCRIPTS: PuzzleScript[] = [
   // Face 1. Hidden Code.
@@ -178,9 +164,101 @@ const PUZZLE_SCRIPTS: PuzzleScript[] = [
     ],
   },
   // Face 5. Sequence Laser.
-  stub('sequence-laser', 5),
+  ((): PuzzleScript => {
+    // What the outside player has seen light up so far, in order. Filled by WATCHING: the
+    // `look` steps read only the outside player's view (visibleObjects), a few times per
+    // 0.5 s step of the playback. Nothing is read from the puzzle state.
+    const seen: string[] = [];
+    const symbols = (state: GameState, side: Side) => visibleObjects(state, side, 5).filter((o) => o.type === 'f5-symbol');
+    const look: PuzzleStep[] = [
+      {
+        who: 'out',
+        plan: (state) => {
+          const lit = symbols(state, 'out').find((o) => o.state?.endsWith('-lit'))?.state?.slice(0, -4);
+          if (lit && !seen.includes(lit)) seen.push(lit);
+          return [];
+        },
+      },
+      { wait: 150 },
+    ];
+    return {
+      id: 'sequence-laser',
+      steps: [
+        // inside: the battery (lying inside on face 2, or already in hand) goes into the emitter
+        { who: 'in', plan: (state) => (state.items.battery?.carriedBy === 'in' ? [] : [{ who: 'in', goto: { item: 'battery' } }, { who: 'in', keys: 'e' }]) },
+        { who: 'in', goto: { object: ['in', 5, 'target'], name: 'f5-emitter' } },
+        { who: 'in', keys: 'e' },
+        { expect: 'the emitter has power', check: (state) => visibleObjects(state, 'in', 5).some((o) => o.type === 'f5-emitter' && o.state === 'powered') },
+        // outside: E on REPLAY starts the playback again, then watch all of it (7 x 0.5 s)
+        { who: 'out', goto: { object: ['out', 5, 'f5-replay'] } },
+        { who: 'out', plan: () => ((seen.length = 0), []) },
+        { who: 'out', keys: 'e' },
+        ...Array.from({ length: 30 }, () => look).flat(),
+        // inside: the buttons, in the order the outside player saw
+        {
+          who: 'in',
+          plan: (state) => {
+            if (seen.length !== symbols(state, 'out').length) throw new Error(`the outside player saw ${seen.length} symbols light up (${seen.join(', ')})`);
+            return seen.flatMap((name): PuzzleStep[] => {
+              const b = symbols(state, 'in').find((o) => o.state === name);
+              if (!b) throw new Error(`the inside player sees no "${name}" button`);
+              return [{ who: 'in', goto: { tile: { face: 5, x: b.x, y: b.y } } }, { who: 'in', keys: 'e' }];
+            });
+          },
+        },
+      ],
+    };
+  })(),
   // Face 6. Laser and Invisible Path.
-  stub('laser-path', 6),
+  ((): PuzzleScript => {
+    /** Step from where `who` stands onto the tile next to them: the key for it depends on how their screen is turned. */
+    const stepOnto = (who: Side, x: number, y: number): PuzzleStep => ({
+      who,
+      plan: (state) => {
+        const pose = state.players[who].pose;
+        const key = Object.entries(MOVE_OF).find(([, m]) => ((p) => p.face === 6 && p.x === x && p.y === y)(stepPose(pose, m[0], m[1]).pose))?.[0];
+        if (!key) throw new Error(`${who} at ${pose.x},${pose.y} (face ${pose.face}) is not next to face 6 ${x},${y}`);
+        return [{ who, keys: key }];
+      },
+    });
+    const reset: PuzzleStep[] = [{ who: 'out', goto: { object: ['out', 6, 'reset'] } }, { who: 'out', keys: 'e' }];
+    /** Stand on `from`, walk into the mirror on `box`. */
+    const push = (from: [number, number], box: [number, number]): PuzzleStep[] => [{ who: 'out', goto: { tile: { face: 6, x: from[0], y: from[1] } } }, stepOnto('out', box[0], box[1])];
+    const path = (state: GameState) => visibleObjects(state, 'out', 6).filter((o) => o.type === 'f6-path');
+    return {
+      id: 'laser-path',
+      steps: [
+        // outside: mirrors to their start, then three pushes bend the beam onto the crate
+        ...reset,
+        ...push([3, 2], [4, 2]),
+        ...push([9, 5], [9, 4]),
+        ...push([9, 4], [9, 3]),
+        { expect: 'the crate burnt and the flower is out', check: (state) => visibleObjects(state, 'out', 6).some((o) => o.type === 'f6-crate' && o.state === 'burnt') && state.items.flower?.side === 'out' },
+        // RESET takes the mirrors off whatever path tile they cover
+        ...reset,
+        // inside: the path is read from the OUTSIDE player's view (they say it out loud).
+        // First round the lava to the face next door, then onto the ring tile beside the start.
+        {
+          who: 'out',
+          plan: (state) => {
+            const line = path(state);
+            if (line.length < 2) throw new Error('the outside player sees no path on face 6');
+            const first = line[0]!;
+            const edge = [[-1, 0], [1, 0], [0, -1], [0, 1]].map(([dx, dy]) => ({ x: first.x + dx!, y: first.y + dy! })).find((n) => n.x === 0 || n.y === 0 || n.x === 11 || n.y === 11);
+            if (!edge) throw new Error('the path does not start beside the ring');
+            const onEdge = (p: Pose) => p.face === 6 && p.x === edge.x && p.y === edge.y;
+            const way = findPath(state, 'in', (p) => p.face !== 6 && Object.values(MOVE_OF).some((m) => onEdge(stepPose(p, m[0], m[1]).pose)), defaultEnv, (face) => face !== 6);
+            if (!way) throw new Error('no way for the inside player to face 6 that stays off its lava');
+            const beside = structuredClone(state);
+            for (const m of way) applyMove(beside, 'in', m[0], m[1], 0);
+            const { face, x, y } = beside.players.in.pose;
+            return [{ who: 'in', goto: { tile: { face, x, y } } }, stepOnto('in', edge.x, edge.y), ...line.map((o) => stepOnto('in', o.x, o.y)), { who: 'in', keys: 'e' }];
+          },
+        },
+        // the flower stays where it lies: face 4's script picks it up
+      ],
+    };
+  })(),
   // Face 4. Botanical Mirror.
   {
     id: 'botanical-mirror',

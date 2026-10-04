@@ -743,6 +743,89 @@
         "pink": 92,
         "white": 93
       }
+    },
+    "f5-symbol": {
+      "image": "sprites/objects.png",
+      "frames": {
+        "default": 94,
+        "sun": 94,
+        "moon": 95,
+        "star": 96,
+        "bolt": 97,
+        "drop": 98,
+        "leaf": 99,
+        "eye": 100,
+        "sun-lit": 101,
+        "moon-lit": 102,
+        "star-lit": 103,
+        "bolt-lit": 104,
+        "drop-lit": 105,
+        "leaf-lit": 106,
+        "eye-lit": 107
+      }
+    },
+    "f5-replay": {
+      "image": "sprites/objects.png",
+      "frames": {
+        "default": 108,
+        "off": 108,
+        "on": 109
+      }
+    },
+    "f5-emitter": {
+      "image": "sprites/objects.png",
+      "frames": {
+        "default": 110,
+        "dead": 110,
+        "powered": 111,
+        "firing": 112
+      }
+    },
+    "f6-rock": {
+      "image": "sprites/objects.png",
+      "frames": {
+        "default": 113
+      }
+    },
+    "f6-mirror": {
+      "image": "sprites/objects.png",
+      "frames": {
+        "default": 114,
+        "fwd": 114,
+        "back": 115
+      }
+    },
+    "f6-crate": {
+      "image": "sprites/objects.png",
+      "frames": {
+        "default": 116,
+        "whole": 116,
+        "burnt": 117
+      }
+    },
+    "f6-source": {
+      "image": "sprites/objects.png",
+      "frames": {
+        "default": 118,
+        "off": 118,
+        "on": 119
+      }
+    },
+    "f6-lava": {
+      "image": "sprites/objects.png",
+      "frames": {
+        "default": 120,
+        "hot": 120,
+        "cold": 121
+      }
+    },
+    "f6-path": {
+      "image": "sprites/objects.png",
+      "frames": {
+        "default": 122,
+        "path": 122,
+        "goal": 123
+      }
     }
   },
   "items": {

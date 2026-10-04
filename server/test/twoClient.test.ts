@@ -7,6 +7,7 @@ import { createApp, type App } from '../src/app';
 import { LIMITS } from '../src/rooms';
 // face 4 (botanical-mirror): what a side sees, under its own name so the other faces' blocks can import theirs
 import { visibleObjects as seenOnFace4 } from '@cubic/shared';
+import { MOVES, findPath, stepPose } from '@cubic/shared'; // faces 5 and 6
 
 // Scripted two-client game over real sockets: rooms, codes, the lobby (pick sides, ready,
 // start), chat, validation, reconnect, items, every puzzle and the win.
@@ -201,11 +202,6 @@ test('two clients play a whole game online', async () => {
   // --- THE PUZZLES, ONLINE. One block per puzzle, in chain order (1 and 3 stand alone, then
   // 2 -> 5 -> 6 -> 4). Each client only uses what its own side can see. Replace a block
   // with the real play when its puzzle replaces the stub; keep the `solved` line that ends it.
-  /** A stub puzzle: walk to the crystal of the face and press E. */
-  const stub = async (c: Client, face: FaceId) => {
-    await c.walkTo(find(c.side, face, 'crystal'));
-    await c.interact();
-  };
   const solved = async (face: FaceId) => {
     await a.until(() => a.last.state.solved.includes(face), `face ${face} solved for the outside player`);
     await bNow().until(() => bNow().last.state.solved.includes(face), `face ${face} solved for the inside player`);
@@ -286,12 +282,73 @@ test('two clients play a whole game online', async () => {
   // ---------- end face 2 ----------
 
   // ---------- face 5: sequence-laser ----------
-  await stub(a, 5);
+  {
+    const symbols = (c: Client) => visibleObjects(c.last.state, c.side, 5).filter((o) => o.type === 'f5-symbol');
+    // inside: the battery (lying inside on face 2, or already in hand) goes into the emitter
+    const battery = b2.last.state.items.battery;
+    assert.ok(battery, 'face 2 handed over the battery');
+    if (battery.carriedBy !== 'in') {
+      await b2.walkTo({ face: battery.face, x: battery.x, y: battery.y });
+      await b2.interact();
+    }
+    await b2.walkTo(find('in', 5, 'target', 'f5-emitter'));
+    await b2.interact();
+    // outside: E on REPLAY, then watch the symbols light up (0.5 s each, on the server's tick)
+    await a.walkTo(find('out', 5, 'f5-replay'));
+    await a.interact();
+    const order: string[] = [];
+    for (let i = 0; i < 120 && order.length < symbols(a).length; i++) {
+      const lit = symbols(a).find((o) => o.state?.endsWith('-lit'))?.state?.slice(0, -4);
+      if (lit && !order.includes(lit)) order.push(lit);
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    assert.equal(order.length, 7, 'the outside player saw every symbol light up');
+    assert.ok(symbols(b2).every((o) => !o.state?.endsWith('-lit')), 'the inside player never sees the sequence');
+    // inside: presses the buttons in the order the outside player calls out
+    for (const name of order) {
+      const button = symbols(b2).find((o) => o.state === name)!;
+      await b2.walkTo({ face: 5, x: button.x, y: button.y });
+      await b2.interact();
+    }
+    assert.ok(a.events.some((e) => e.type === 'puzzle' && e.name === 'laser'), 'the laser fires');
+  }
   await solved(5);
   // ---------- end face 5 ----------
 
   // ---------- face 6: laser-path ----------
-  await stub(b2, 6);
+  {
+    const stepOnto = async (c: Client, x: number, y: number) => {
+      const m = MOVES.find(([dx, dy]) => ((p) => p.face === 6 && p.x === x && p.y === y)(stepPose(c.pose, dx, dy).pose));
+      assert.ok(m, `${c.side} is not next to face 6 ${x},${y}`);
+      await c.move(m[0], m[1]);
+    };
+    const reset = async () => {
+      await a.walkTo(find('out', 6, 'reset'));
+      await a.interact();
+    };
+    // outside: mirrors to their start, then three pushes bend the beam onto the crate
+    await reset();
+    for (const [from, box] of [[[3, 2], [4, 2]], [[9, 5], [9, 4]], [[9, 4], [9, 3]]] as const) {
+      await a.walkTo({ face: 6, x: from[0], y: from[1] });
+      await stepOnto(a, box[0], box[1]);
+    }
+    await b2.until(() => b2.events.some((e) => e.type === 'puzzle' && e.name === 'burn'), 'the crate burns');
+    assert.equal(a.last.state.items.flower?.side, 'out'); // left lying for face 4
+    await reset(); // the mirrors off whatever path tile they cover
+    // only the outside player sees the path; the inside player walks what they are told
+    const path = visibleObjects(a.last.state, 'out', 6).filter((o) => o.type === 'f6-path');
+    assert.ok(path.length > 1 && !visibleObjects(b2.last.state, 'in', 6).some((o) => o.type === 'f6-path'));
+    const edge = [[-1, 0], [1, 0], [0, -1], [0, 1]].map(([dx, dy]) => [path[0]!.x + dx!, path[0]!.y + dy!] as const).find(([x, y]) => x === 0 || y === 0 || x === FACE_SIZE - 1 || y === FACE_SIZE - 1)!;
+    // inside: round the lava to the face next door, then onto the ring tile beside the path's start
+    const beside = findPath(b2.last.state, 'in', (p) => p.face !== 6 && MOVES.some(([dx, dy]) => ((q) => q.face === 6 && q.x === edge[0] && q.y === edge[1])(stepPose(p, dx, dy).pose)), defaultEnv, (face) => face !== 6);
+    assert.ok(beside, 'a way to face 6 that stays off its lava');
+    for (const [dx, dy] of beside) await b2.move(dx, dy);
+    await stepOnto(b2, edge[0], edge[1]);
+    const strikes = b2.last.state.strikes;
+    for (const p of path) await stepOnto(b2, p.x, p.y);
+    await b2.interact(); // the button
+    assert.equal(b2.last.state.strikes, strikes, 'nobody fell in the lava');
+  }
   await solved(6);
   // ---------- end face 6 ----------
 

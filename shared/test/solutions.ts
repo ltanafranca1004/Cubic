@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
-import { visibleObjects, type FaceId, type Side } from '../src/index';
+import { visibleObjects } from '../src/index';
 import { readCode } from '../src/puzzles/hiddenCode';
 import type { SolutionScript, Solver } from './harness';
 // face 4: botanical-mirror
 import { FLOWER_ID } from '../src/puzzles/chain';
+import { solveLaserPath, solveSequenceLaser } from './laser-solutions'; // faces 5 and 6
 
 // ONE SOLUTION SCRIPT PER PUZZLE, keyed by the module's `id`.
 // A script plays the puzzle the way two players would: it walks (t.go / t.move), presses E
@@ -21,12 +22,6 @@ import { FLOWER_ID } from '../src/puzzles/chain';
 //    face, t.env) is the same list the screen is drawn from. Reading the puzzle state would
 //    be cheating.
 //  - One delimited block per puzzle. Edit only yours.
-
-/** The stub puzzles: walk to the crystal of the face and press E. */
-const stub = (face: FaceId, side: Side = 'out') => (t: Solver) => {
-  t.go(side, t.find(side, face, 'crystal'));
-  t.interact(side);
-};
 
 export const SOLUTIONS: Record<string, SolutionScript> = {
   // ---------- face 1: hidden-code ----------
@@ -90,10 +85,12 @@ export const SOLUTIONS: Record<string, SolutionScript> = {
   // ---------- end face 4 ----------
 
   // ---------- face 5: sequence-laser ----------
-  'sequence-laser': stub(5),
+  // Needs the battery: plays face 2 first on a fresh game. Scripts: ./laser-solutions.ts.
+  'sequence-laser': (t) => t.state.solved.includes(5) || solveSequenceLaser(SOLUTIONS['equation-safe']!)(t),
   // ---------- end face 5 ----------
 
   // ---------- face 6: laser-path ----------
-  'laser-path': stub(6, 'in'),
+  // Needs the laser: plays face 5 (and so face 2) first on a fresh game.
+  'laser-path': (t) => t.state.solved.includes(6) || solveLaserPath(SOLUTIONS['sequence-laser']!)(t),
   // ---------- end face 6 ----------
 };
