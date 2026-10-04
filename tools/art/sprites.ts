@@ -1,5 +1,6 @@
 // The two playable characters, the puzzle objects and the items. 16x16 frames.
 import { C, ROLE } from '../../client/src/style/tokens';
+import { existsSync } from 'node:fs';
 import { Img, strip, type Color } from './img';
 import { cut } from './tiles';
 
@@ -225,8 +226,13 @@ export interface SpriteManifest {
 }
 
 export function buildSprites(dir: string): SpriteManifest {
-  strip(character(OUT_TOP, OUT_LEGS, OUT_KEY, 'player-out')).save(`${dir}/sprites/player-out.png`);
-  strip(character(IN_TOP, IN_LEGS, IN_KEY, 'player-in')).save(`${dir}/sprites/player-in.png`);
+  // The player sheets are the team's turtle art (6 columns: rows 0-4 idle, 5-7 walk down, up, right).
+  // Never overwrite them; the code-drawn characters are only a stand-in for a missing sheet.
+  const stand = (file: string, frames: Img[]): void => {
+    if (!existsSync(file)) strip(frames).save(file);
+  };
+  stand(`${dir}/sprites/player-out.png`, character(OUT_TOP, OUT_LEGS, OUT_KEY, 'player-out'));
+  stand(`${dir}/sprites/player-in.png`, character(IN_TOP, IN_LEGS, IN_KEY, 'player-in'));
 
   const plateOut = [cut('D', 0, 1).quantize(), cut('D', 1, 1).quantize()];
   // the inside plate is the same switch in the inside's own colour
@@ -263,8 +269,8 @@ export function buildSprites(dir: string): SpriteManifest {
       default: { image: 'sprites/items.png', frame: 2 },
     },
     players: {
-      out: { image: 'sprites/player-out.png', idle: [0, 1], walk: [2, 3] },
-      in: { image: 'sprites/player-in.png', idle: [0, 1], walk: [2, 3] },
+      out: { image: 'sprites/player-out.png', idle: [0, 1], walk: [30, 31, 32, 33] },
+      in: { image: 'sprites/player-in.png', idle: [0, 1], walk: [30, 31, 32, 33] },
     },
   };
 }
