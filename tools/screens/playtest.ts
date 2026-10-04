@@ -146,7 +146,31 @@ const PUZZLE_SCRIPTS: PuzzleScript[] = [
   // Face 6. Laser and Invisible Path.
   stub('laser-path', 6),
   // Face 4. Botanical Mirror.
-  stub('botanical-mirror', 4),
+  {
+    id: 'botanical-mirror',
+    steps: [
+      {
+        // the flower face 6 left outside: fetch it, unless it is in hand already
+        who: 'out',
+        plan: (state) => {
+          const flower = Object.values(state.items).find((i) => i.side === 'out' && i.kind.startsWith('flower-'));
+          if (!flower) throw new Error('face 6 is solved but there is no flower outside');
+          return flower.carriedBy === 'out' ? [] : [{ who: 'out', goto: { item: flower.id } }, { who: 'out', keys: 'e' }];
+        },
+      },
+      { expect: 'the outside player carries the flower', check: (state) => state.players.out.carrying !== null && !!state.items[state.players.out.carrying]?.kind.startsWith('flower-') },
+      {
+        // the inside player sees which pot holds that colour and names it; the outside player plants it there
+        who: 'in',
+        plan: (state) => {
+          const colour = state.items[state.players.out.carrying ?? '']?.kind.replace('flower-', '');
+          const pot = visibleObjects(state, 'in', 4).find((o) => o.type === 'f4-flowerpot' && o.state === colour);
+          if (!pot) throw new Error(`the inside player sees no ${colour} flower on face 4`);
+          return [{ who: 'out', goto: { tile: { face: 4, x: pot.x, y: pot.y } } }, { who: 'out', keys: 'e' }];
+        },
+      },
+    ],
+  },
 ];
 
 // ---------- setup ----------

@@ -4,6 +4,8 @@ import { io, type Socket } from 'socket.io-client';
 import { FACE_SIZE, defaultEnv, pathTo, type ChatMessage, type ClientToServer, type GameEvent, type RoomInfo, type Seat, type ServerToClient, type Side, type StateUpdate, type FaceId, type TileRef } from '@cubic/shared';
 import { createApp, type App } from '../src/app';
 import { LIMITS } from '../src/rooms';
+// face 4 (botanical-mirror): what a side sees, under its own name so the other faces' blocks can import theirs
+import { visibleObjects as seenOnFace4 } from '@cubic/shared';
 
 // Scripted two-client game over real sockets: rooms, codes, the lobby (pick sides, ready,
 // start), chat, validation, reconnect, items, every puzzle and the win.
@@ -278,7 +280,32 @@ test('two clients play a whole game online', async () => {
   assert.equal(a.last.state.wonAt, null); // one face to go
 
   // ---------- face 4: botanical-mirror ----------
-  await stub(a, 4);
+  {
+    // The flower face 6 left outside: the outside player fetches it (unless it is in hand already).
+    const flower = () => Object.values(a.last.state.items).find((i) => i.side === 'out' && i.kind.startsWith('flower-'))!;
+    assert.ok(flower(), 'face 6 is solved but there is no flower outside');
+    if (flower().carriedBy !== 'out') {
+      await a.walkTo({ face: flower().face, x: flower().x, y: flower().y });
+      await a.interact();
+    }
+    assert.equal(a.last.state.players.out.carrying, flower().id);
+    // Outside sees five empty pots and no colours; inside sees the five flowers and names the pot.
+    const colour = flower().kind.replace('flower-', '');
+    assert.ok(seenOnFace4(a.last.state, 'out', 4).every((o) => o.type === 'f4-pot' && o.state === 'empty'));
+    const pots = seenOnFace4(bNow().last.state, 'in', 4).filter((o) => o.type === 'f4-flowerpot');
+    assert.equal(new Set(pots.map((o) => o.state)).size, 5);
+    // A wrong pot first: a strike for both, and the flower is back in the outside hands.
+    const wrong = pots.find((o) => o.state !== colour)!;
+    const strikes = a.last.state.strikes;
+    await a.walkTo({ face: 4, x: wrong.x, y: wrong.y });
+    await a.interact();
+    await bNow().until(() => bNow().last.state.strikes === strikes + 1, 'the strike reaches the inside player');
+    assert.deepEqual([a.last.state.strikes, a.last.state.players.out.carrying, a.last.state.solved.includes(4)], [strikes + 1, flower().id, false]);
+    // The pot the inside player names.
+    const right = pots.find((o) => o.state === colour)!;
+    await a.walkTo({ face: 4, x: right.x, y: right.y });
+    await a.interact();
+  }
   await solved(4);
   // ---------- end face 4 ----------
 

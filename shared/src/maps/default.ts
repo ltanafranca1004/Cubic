@@ -74,16 +74,17 @@ export const STRING_MAPS: Record<Side, Record<FaceId, string[]>> = {
     // ============================================================
     // FACE 4 OUTSIDE: Forest (botanical-mirror)
     // ============================================================
+    // p = a pot (five of them). The inside pots stand on the same tiles (drawn by the puzzle).
     4: [
       '............',
       '.T.T...T.TT.',
       '.........TT.',
+      '.T......p.T.',
+      '...p........',
       '.T........T.',
-      '............',
-      '.T...C....T.',
-      '............',
-      '............',
-      '.T........T.',
+      '.....p......',
+      '..p.........',
+      '.T......p.T.',
       '.TT......TT.',
       '.TT.T..T.TT.',
       '............',
@@ -179,13 +180,14 @@ export const STRING_MAPS: Record<Side, Record<FaceId, string[]>> = {
     // ============================================================
     // FACE 4 INSIDE: Greenhouse (botanical-mirror)
     // ============================================================
+    // Empty: the five flowerpots are the outside pots, seen from behind.
     4: [
       '............',
       '............',
       '............',
       '............',
       '............',
-      '.....C......',
+      '............',
       '............',
       '............',
       '............',

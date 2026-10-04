@@ -27,6 +27,9 @@ export const LEGEND: Readonly<Record<string, { tile: TileKind } | { object: stri
   // ---------- face 3: mirrored-glyph ----------
 
   // ---------- face 4: botanical-mirror ----------
+  // A pot: a target that takes anything (the flower is made during the game, so it cannot
+  // be named here); the puzzle hands back whatever is not the flower.
+  p: { object: 'target' },
 
   // ---------- face 5: sequence-laser ----------
 
