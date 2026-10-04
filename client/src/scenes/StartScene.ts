@@ -6,8 +6,10 @@ import { menuAction } from '../input/keymap';
 import { Button, seeded, textCentred, type Text } from './kit';
 
 /**
- * The title: a sky of drifting clouds, the logo, one button. Play dives down through the
- * clouds: they rush past and part to the sides, and the mode screen is the world below.
+ * The title: the logo and one button, over the cube turning in the sky (CubeBackdropScene,
+ * underneath: the sky, the far clouds and the cube). The near clouds are here, so they
+ * drift in front of the cube but behind the logo and Play. Play dives down through the
+ * clouds: they rush past and part to the sides, and the cube is the world below.
  */
 export class StartScene extends MenuScene {
   private sky!: Sky;
@@ -25,7 +27,9 @@ export class StartScene extends MenuScene {
   create(data: SceneData): void {
     this.leaving = false;
     const { W, H } = this;
-    this.sky = new Sky(this, 0, W, H);
+    // only the two near cloud layers: the sky itself is behind the cube, in the scene below
+    this.sky = new Sky(this, 0, W, H, [0, 0, 3, 2]);
+    this.sky.parts.forEach((p) => p.destroy());
 
     const cx = Math.round(W / 2);
     const logoY = Math.round(H * 0.34);
@@ -107,8 +111,7 @@ export class StartScene extends MenuScene {
       this.tweens.add({ targets: s, alpha: 0, delay: delay + duration * 0.7, duration: duration * 0.3 });
     }
 
-    // the sky thins out and the world below shows through
-    this.tweens.add({ targets: this.sky.parts, alpha: 0, delay: TIME.dive * 0.45, duration: TIME.dive * 0.45 });
+    // (the sky thinning out and the cube coming up are CubeBackdropScene.dive)
     this.time.delayedCall(TIME.dive, () => this.ctx.flow.diveDone());
   }
 }

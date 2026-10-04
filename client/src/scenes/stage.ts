@@ -5,13 +5,14 @@ import { ROLE } from '../style/tokens';
 import type { UIActions, UIState } from '../ui/hooks';
 import { BackdropScene } from './BackdropScene';
 import { BootScene } from './BootScene';
+import { CubeBackdropScene } from './CubeBackdropScene';
 import { Flow, UI_EVENT, type Screen, type StageContext } from './flow';
 import { ModeScene } from './ModeScene';
 import { SideSelectScene } from './SideSelectScene';
 import { StartScene } from './StartScene';
 
 // THE STAGE: one full-window Phaser canvas behind the DOM UI. It runs the menu scenes
-// (start, mode, side select) and the backdrop behind the in-game HUD. The game itself
+// (start, mode, side select) over the turning cube, and the backdrop behind the in-game HUD. The game itself
 // stays in its own small canvas (client/src/game), drawn at the same pixel scale.
 
 export interface Stage {
@@ -34,7 +35,8 @@ export function createStage(parent: HTMLElement, actions: UIActions, initial: UI
     banner: false,
     audio: { noAudio: true }, // all sound goes through style/audioApi
     scale: { mode: Phaser.Scale.NONE, zoom: size.scale },
-    scene: [BootScene, StartScene, ModeScene, SideSelectScene, BackdropScene],
+    // drawn in this order: the cube is under every menu
+    scene: [BootScene, CubeBackdropScene, StartScene, ModeScene, SideSelectScene, BackdropScene],
   });
 
   const ctx: StageContext = { actions, state: initial, flow: null as unknown as Flow };

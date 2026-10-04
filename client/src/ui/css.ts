@@ -128,14 +128,32 @@ ${ICONS.map((name, i) => `.cu-ico.${name} { background-position: -${i * 16}u 0; 
 .cu-rule { height: 1u; background: var(--dim); opacity: 1; margin: 3u 0; }
 .cu-drift { display: flex; align-items: center; gap: 4u; }
 .cu-compass { width: 16u; height: 16u; background: ${url('ui/compass.png')} 0 0 / 16u 16u; flex: none; }
-.cu-net { display: grid; grid-template-columns: repeat(4, 13u); grid-auto-rows: 13u; gap: 1u; margin: 1u 0; }
-.cu-net div { background: ${C.mist}; color: ${ROLE.dimOnLight}; text-align: center; line-height: 9u; outline: 1u solid ${ROLE.ink}; position: relative; }
-.cu-net div span { display: block; margin-top: -1u; padding-left: 1u; }
-.cu[data-side="in"] .cu-net div { background: ${C.slate}; color: ${C.silver}; }
-.cu-net div.ok, .cu[data-side="in"] .cu-net div.ok { background: var(--c); color: ${ROLE.ink}; }
-.cu-net div.here { outline: 2u solid ${ROLE.focus}; z-index: 1; }
-.cu-net div.portal, .cu[data-side="in"] .cu-net div.portal { background: ${ROLE.portal}; color: ${ROLE.paper}; animation: cu-blink 0.84s steps(2) infinite; }
+/* the cube (client/src/cube/hud.ts): a canvas in art pixels, a chip on each edge for the face
+   that lies that way, and a pip per face for progress */
+.cu-cube { display: flex; flex-direction: column; align-items: center; gap: 2u; margin: 1u 0; --pc: var(--in); }
+.cu-cube[data-partner="out"] { --pc: var(--out); }
+.cu-cube-box { display: grid; grid-template-columns: 11u 56u 11u; grid-template-rows: 11u 56u 11u; justify-items: center; align-items: center; }
+.cu-cube-c { grid-column: 2; grid-row: 2; width: 56u; height: 56u; }
+.cu-cube-e { width: 9u; height: 9u; background: var(--c); color: ${ROLE.ink}; outline: 1u solid ${ROLE.ink}; text-align: center; line-height: 10u; font-style: normal; position: relative; }
+.cu-cube-e span { display: block; padding-left: 1u; }
+.cu-cube-e.up { grid-column: 2; grid-row: 1; }
+.cu-cube-e.down { grid-column: 2; grid-row: 3; }
+.cu-cube-e.left { grid-column: 1; grid-row: 2; }
+.cu-cube-e.right { grid-column: 3; grid-row: 2; }
+.cu-cube-e.partner { outline: 2u solid var(--pc); animation: cu-way 0.84s steps(2) infinite; z-index: 1; }
+@keyframes cu-way { 50% { outline-color: ${ROLE.ink}; } }
+.cu-pips { display: flex; gap: 2u; }
+.cu-pips i { width: 7u; height: 4u; background: ${C.mist}; outline: 1u solid ${ROLE.ink}; }
+.cu[data-side="in"] .cu-pips i { background: ${C.slate}; }
+.cu-pips i.ok, .cu[data-side="in"] .cu-pips i.ok { background: var(--c); }
+.cu-pips i.here { outline: 1u solid ${ROLE.focus}; z-index: 1; }
+.cu-pips i.portal, .cu[data-side="in"] .cu-pips i.portal { background: ${ROLE.portal}; animation: cu-blink 0.84s steps(2) infinite; }
 @keyframes cu-blink { 50% { background: ${ROLE.portalDark}; } }
+.cu-cubemap { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; z-index: 8; pointer-events: none; }
+.cu-cubemap.on { display: flex; }
+.cu-cubemap .cu-panel { display: flex; flex-direction: column; align-items: center; gap: 2u; padding: 2u 6u 3u; }
+.cu-cubemap b { font-weight: normal; }
+.cu-cubemap canvas { width: 132u; height: 132u; }
 .cu-obj { margin: 0; text-transform: none; min-height: 39u; }
 .cu-carry { display: flex; align-items: center; gap: 3u; min-height: 16u; }
 .cu-item { width: 16u; height: 16u; background: ${url('sprites/items.png')} 0 0 / 48u 16u; flex: none; }

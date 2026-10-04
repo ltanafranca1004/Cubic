@@ -13,8 +13,9 @@ it and feeds it the `UIState`. Design: [docs/menu-design.md](../../../docs/menu-
 | `stage.ts` | Creates the stage game, resizes it to the UI's whole-number scale. |
 | `flow.ts` | Which screen is showing and how it hands over to the next. The UI state decides; the flow animates. Also `MenuScene`, the base class (state, keys, fade, rebuild on resize). |
 | `BootScene.ts` | Loads the menu art. |
-| `StartScene.ts` | Title: sky, drifting clouds, logo, Play, and the dive through the clouds. |
-| `ModeScene.ts` | Create / Join / Play with AI over the cube net, and the join popup. |
+| `CubeBackdropScene.ts` | The cube turning behind every menu (key `cube`), with the sky, the white and the side select halves behind it. Never stopped between menus; `flow.ts` tells it which screen it is behind. Drawn by `client/src/cube`. |
+| `StartScene.ts` | Title: the near clouds, logo, Play, and the dive through the clouds. |
+| `ModeScene.ts` | Create / Join / Play with AI on a panel beside the cube, and the join popup. |
 | `SideSelectScene.ts` | Pick a side, ready, start. Draws `UIState.lobby`, nothing else. |
 | `BackdropScene.ts` | Behind the in-game HUD: the sky outside, the dark inside. |
 | `clouds.ts` | The sky and its four cloud layers. |

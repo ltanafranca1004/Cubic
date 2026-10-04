@@ -67,6 +67,7 @@ export const mockGameUIState: UIState = {
     elapsedMs: 83_000,
     won: false,
     carrying: { id: 'rose', kind: 'rose' },
+    partnerFace: 4,
   },
   signals: {
     pings: [

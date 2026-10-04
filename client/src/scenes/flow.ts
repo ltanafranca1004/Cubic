@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { C, TIME, hex } from '../style/tokens';
 import type { UIActions, UIState } from '../ui/hooks';
+import type { CubeBackdropScene } from './CubeBackdropScene';
 
 // SCREEN FLOW. Which menu scene is showing, and how one hands over to the next:
 //
@@ -9,6 +10,10 @@ import type { UIActions, UIState } from '../ui/hooks';
 //   side   --(host starts) / mode --(AI)----------->  backdrop (behind the in-game HUD)
 //
 // The UI state decides where we should be; the flow only animates getting there.
+//
+// Under start, mode and side runs the cube scene (CubeBackdropScene, key 'cube'). It is
+// not one of these screens and is never stopped between them: the menus fade over it and
+// the flow only tells it which screen it is behind.
 
 export type Screen = 'start' | 'mode' | 'side' | 'backdrop';
 
@@ -41,6 +46,11 @@ export class Flow {
     this.route();
   }
 
+  /** Tell the cube scene which screen it is behind now (the game hides it). */
+  private cube(to: Screen, ms: number): void {
+    (this.game.scene.getScene('cube') as CubeBackdropScene).show(to === 'backdrop' ? 'off' : to, ms);
+  }
+
   private want(): Screen {
     const s = this.state();
     if (s.screen === 'game') return 'backdrop';
@@ -65,19 +75,32 @@ export class Flow {
     this.current = to;
     this.entered = to !== 'start';
     if (!from) {
+      this.cube(to, 0);
       scenes.start(to, {});
       return;
     }
     this.busy = true;
     const half = (to === 'backdrop' ? TIME.enterGame : TIME.scene) / 2;
-    const cam = scenes.getScene(from).cameras.main;
-    const { r, g, b } = splitRgb(hex(fade.color));
-    cam.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
+    const scene = scenes.getScene(from);
+    const cam = scene.cameras.main;
+    // Menu to menu, only the menu fades: the cube underneath keeps turning and glides to
+    // its place behind the next screen. Into and out of the game everything goes through
+    // a colour, and the cube is put away (or brought back) while the screen is covered.
+    const menus = to !== 'backdrop' && from !== 'backdrop';
+    const next = () => {
       scenes.stop(from);
-      scenes.start(to, { fadeIn: half, fadeColor: fade.color });
+      if (!menus) this.cube(to, 0);
+      scenes.start(to, menus ? { fadeIn: half, soft: true } : { fadeIn: half, fadeColor: fade.color });
       this.busy = false;
       this.route(); // the state may have moved on while we were fading
-    });
+    };
+    if (menus) {
+      this.cube(to, half * 2);
+      scene.tweens.add({ targets: cam, alpha: 0, duration: half, onComplete: next });
+      return;
+    }
+    const { r, g, b } = splitRgb(hex(fade.color));
+    cam.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, next);
     cam.fadeOut(half, r, g, b);
   }
 
@@ -94,6 +117,7 @@ export class Flow {
     this.current = 'mode';
     this.game.scene.run('mode', { intro: true });
     this.game.scene.bringToTop('start');
+    (this.game.scene.getScene('cube') as CubeBackdropScene).dive(TIME.dive);
   }
 
   diveDone(): void {
@@ -112,6 +136,8 @@ export interface SceneData {
   /** Fade in from this colour over this many ms. */
   fadeIn?: number;
   fadeColor?: string;
+  /** Fade the scene itself in (over the cube behind it) instead of fading from a colour. */
+  soft?: boolean;
   /** Mode screen only: arrive through the clouds. */
   intro?: boolean;
 }
@@ -140,7 +166,10 @@ export abstract class MenuScene extends Phaser.Scene {
 
   /** Call at the end of create(): fade in, listen for state changes and resizes. */
   protected begin(data: SceneData): void {
-    if (data.fadeIn) {
+    if (data.fadeIn && data.soft) {
+      this.cameras.main.setAlpha(0);
+      this.tweens.add({ targets: this.cameras.main, alpha: 1, duration: data.fadeIn });
+    } else if (data.fadeIn) {
       const { r, g, b } = splitRgb(hex(data.fadeColor ?? C.white));
       this.cameras.main.fadeIn(data.fadeIn, r, g, b);
     }

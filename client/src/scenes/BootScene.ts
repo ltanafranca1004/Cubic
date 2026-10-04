@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { loadCubeArt } from '../cube/faces';
 import { BUTTON_VARIANTS, PLAYER_FRAMES, UI_IMAGES, asset } from '../style/assets';
 import { TIME } from '../style/tokens';
 import { ctxOf } from './flow';
@@ -16,9 +17,6 @@ export class BootScene extends Phaser.Scene {
     for (const variant of BUTTON_VARIANTS) for (const state of ['idle', 'hover', 'pressed']) this.load.image(`btn-${variant}-${state}`, asset(`ui/btn-${variant}-${state}.png`));
     for (const side of ['out', 'in']) this.load.spritesheet(`player-${side}`, asset(`sprites/player-${side}.png`), { frameWidth: 16, frameHeight: 16 });
     this.load.spritesheet('icons', asset('ui/icons.png'), { frameWidth: 16, frameHeight: 16 });
-    // the real tiles and the manifest, for the cube net on the mode screen
-    for (let face = 1; face <= 6; face++) this.load.image(`tiles-out-${face}`, asset(`tiles/out-${face}.png`));
-    this.load.json('manifest', asset('manifest.json'));
   }
 
   create(): void {
@@ -30,7 +28,13 @@ export class BootScene extends Phaser.Scene {
         repeat: -1,
       });
     }
-    ctxOf(this).flow.ready();
-    this.scene.stop();
+    // the cube behind the menus is drawn from the real tiles, objects and turtles
+    void loadCubeArt().then((art) => {
+      if (!this.sys?.isActive()) return; // the stage was torn down while loading
+      this.registry.set('cubeArt', art);
+      this.scene.launch('cube');
+      ctxOf(this).flow.ready();
+      this.scene.stop();
+    });
   }
 }
