@@ -5,14 +5,19 @@ import { cubeMap, registerCubeMap, type CubeMapDir } from './api';
 import { bakeFaces, loadCubeArt, type CubeArt } from './faces';
 import { texelFor } from './layout';
 import { apply, ease, mul, snap, type Mat3, type V3 } from './mat';
-import { HUD_TILT, QUARTER, facing, partnerHint, poseView, turnAt, upFromDrift } from './orient';
-import { clearTarget, createTarget, drawCube, pack, visibleFaces, type CubeFaces, type FaceTex, type Target } from './raster';
+import { HUD_TILT, QUARTER, ROOM_CAM, facing, hudView, partnerHint, poseView, turnAt, upFromDrift } from './orient';
+import { clearTarget, createTarget, drawCube, drawRoom, pack, projectRoom, roomFaces, visibleFaces, type CubeFaces, type FaceTex, type Target } from './raster';
 
 // THE CUBE IN THE HUD. A small pixel cube that always shows the face you are on flat
 // towards you, the right way up for your screen, with the faces above and to the right in
 // view. Walk over an edge and it makes the same quarter turn the world just made. Drawn by
 // the software renderer on its own little canvas (the HUD is DOM), in art pixels, scaled by
 // the UI's whole-number scale like everything else.
+//
+// The inside player is IN the cube, so theirs is drawn from within, as a room: the face
+// they are on is the floor, the four faces around it are walls in perspective, and nothing
+// is drawn beyond them. Walking over an edge there tips the wall ahead down into the floor
+// (cube/orient.ts: roomView), the opposite turn to the outside cube's roll.
 //
 // The same cube, larger and free to turn, is the cube map (cube/api.ts: show, hide, rotate).
 
@@ -43,6 +48,9 @@ const SMALL = { px: 56, half: 19 };
 const BIG = { px: 132, half: 44 };
 /** From above and in front: the top is brightest, your own face nearly as bright. */
 const HUD_LIGHT: V3 = [-0.2, 0.6, 0.77];
+/** Half the room's open side, in art pixels, and its light: the floor is the brightest, the walls sit back. */
+const ROOM_HALF = 22;
+const ROOM_LIGHT: V3 = [-0.15, 0.3, 0.94];
 const DIRS: readonly CubeMapDir[] = ['up', 'down', 'left', 'right'];
 
 const INK = pack(ROLE.ink);
@@ -108,7 +116,26 @@ class CubeCanvas {
       const n = apply(m, NORMALS[dot.face]);
       this.diamond(Math.floor(o.cx + n[0] * o.half), Math.floor(o.cy - n[1] * o.half), (this.half >= 30 ? 3 : 2) + (pulse ? 1 : 0), pack(dot.color));
     }
-    new Uint32Array(this.image.data.buffer).set(t.px);
+    this.flush();
+  }
+
+  /** Draw the cube from inside, as a room, in a view (cube/orient.ts: roomView). The markers as in `draw`. */
+  drawRoom(art: CubeArt | null, s: CubeHudState, view: Mat3, pulse: boolean, dots: { face: FaceId; color: string }[]): void {
+    const t = this.target;
+    const o = { cx: this.size / 2, cy: this.size / 2, half: ROOM_HALF, ink: INK, light: ROOM_LIGHT, ambient: 0.55, cam: ROOM_CAM };
+    clearTarget(t);
+    drawRoom(t, this.faces(art, s, pulse), view, o);
+    const seen = roomFaces(view, ROOM_CAM);
+    for (const dot of dots) {
+      if (!seen.includes(dot.face)) continue;
+      const [x, y] = projectRoom(view, o, NORMALS[dot.face]);
+      this.diamond(Math.floor(x), Math.floor(y), 2 + (pulse ? 1 : 0), pack(dot.color));
+    }
+    this.flush();
+  }
+
+  private flush(): void {
+    new Uint32Array(this.image.data.buffer).set(this.target.px);
     this.g.putImageData(this.image, 0, 0);
   }
 
@@ -199,6 +226,8 @@ export function createCubeHud(mount: HTMLElement, pips: HTMLElement): CubeHud {
   let sig = '';
 
   const up = (s: CubeHudState) => upFromDrift(s.face, s.drift);
+  /** The cube seen from outside with the player's face in front: where the cube map starts. */
+  const front = (s: CubeHudState) => poseView(s.side, s.face, up(s));
   const dots = (s: CubeHudState, you: boolean) => {
     const list: { face: FaceId; color: string }[] = [];
     if (you) list.push({ face: s.face, color: ROLE.focus });
@@ -208,7 +237,8 @@ export function createCubeHud(mount: HTMLElement, pips: HTMLElement): CubeHud {
 
   function draw(): void {
     if (!state || !hud) return;
-    small.draw(art, state, hud.view, HUD_TILT, pulse, dots(state, false));
+    if (state.side === 'in') small.drawRoom(art, state, hud.view, pulse, dots(state, false));
+    else small.draw(art, state, hud.view, HUD_TILT, pulse, dots(state, false));
     if (open && free) {
       big.draw(art, state, free.view, HUD_TILT, pulse, dots(state, true));
       const face = facing(free.target);
@@ -278,7 +308,7 @@ export function createCubeHud(mount: HTMLElement, pips: HTMLElement): CubeHud {
     show() {
       if (!state || !hud) return;
       // it opens as the HUD cube is: your face in front, your way up
-      free = new Turning(hud.target);
+      free = new Turning(front(state));
       open = true;
       map.classList.add('on');
       draw();
@@ -297,13 +327,13 @@ export function createCubeHud(mount: HTMLElement, pips: HTMLElement): CubeHud {
 
   if (import.meta.env.DEV) {
     // for the screenshot check (tools/screens/cube.ts): what the two cubes show right now
-    const probe = () => ({ front: hud ? facing(hud.target) : null, turning: !!hud?.moving, turns: hud?.turns ?? 0, map: open && free ? facing(free.target) : null });
+    const probe = () => ({ front: state ? facing(front(state)) : null, turning: !!hud?.moving, turns: hud?.turns ?? 0, map: open && free ? facing(free.target) : null });
     Object.assign(window, { __cubicCubeMap: cubeMap, __cubicHudCube: probe });
   }
 
   return {
     update(next) {
-      const view = poseView(next.side, next.face, upFromDrift(next.face, next.drift));
+      const view = hudView(next.side, next.face, upFromDrift(next.face, next.drift));
       if (!hud || !state || state.side !== next.side) hud = new Turning(view);
       else if (!same(hud.target, view)) hud.go(view, !settings().reduceMotion);
       state = next;
