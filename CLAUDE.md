@@ -124,6 +124,27 @@ Every owned folder has a README that says exactly what goes there.
   they are on the same face number as you, and never the partner's face-change ding.
 - Check and GIFs: `tools/screens/transitions.ts` (output in `docs/screens/transitions/`).
 
+## Touch (phones and tablets, held sideways)
+
+- `client/src/style/scale.ts` `device()` decides once: touch = the main pointer is a finger
+  (`pointer: coarse`), or `?touch` to try it with a mouse. A desktop never loads the touch
+  layer and its scales are unchanged, however narrow the window.
+- On touch the pixel grid is the DEVICE pixel (`style/fit.ts`, pure and tested): every
+  scale is a whole number of device pixels per art pixel, e.g. x5 device pixels = 1.667 CSS
+  on an iPhone 14, so the view fills the height. Never a zoom that is not on that grid.
+- Layouts (`fit.ts` `layoutMode`): `compact` on a phone (view in the middle, d-pad rail
+  left, action rail right, the HUD column folded into a panel behind the HUD button,
+  objective and progress always shown top left) and `wide` on a tablet (the desktop layout
+  at the top, the controls in a strip under it). `.cu[data-touch]` carries the mode; all
+  touch CSS is in `client/src/ui/mobile/css.ts`, keyed on it.
+- Controls (`client/src/ui/mobile`, wrapped around the UI in `ui/index.ts`) send KEYS
+  through `sendTouch` in `client/src/input/touch.ts`, like the gamepad: d-pad = arrows, USE
+  = E, DROP = Q, TALK = V held, MAP = Tab (a switch), MENU = Esc. CHAT opens a field at the
+  top of the screen with the four quick lines as buttons. The join popup gets letter keys.
+- Held upright: a rotate card that is a `.cu-modal`, so the input gates pause the game.
+- Sound and the mic start from a tap; the mic is never opened on the title screen.
+- Check: `tools/screens/mobile.ts` (iPhone 14, Pixel 7, iPad; output in `docs/screens/mobile/`).
+
 ## Map format
 
 12 maps: outside 1-6 and inside 1-6, each 12x12 tiles of 16px (`FACE_SIZE` in
