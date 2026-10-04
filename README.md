@@ -165,7 +165,7 @@ Keys stay on the server and are never sent to the browser.
 
 `TTS_MODE=browser` (default outside production) speaks the AI's lines with the browser's
 free `speechSynthesis`. `TTS_MODE=elevenlabs` (default in production) uses ElevenLabs
-(`ELEVENLABS_API_KEY`, optional `ELEVENLABS_VOICE_ID`, `ELEVENLABS_MODEL_ID` default
+(`ELEVENLABS_API_KEY`, optional `ELEVENLABS_VOICE_ID`, `ELEVENLABS_MODEL` default
 `eleven_flash_v2_5`). The game never waits for a clip.
 
 To keep ElevenLabs cheap:
@@ -253,7 +253,7 @@ Backend on Render, frontend on Vercel. Config is in `render.yaml` and `vercel.js
    - `TURN_URLS`, `TURN_USERNAME`, `TURN_CREDENTIAL`: optional voice relay, see
      [TURN relay](#turn-relay-optional).
    The rest have defaults in `render.yaml`: `GEMINI_MODEL`, `AI_FAKE`, `AI_PERSONA`,
-   `TTS_MODE`, `ELEVENLABS_MODEL_ID`. Render sets `PORT` itself. Every variable is
+   `TTS_MODE`, `ELEVENLABS_MODEL`, `ELEVENLABS_BANK_MODEL`. Render sets `PORT` itself. Every variable is
    described in `server/.env.example`.
 3. Deploy and note the URL, e.g. `https://cubic-server.onrender.com`. Check
    `https://<render-url>/health` returns `{"ok":true}`.

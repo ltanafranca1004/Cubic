@@ -113,8 +113,10 @@ be said again on the next visit.
   return the same action until what you SEE says it is done.
 - `ctx.say(key, opts)`: `key` must be in the script's `lines`, else it is dropped. Default:
   once per visit to the face. `every: ms` = again after that long. `force` = now. Returns
-  whether it was said. Lines go out one at a time, 1.5 s apart (`LINE_GAP_MS`), through the
-  room's chat rate limit, at most 6 waiting.
+  whether it was said. Lines go out one at a time, each given its speaking time before the
+  next (see Pacing), through the room's chat rate limit.
+- `ctx.cancel(...keys)`: a question the human has just answered. If it still waits to be
+  said it is dropped (`Decision.cancel`), so a question never comes after its answer.
 - Wait: `{ action: null, status }`, or `{ action: null, hold: true, status }` when the
   human needs the body to stay exactly there (a Gemini suggestion cannot move it).
 - `null`: nothing to do here.
@@ -173,6 +175,23 @@ it; add such words to `talk.ts` (`Token`, `parseHuman`, `FILLER`, and the list i
 4. Add its `HumanScript` to `HUMAN_SCRIPTS` in `shared/test/partnerSim.ts`.
 5. If Gemini should know the rule, add a line to `PUZZLE_RULES` in `server/src/ai/prompt.ts`
    (between the `PUZZLES V2 PLACEHOLDER` markers).
+
+### Pacing (`server/src/ai/aiPlayer.ts`)
+
+One caption shows at a time and a new line replaces it, so the next line is not sent before
+the last one has had `lineHoldMs(text) = max(LINE_GAP_MS 1500, text.length * LINE_MS_PER_CHAR
+65)` ms: a relay answer is never followed by another line sooner than that. The queue never
+stalls: over 6 waiting lines (`OUTBOX_MAX`) the oldest small talk gives way, and small talk
+(core lines, event lines, Gemini's lines) that has waited more than `STALE_MS` (10 s) is
+skipped. A puzzle script's line (a relay answer, a question the script waits on) is never
+dropped. Every AI chat message said as written carries its line key (`ChatMessage.key`,
+e.g. `laser-path.in.tile`, `huh`, `event.strike`): tools match on the key, never on the
+words (`tools/screens/solo-game.ts`).
+
+Said less: `next` once per solve (not on every solved face it crosses), `follow.where` only
+after `LOST_MS` (8 s) of hearing the human faintly with more than one face to try,
+`mirrored-glyph.in.next` not after an empty row unless the human waits
+`EMPTY_ROW_WAIT_MS` (5 s).
 
 ## The body
 
@@ -361,8 +380,9 @@ deleted: the four portal clips are still there and in the index, used by no line
 | `TTS_MODE` | `browser`, or `elevenlabs` when `NODE_ENV=production` | falls back to `browser` without a key |
 | `TTS_SESSION_LINES` | 15 | ElevenLabs lines one room may buy |
 | `ELEVENLABS_API_KEY` | none | |
-| `ELEVENLABS_VOICE_ID` | `21m00Tcm4TlvDq8ikWAM` | |
-| `ELEVENLABS_MODEL_ID` | `eleven_flash_v2_5` | |
+| `ELEVENLABS_VOICE_ID` | `r1KmysJdVYZjJCm4mL3b` | the one voice, banked and live |
+| `ELEVENLABS_MODEL` | `eleven_flash_v2_5` | live lines (older name: `ELEVENLABS_MODEL_ID`) |
+| `ELEVENLABS_BANK_MODEL` | `eleven_v4` | banked clips |
 
 Client: `ENABLE_AI` in `client/src/config.ts` (a constant, not an env var) shows or hides
 PLAY WITH AI. Tests and local runs: `AI_FAKE=1 TTS_MODE=browser`.
@@ -462,7 +482,7 @@ sockets with both API clients replaced by throwing spies).
   clip per piece. The client (`Voice.playChain`) plays them in order through the voice gain,
   90 ms apart; the caption is `relayText(pieces)`. If any piece has no clip the whole line
   goes out as `speak` (browser voice). A relay line never reaches ElevenLabs or Gemini.
-- Live ElevenLabs only for Gemini's own lines, only with `TTS_MODE=elevenlabs`: 5 per game
+- Live ElevenLabs only for Gemini's own lines, only with `TTS_MODE=elevenlabs`: 20 per game
   and `ELEVENLABS_DAILY_CHARS` a day over all rooms; over a cap = browser voice. Every bought
   clip is cached on disk by voice + model + text, so no text is bought twice.
   `TTS_SESSION_LINES` is gone.
@@ -486,9 +506,9 @@ every restart and spin-down, so there the daily caps hold per process, not per d
 [gemini] room=ABCD reason=stuck in=0 out=0 day=18/200 min=4/8 game=5/25 error=timeout
 [gemini] 429 room=ABCD: no Gemini calls for 10 minutes, on the whole server
 [gemini] fallback room=ABCD reason=chat why=day_cap more=12
-[eleven] room=ABCD chars=64 day=380/2000 game=2/5
+[eleven] room=ABCD chars=64 day=380/20000 game=2/20
 [eleven] fallback room=ABCD chars=64 why=game_cap
-[usage] day=2026-10-04 gemini_calls=17/200 tokens_in=5300 tokens_out=700 eleven_calls=6 eleven_chars=380/2000
+[usage] day=2026-10-04 gemini_calls=17/200 tokens_in=5300 tokens_out=700 eleven_calls=6 eleven_chars=380/20000
 ```
 
 `why` is `disabled` | `paused_429` | `minute_cap` | `day_cap` | `game_cap`; the same reason is
@@ -503,9 +523,32 @@ SIGINT. There is no HTTP endpoint for it.
 | `GEMINI_ENABLED` | on | `false` = every line scripted, zero Gemini calls |
 | `GEMINI_DAILY_CAP` | 200 | Gemini calls per UTC day, all solo rooms |
 | `ELEVENLABS_ENABLED` | on | `false` = banked clips + browser voice, zero ElevenLabs calls |
-| `ELEVENLABS_DAILY_CHARS` | 2000 | characters per UTC day, all solo rooms |
+| `ELEVENLABS_DAILY_CHARS` | 20000 | characters per UTC day, all solo rooms |
+| `ELEVENLABS_BANK_MODEL` | `eleven_v4` | model of the banked clips |
+| `ELEVENLABS_MODEL` | `eleven_flash_v2_5` | model of the live lines (was `ELEVENLABS_MODEL_ID`, still read) |
 
 Removed: `TTS_SESSION_LINES`.
+
+### One voice, two models (later than the text above; where they disagree this is right)
+
+- Voice: `ELEVENLABS_VOICE_ID`, default `r1KmysJdVYZjJCm4mL3b` (`DEFAULT_VOICE_ID`), for every
+  banked clip and every live line.
+- Banked clips are made with `ELEVENLABS_BANK_MODEL` (default `eleven_v4`); live lines
+  (Gemini's own) with `ELEVENLABS_MODEL` (default `eleven_flash_v2_5`; the older name
+  `ELEVENLABS_MODEL_ID` is still read).
+- A banked clip resolves ONLY as `sha256(voice \n bank model \n exact text)[:24].mp3`. The
+  82 clips of the first voice (named by normalized text) no longer resolve; until the new
+  bank is bought every scripted line is read by the browser voice.
+- The bank list is `fixedLines(persona)` of the ACTIVE persona (`AI_PERSONA`, default
+  `default`) + `VOCAB`. The other persona and `server/tts/bank-lines.txt` are not bought.
+  The list by key: `docs/status/puzzles/ai-lines.md`.
+- The dry run prints the characters of every missing clip and the total for the bank model.
+  `-- --buy` with `ffmpeg` on PATH then cuts the silence off both ends of each bought clip
+  (`trimCommand` in `bank.ts`); without ffmpeg the step is skipped.
+- Live caps: 20 lines per game (`ELEVEN_PER_GAME`) and `ELEVENLABS_DAILY_CHARS` (default
+  20000) a day. The Gemini caps are unchanged.
+- Gemini's turn also carries `partnerSays`: what the script expects the human to say on
+  this puzzle (`humanSays(puzzleId, side)` in `scripted.ts`, at most 100 characters).
 
 <!-- BUDGET SECTION: END -->
 <!-- ---- faces 4-6 (scripts-b) ---- -->
