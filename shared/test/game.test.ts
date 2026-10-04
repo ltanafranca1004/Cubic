@@ -15,6 +15,7 @@ import {
   pathTo,
   portalFace,
   portalOpen,
+  seedOf,
   visibleObjects,
   type GameEnv,
   type GameEvent,
@@ -53,6 +54,9 @@ test('seed: given, or derived from the start time; it is what ctx.rand mixes fro
   assert.equal(createGame(5, env, 1234).seed, 1234);
   assert.equal(createGame(5, env).seed, mix(5));
   assert.notEqual(createGame(5, env).seed, createGame(6, env).seed);
+  // A hand-built state without a seed reads as 0.
+  assert.equal(seedOf(createGame(5, env, 1234)), 1234);
+  assert.equal(seedOf({}), 0);
   const seen: number[] = [];
   const probe: PuzzleModule<{ seed: number }> = {
     id: 'probe',

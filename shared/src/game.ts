@@ -52,10 +52,13 @@ export function createGame(now: number, env: GameEnv = defaultEnv, seed: number 
   return { players: { out: player('out'), in: player('in') }, puzzles, items, solved: [], strikes: 0, seed, startedAt: now, wonAt: null };
 }
 
+/** The game's seed as a plain number. A hand-built state without one reads as 0. */
+export const seedOf = (state: Pick<GameState, 'seed'>): number => state.seed ?? 0;
+
 function makeCtx(state: GameState, env: GameEnv, puzzle: AnyPuzzle, now: number, events: GameEvent[]): PuzzleCtx {
   return {
     world: env.world,
-    seed: state.seed,
+    seed: seedOf(state),
     state,
     now,
     get solved() {
@@ -77,7 +80,7 @@ function makeCtx(state: GameState, env: GameEnv, puzzle: AnyPuzzle, now: number,
       const pose = state.players[side].pose;
       state.players[side].pose = { ...pose, x, y };
     },
-    rand: (...keys) => mix(state.seed, ...keys),
+    rand: (...keys) => mix(seedOf(state), ...keys),
     faceSolved: (face) => state.solved.includes(face),
     spawnItem: ({ id, kind, side, face, x, y, props }) => {
       if (state.items[id]) throw new Error(`duplicate item id "${id}"`);

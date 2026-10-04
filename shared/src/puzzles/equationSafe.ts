@@ -1,4 +1,5 @@
 import type { PuzzleModule } from './types';
+import { BATTERY_ID, BATTERY_KIND } from './chain';
 import { at } from './util';
 
 // EQUATION SAFE (face 2: Desert outside, Vault inside).
@@ -20,7 +21,11 @@ export const equationSafe: PuzzleModule<State> = {
   init: () => ({ done: false }),
 
   onUse(s, ctx, side, tile) {
-    if (ctx.objects(side, FACE, 'crystal').some((c) => at(c, tile))) s.done = true;
+    if (s.done || !ctx.objects(side, FACE, 'crystal').some((c) => at(c, tile))) return;
+    s.done = true;
+    // Like the real puzzle: the battery appears inside, for face 5.
+    const c = ctx.objects('in', FACE, 'crystal')[0];
+    ctx.spawnItem({ id: BATTERY_ID, kind: BATTERY_KIND, side: 'in', face: FACE, x: c.x, y: c.y });
   },
 
   isSolved: (s) => s.done,

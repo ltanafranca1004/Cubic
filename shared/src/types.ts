@@ -81,8 +81,10 @@ export interface GameState {
   /**
    * What every puzzle's random content is mixed from (ctx.rand). Picked by the server per
    * game and sent with the state, so the client predicts with the same numbers.
+   * Always set by createGame; optional only so hand-built states stay valid. Read it with
+   * seedOf(state) (shared/src/game.ts), never directly.
    */
-  seed: number;
+  seed?: number;
   /** Epoch ms. */
   startedAt: number;
   wonAt: number | null;

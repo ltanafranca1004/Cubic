@@ -1,4 +1,5 @@
 import type { PuzzleModule } from './types';
+import { FLOWER_ID, flowerKind } from './chain';
 import { at } from './util';
 
 // LASER AND INVISIBLE PATH (face 6: Cave outside, Lava room inside).
@@ -20,7 +21,11 @@ export const laserPath: PuzzleModule<State> = {
   init: () => ({ done: false }),
 
   onUse(s, ctx, side, tile) {
-    if (ctx.objects(side, FACE, 'crystal').some((c) => at(c, tile))) s.done = true;
+    if (s.done || !ctx.objects(side, FACE, 'crystal').some((c) => at(c, tile))) return;
+    s.done = true;
+    // Like the real puzzle: the flower appears outside, for a pot on face 4.
+    const c = ctx.objects('out', FACE, 'crystal')[0];
+    ctx.spawnItem({ id: FLOWER_ID, kind: flowerKind(ctx.seed), side: 'out', face: FACE, x: c.x, y: c.y });
   },
 
   isSolved: (s) => s.done,

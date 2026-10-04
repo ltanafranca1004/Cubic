@@ -34,10 +34,10 @@ export const DIGITS: readonly (readonly string[])[] = [
 const DIGIT_NAMES = DIGITS.map((_, n) => String(n));
 const ENTER = ['......##', '......##', '..#...##', '.##...##', '########', '########', '.##.....', '..#.....'];
 
-/** A keypad key: `0`..`9` or `enter`. With `-ok` it is green: the code is in and the pad is locked. */
+/** A keypad key: `0`..`9` or `enter`. With `-green` it is green: the code is in and the pad is locked. */
 function key(rect: Rect, state: string): void {
-  const ok = state.endsWith('-ok');
-  const name = ok ? state.slice(0, -3) : state;
+  const ok = state.endsWith('-green');
+  const name = ok ? state.slice(0, -6) : state;
   const mark = ok ? C.white : C.ink;
   rect(1, 1, 14, 14, C.ink);
   rect(2, 2, 12, 11, ok ? C.green : C.mist);
@@ -48,12 +48,13 @@ function key(rect: Rect, state: string): void {
   else if (digit) bitmap(rect, 5, 3, digit, mark, 2);
 }
 
-/** One cell of the keypad's display: `blank`, or the digit typed into it. */
+/** One cell of the keypad's display: `empty`, the digit typed into it, or `<digit>-green` once locked. */
 function display(rect: Rect, state: string): void {
   rect(0, 1, 16, 14, C.ink);
   rect(1, 2, 14, 12, C.shadow);
-  const digit = DIGITS[Number(state)];
-  if (state !== 'blank' && digit) bitmap(rect, 5, 3, digit, C.lemon, 2);
+  const ok = state.endsWith('-green');
+  const digit = DIGITS[Number(ok ? state.slice(0, -6) : state)];
+  if (state !== 'empty' && digit) bitmap(rect, 5, 3, digit, ok ? C.green : C.lemon, 2);
   else rect(5, 11, 6, 2, C.slate);
 }
 
@@ -88,9 +89,10 @@ export const DRAW: Record<string, Draw> = { key, display, button, reset, clear }
 
 export const SPRITES: readonly Sprite[] = [
   ...[...DIGIT_NAMES, 'enter'].map((n) => ({ type: 'key', state: n })),
-  ...[...DIGIT_NAMES, 'enter'].map((n) => ({ type: 'key', state: `${n}-ok` })),
-  { type: 'display', state: 'blank' },
+  ...[...DIGIT_NAMES, 'enter'].map((n) => ({ type: 'key', state: `${n}-green` })),
+  { type: 'display', state: 'empty' },
   ...DIGIT_NAMES.map((n) => ({ type: 'display', state: n })),
+  ...DIGIT_NAMES.map((n) => ({ type: 'display', state: `${n}-green` })),
   { type: 'button', state: 'off' },
   { type: 'button', state: 'on' },
   { type: 'reset', state: 'default' },
