@@ -314,7 +314,7 @@ async function fps(browser: Browser): Promise<void> {
   writeFileSync(`${OUT}fps.txt`, lines.join('\n') + '\n');
 }
 
-const browser = await chromium.launch();
+const browser = await chromium.launch({ args: ['--mute-audio'] });
 try {
   if (!ONLY || ONLY === 'shots') await shots(browser);
   if (!ONLY || ONLY === 'gifs') await gifs(browser);

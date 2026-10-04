@@ -225,7 +225,7 @@ async function sheet(engine: string, rows: Row[]): Promise<void> {
   <section>${rows.map(cell).join('')}</section><h2>Menus on four sizes</h2><section>${menus.join('')}</section>`;
   const file = `${OUT}${engine}.html`;
   writeFileSync(file, html);
-  const browser = await chromium.launch();
+  const browser = await chromium.launch({ args: ['--mute-audio'] });
   const page = await browser.newPage({ viewport: { width: 2332, height: 1000 } });
   await page.goto(`file://${file}`);
   await sleep(800);

@@ -403,7 +403,7 @@ async function gamepad(browser: Browser): Promise<void> {
 }
 
 const ONLY = process.argv[2]; // run one part: menus | game | items | gamepad
-const browser = await chromium.launch();
+const browser = await chromium.launch({ args: ['--mute-audio'] });
 try {
   if (!ONLY || ONLY === 'menus') {
     if (process.env.RENDERER !== 'canvas') await menus(browser, 'webgl');

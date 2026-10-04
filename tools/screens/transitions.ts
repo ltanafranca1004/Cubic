@@ -454,7 +454,7 @@ async function frames(browser: Browser): Promise<void> {
   rmSync(dir, { recursive: true, force: true });
 }
 
-const browser = await chromium.launch();
+const browser = await chromium.launch({ args: ['--mute-audio'] });
 try {
   if (!ONLY || ONLY === 'live') for (const renderer of RENDERERS) await live(browser, renderer);
   if (!ONLY || ONLY === 'frames') await frames(browser);

@@ -27,6 +27,7 @@
 //
 // NEW PUZZLE? Add one entry to PUZZLE_SCRIPTS below. The run fails if a puzzle registered
 // in shared/src/puzzles/index.ts has no entry.
+import { SILENCE } from './quiet';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -533,6 +534,7 @@ const clickCube = (page: Page, side: Side) => clickStage(page, SIDE_CUBE[side], 
 
 async function open(run: Run, who: string, video = false): Promise<Page> {
   const context = await run.browser.newContext({ viewport: SIZE, ...(video ? { recordVideo: { dir: `${OUT}.video-${who}`, size: SIZE } } : {}) });
+  await context.addInitScript(SILENCE);
   const page = await context.newPage();
   const renderer = run.renderer;
   page.on('pageerror', (e) => problems.push({ at: Date.now(), renderer, who, text: `pageerror: ${e.message}` }));
@@ -744,7 +746,7 @@ async function lobby(run: Run): Promise<void> {
   await step(run, 'title: PLAY dives to the mode screen (Create, Join, Back)', async () => {
     await toMode(a);
     const labels = (await buttons(a)).map((x) => x.label).sort().join('|');
-    check(labels === 'BACK|CREATE LOBBY|JOIN LOBBY', `mode screen buttons are ${labels}`);
+    check(labels === 'BACK|CREATE LOBBY|JOIN LOBBY|PLAY SOLO', `mode screen buttons are ${labels}`);
   });
   await step(run, 'mode: BACK returns to the title, PLAY dives again', async () => {
     await click(a, 'BACK');
@@ -1726,7 +1728,7 @@ async function menus(run: Run): Promise<void> {
     await click(a, 'PLAY', { double: true });
     await until('the mode screen', async () => (await button(a, 'CREATE LOBBY'))?.alpha === 1 && !(await has(a, 'PLAY')), 8000);
     const labels = (await buttons(a)).map((x) => x.label).sort().join('|');
-    check(labels === 'BACK|CREATE LOBBY|JOIN LOBBY', `buttons after a double click: ${labels}`);
+    check(labels === 'BACK|CREATE LOBBY|JOIN LOBBY|PLAY SOLO', `buttons after a double click: ${labels}`);
   });
   await step(run, 'title: Enter, Space and Esc mashed during the dive leave a working menu', async () => {
     for (const k of ['Enter', ' ', 'Enter', 'Escape', 'Enter', ' ', 'Escape', 'Enter']) {
@@ -1735,7 +1737,7 @@ async function menus(run: Run): Promise<void> {
     }
     await b.waitForTimeout(3000);
     const labels = (await buttons(b)).map((x) => x.label).sort().join('|');
-    check(labels === 'PLAY' || labels === 'BACK|CREATE LOBBY|JOIN LOBBY', `buttons after mashing: ${labels}`);
+    check(labels === 'PLAY' || labels === 'BACK|CREATE LOBBY|JOIN LOBBY|PLAY SOLO', `buttons after mashing: ${labels}`);
     if (labels === 'PLAY') await toMode(b);
     check((await snap(b)).code === null, 'mashing made a room');
     return labels === 'PLAY' ? 'ended on the title' : 'ended on the mode screen';
@@ -1887,7 +1889,7 @@ const SECTIONS: Record<Section, (run: Run) => Promise<void>> = { lobby, hud, wal
 const only = process.env.RENDERER as Renderer | undefined;
 if (only && !RENDERERS.includes(only)) throw new Error(`RENDERER must be one of ${RENDERERS.join(', ')}`);
 
-const browser = await chromium.launch();
+const browser = await chromium.launch({ args: ['--mute-audio'] });
 const started = Date.now();
 try {
   for (const renderer of RENDERERS) {

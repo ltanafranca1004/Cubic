@@ -160,6 +160,8 @@ export interface ChatMessage {
   text: string;
   /** Epoch ms. */
   at: number;
+  /** An AI line said as the script wrote it: its line key (e.g. "laser-path.in.tile"). Tools match on it, never on the words. */
+  key?: string;
 }
 
 export const CHAT_MAX_LEN = 200;
@@ -214,6 +216,21 @@ export interface TtsClip {
   chatId: number;
   mime: string;
   data: ArrayBuffer;
+}
+
+/**
+ * A spoken AI RELAY line: an answer built from the pieces of shared/src/bot/vocab.ts. Play
+ * the clips one after the other, `gapMs` apart, through the voiceMix gain. The caption is
+ * relayText(pieces).
+ */
+export interface TtsChain {
+  chatId: number;
+  mime: string;
+  /** The vocabulary pieces, in order. */
+  pieces: string[];
+  /** One clip per piece, same order. */
+  clips: ArrayBuffer[];
+  gapMs: number;
 }
 
 /** Narrow what an interact does: only pick up, or only drop. Unset = whichever applies. */
@@ -282,6 +299,8 @@ export interface ServerToClient {
   /** The partner (re)connected and is ready for a voice call. The outside player calls. */
   'voice:ready': () => void;
   tts: (msg: TtsClip) => void;
+  /** A relay line as a chain of banked clips, one per vocabulary piece. */
+  'tts:chain': (msg: TtsChain) => void;
   /** Say this AI line with the browser's own speechSynthesis (free, or ElevenLabs failed). */
   speak: (msg: { chatId: number; text: string }) => void;
 }

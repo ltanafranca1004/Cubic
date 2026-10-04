@@ -248,10 +248,13 @@ async function faces(browser: Browser): Promise<void> {
 
 async function ai(browser: Browser): Promise<void> {
   console.log('ai modes');
-  for (const [side, keys] of [['out', ['ArrowDown', 'ArrowDown', 'ArrowDown', 'Enter']], ['in', ['ArrowDown', 'ArrowDown', 'ArrowDown', 'ArrowDown', 'Enter']]] as const) {
+  // PLAY SOLO is the third choice; its popup opens on OUTSIDE, Right moves to INSIDE
+  for (const [side, keys] of [['out', ['ArrowDown', 'ArrowDown', 'ArrowDown', 'Enter', 'Enter']], ['in', ['ArrowDown', 'ArrowDown', 'ArrowDown', 'Enter', 'ArrowRight', 'Enter']]] as const) {
     const page = await open(browser);
     await toMode(page);
-    await press(page, ...keys);
+    await press(page, ...keys.slice(0, 4));
+    await page.waitForTimeout(500); // the side popup drops in
+    await press(page, ...keys.slice(4));
     await expect(`AI game started with the human ${side}side`, async () => (await screenOf(page)) === 'game' && (await net(page, (c) => c.side)) === side, 6000);
     await page.waitForTimeout(3500); // let the scripted partner say hello
     await shot(page, `22-ai-${side === 'out' ? 'outside' : 'inside'}`);
@@ -282,7 +285,7 @@ async function gif(browser: Browser): Promise<void> {
   console.log('   cloud-dive.gif');
 }
 
-const browser = await chromium.launch();
+const browser = await chromium.launch({ args: ['--mute-audio'] });
 try {
   if (!ONLY || ONLY === 'flow') await flow(browser);
   if (!ONLY || ONLY === 'faces') await faces(browser);
