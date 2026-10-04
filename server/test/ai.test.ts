@@ -157,10 +157,18 @@ test('an impossible action is reported back instead of executed', async () => {
   assert.deepEqual(room.state.players.out.pose, before);
 });
 
-test('the AI leaves with the human', () => {
-  const { room, logs } = setup('out', []);
-  room.leave('out');
-  assert.ok(logs.some((l) => l.includes('stopped')));
+test('the AI leaves with the human, once the human\'s seat is no longer held', async () => {
+  const old = LIMITS.seatHoldMs;
+  LIMITS.seatHoldMs = 40;
+  try {
+    const { room, logs } = setup('out', []);
+    room.leave('out');
+    assert.ok(!logs.some((l) => l.includes('stopped')), 'the room is kept while the seat is held');
+    await until(() => logs.some((l) => l.includes('stopped')), 'the AI to stop');
+    assert.equal(rooms.get(room.code), undefined);
+  } finally {
+    LIMITS.seatHoldMs = old;
+  }
 });
 
 
