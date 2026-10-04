@@ -26,6 +26,8 @@ export interface CubeHudState {
   partnerFace: FaceId | null;
   solved: readonly FaceId[];
   portalOpen: boolean;
+  /** The face of each puzzle: one progress pip per entry. Without it, one per face. */
+  puzzleFaces?: readonly FaceId[];
 }
 
 export interface CubeHud {
@@ -163,7 +165,7 @@ class Turning {
 const same = (a: Mat3, b: Mat3): boolean => a.every((v, i) => Math.abs(v - b[i]!) < 1e-6);
 
 /**
- * Mount the HUD cube in `mount` and the row of six progress pips in `pips`. The cube map
+ * Mount the HUD cube in `mount` and the row of progress pips (one per puzzle) in `pips`. The cube map
  * goes in the same HUD, over the game. A chip or a pip takes its colour from its
  * `data-face` (ui/css.ts): the biome outside, the room's tint inside.
  */
@@ -172,7 +174,6 @@ export function createCubeHud(mount: HTMLElement, pips: HTMLElement): CubeHud {
     <div class="cu-cube-box">
       ${DIRS.map((d) => `<i class="cu-chip cu-cube-e ${d}" data-dir="${d}"></i>`).join('')}
     </div>`;
-  pips.innerHTML = FACES.map((f) => `<i data-face="${f}"></i>`).join('');
   const box = mount.querySelector<HTMLElement>('.cu-cube-box')!;
   const small = new CubeCanvas(SMALL.px, SMALL.half);
   small.canvas.className = 'cu-cube-c';
@@ -227,7 +228,8 @@ export function createCubeHud(mount: HTMLElement, pips: HTMLElement): CubeHud {
 
   /** The chips on the four edges and the six pips: redrawn only when they change. */
   function labels(s: CubeHudState): boolean {
-    const next = [s.side, s.face, s.drift, s.partnerFace, s.solved.join(''), s.portalOpen].join('|');
+    const pipFaces = s.puzzleFaces ?? FACES;
+    const next = [s.side, s.face, s.drift, s.partnerFace, s.solved.join(''), s.portalOpen, pipFaces.join('')].join('|');
     if (next === sig) return false;
     sig = next;
     const around = neighbours({ side: s.side, face: s.face, up: up(s) });
@@ -242,12 +244,17 @@ export function createCubeHud(mount: HTMLElement, pips: HTMLElement): CubeHud {
       chip.title = `Face ${face} ${FACE_NAMES[s.side][face]}${hint?.edge === dir ? ': the way to your partner' : ''}`;
       chip.textContent = String(face);
     }
+    // one pip per puzzle (so n/total fills them all), in the colour of its face once solved
+    if (pips.dataset.faces !== pipFaces.join('')) {
+      pips.dataset.faces = pipFaces.join('');
+      pips.innerHTML = pipFaces.map((f) => `<i data-face="${f}"></i>`).join('');
+    }
     for (const pip of pips.querySelectorAll<HTMLElement>(':scope > i')) {
       const face = Number(pip.dataset.face) as FaceId;
-      pip.className = [s.solved.includes(face) ? 'ok' : '', face === s.face ? 'here' : '', face === 6 && s.portalOpen ? 'portal' : ''].join(' ').trim();
-      // every state has a shape as well as a colour: tick = solved, pip = you, ring = portal
-      pip.innerHTML = `${s.solved.includes(face) ? '<i class="cu-tick"></i>' : ''}${face === s.face ? '<i class="cu-pip"></i>' : ''}${face === 6 && s.portalOpen ? '<i class="cu-ring"></i>' : ''}`;
-      pip.title = `Face ${face}${s.solved.includes(face) ? ': solved' : ''}${face === s.face ? ': you are here' : ''}${face === 6 && s.portalOpen ? ': the portal is open' : ''}`;
+      pip.className = [s.solved.includes(face) ? 'ok' : '', face === s.face ? 'here' : ''].join(' ').trim();
+      // every state has a shape as well as a colour: tick = solved, plus = you are on that face
+      pip.innerHTML = `${s.solved.includes(face) ? '<i class="cu-tick"></i>' : ''}${face === s.face ? '<i class="cu-pip"></i>' : ''}`;
+      pip.title = `Face ${face} ${FACE_NAMES[s.side][face]}${s.solved.includes(face) ? ': solved' : ': not solved'}${face === s.face ? ', you are here' : ''}`;
     }
     return true;
   }

@@ -161,7 +161,7 @@ async function mock(browser: Browser): Promise<void> {
           await page.keyboard.up('Tab');
         }
         if (size.width === 1280 && renderer === 'canvas') {
-          // every face solved: the six pips show the six colours of this side, the portal is open
+          // every face solved: a pip per puzzle, each in the colour of its face, and the portal is open
           await page.evaluate(() => {
             const c = window.__cubic as unknown as { state: { solved: number[]; wonAt: number | null }; move(dx: number, dy: number): void };
             c.state.solved = [1, 2, 3, 4, 5, 6];
@@ -171,8 +171,10 @@ async function mock(browser: Browser): Promise<void> {
           const pips = await page.evaluate(() => [...document.querySelectorAll<HTMLElement>('#cu-pips > i')].map((el) => getComputedStyle(el).backgroundColor));
           await page.addStyleTag({ content: '#cu-prog.open .cu-pips { display: flex !important; } #cu-portal { display: none !important; }' }); // (the pips give way to PORTAL OPEN: show them for the picture)
           await sleep(100);
-          const shown = await page.evaluate(() => [...document.querySelectorAll<HTMLElement>('#cu-pips > i')].slice(0, 5).map((el) => getComputedStyle(el).backgroundColor));
-          if (new Set(shown).size !== 5 || pips.length !== 6) fail(`${tag}: the solved pips are not all different (${shown.join(' ')})`);
+          const shown = await page.evaluate(() => [...document.querySelectorAll<HTMLElement>('#cu-pips > i')].map((el) => getComputedStyle(el).backgroundColor));
+          // one pip per puzzle (the total in "n/total"), each in its own face's colour: n/n fills them all
+          const total = await page.evaluate(() => Number((document.querySelector('#cu-progn')!.textContent ?? '').split('/')[1]));
+          if (new Set(shown).size !== shown.length || pips.length !== total || !total) fail(`${tag}: ${pips.length} pips for ${total} puzzles, or two share a colour (${shown.join(' ')})`);
           await page.screenshot({ path: `${OUT}${tag}-six-colours.png` });
           // the win screen: the title, the time, leave or play again
           await page.evaluate(() => {

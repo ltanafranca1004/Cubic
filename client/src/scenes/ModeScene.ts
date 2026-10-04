@@ -9,7 +9,7 @@ import { Button, centre, paint, shake, slice, text, textCentred, type Text } fro
 const CODE_LEN = 4;
 
 /**
- * Choose how to play: SELECT MODE and the choices on a panel. Behind it, on the white you
+ * Pick a mode: SELECT MODE and the choices on a panel. Behind it, on the white you
  * land on after the dive, the cube keeps turning (CubeBackdropScene, the scene underneath:
  * this scene draws no background of its own).
  */

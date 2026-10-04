@@ -3,6 +3,7 @@ import { FACE_SIZE, TILE_PX, canonToScreen, itemsOn, screenToCanon, tileAt, visi
 import { inputPaused } from '../input/gate';
 import { settings } from '../style/settings';
 import { CodeArt, type ArtProvider } from './art';
+import { GameKeys } from './keys';
 import { InputBuffer, easeInOut, hopBoxes, hopFrame, mirrorStrip, rollPoint, rollStrips, rollWalker, transitionKind, transitionMs, upBeforeFlip, type Buffered, type TransitionKind } from './transition';
 
 // The playable view. Shows ONLY the local player's side of the face they are on, rotated
@@ -46,21 +47,11 @@ const FACE_KEY = 'game:face';
 
 export interface GameInput {
   onMove(dx: number, dy: number): void;
-  onInteract(): void;
-  /** Push-to-talk key (V) went down / up. */
+  /** E (no argument: pick up or use, whichever applies) or Q (`'drop'`: only ever puts down). */
+  onInteract(only?: 'drop' | 'pick'): void;
+  /** The push-to-talk key went down / up. */
   onTalk(down: boolean): void;
 }
-
-const KEYS: Record<string, [number, number]> = {
-  w: [0, -1],
-  a: [-1, 0],
-  s: [0, 1],
-  d: [1, 0],
-  arrowup: [0, -1],
-  arrowleft: [-1, 0],
-  arrowdown: [0, 1],
-  arrowright: [1, 0],
-};
 
 const typing = () => {
   const el = document.activeElement;
@@ -98,8 +89,8 @@ export class GameScene extends Phaser.Scene {
   private trans: Transition | null = null;
   private dirty = true;
   private frame = 0;
-  /** Held direction keys, most recent last. */
-  private held: string[] = [];
+  /** What the keys mean (the player's bindings) and which are held: ./keys.ts. */
+  private keys = new GameKeys({ act: (input) => this.act(input), talk: (down) => this.input_?.onTalk(down) });
   private nextMoveAt = 0;
   private input_: GameInput | null = null;
   /** Key presses made during a transition: applied after it, never dropped. */
@@ -175,13 +166,13 @@ export class GameScene extends Phaser.Scene {
   }
 
   private releaseAll(): void {
-    this.held = [];
-    this.input_?.onTalk(false);
+    this.keys.releaseAll();
   }
 
   private send(input: Buffered): void {
+    if (!this.state) return;
     if (input.kind === 'move') this.input_?.onMove(input.dx, input.dy);
-    else this.input_?.onInteract();
+    else this.input_?.onInteract(input.only);
   }
 
   /** A fresh key press: now, or after the transition (and after whatever already waits). */
@@ -192,25 +183,17 @@ export class GameScene extends Phaser.Scene {
 
   private keyDown(e: KeyboardEvent): void {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
-    const k = e.key.toLowerCase();
     // typing, or a menu / the cube map is on top: the keys are not the game's
     if (typing() || inputPaused()) return;
-    if (KEYS[k]) {
-      e.preventDefault();
-      if (!this.held.includes(k)) {
-        this.held.push(k);
-        // Step at once on a fresh press: a tap can be shorter than a frame.
-        this.nextMoveAt = performance.now() + REPEAT_MS;
-        if (this.state) this.act({ kind: 'move', dx: KEYS[k]![0], dy: KEYS[k]![1] });
-      }
-    } else if (k === 'e' && !e.repeat) this.act({ kind: 'interact' });
-    else if (k === 'v' && !e.repeat) this.input_?.onTalk(true);
+    // Step at once on a fresh press: a tap can be shorter than a frame. Every step, E and
+    // Q goes through act(): pressed during a transition, it waits its turn in the buffer.
+    const used = this.keys.down(e);
+    if (used === 'move') this.nextMoveAt = performance.now() + REPEAT_MS;
+    if (used) e.preventDefault(); // (a bound Space or Tab must not scroll or move the focus)
   }
 
   private keyUp(e: KeyboardEvent): void {
-    const k = e.key.toLowerCase();
-    this.held = this.held.filter((h) => h !== k);
-    if (k === 'v') this.input_?.onTalk(false);
+    this.keys.up(e);
   }
 
   update(time: number): void {
@@ -222,17 +205,16 @@ export class GameScene extends Phaser.Scene {
     }
 
     // Input waits while a transition plays: the buffered presses go first, then the held key.
-    if ((typing() || inputPaused()) && this.held.length) this.held = [];
+    if (typing() || inputPaused()) this.keys.releaseMoves();
     while (!this.trans) {
       const input = this.buffer.next(now);
       if (!input) break;
       this.send(input);
     }
-    const key = this.held[this.held.length - 1];
-    if (key && this.state && !this.trans && !this.buffer.length && now >= this.nextMoveAt) {
-      const [dx, dy] = KEYS[key]!;
+    const held = this.keys.heldDir();
+    if (held && this.state && !this.trans && !this.buffer.length && now >= this.nextMoveAt) {
       this.nextMoveAt = now + REPEAT_MS;
-      this.input_?.onMove(dx, dy);
+      this.input_?.onMove(held.dx, held.dy);
     }
 
     const frame = Math.floor(time / ANIM_MS);

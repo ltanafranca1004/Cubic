@@ -463,6 +463,27 @@ function cursor(dir: string): void {
   ], K);
   // CSS cursors cannot be scaled, so one file per UI scale
   for (const n of [1, 2, 3, 4]) g.scale(n).save(`${dir}/ui/cursor-${n}.png`);
+  // The hand, for everything that can be clicked: the same white with an ink outline, the
+  // same sizes. Its hot spot is the fingertip, at (5, 0) art pixels (ui/cubicUI.ts).
+  const hand = new Img(16, 16).art(0, 0, [
+    '.....oo.........',
+    '....owwo........',
+    '....owwo........',
+    '....owwo........',
+    '....owwo........',
+    '....owwooo......',
+    '....owwowwooo...',
+    '.oo.owwowwowwo..',
+    'owwoowwwwwwwwwo.',
+    'owwwowwwwwwwwwo.',
+    '.owwwwwwwwwwwwo.',
+    '..owwwwwwwwwwwo.',
+    '..owwwwwwwwwwo..',
+    '...owwwwwwwwwo..',
+    '....owwwwwwwo...',
+    '....ooooooooo...',
+  ], K);
+  for (const n of [1, 2, 3, 4]) hand.scale(n).save(`${dir}/ui/cursor-hand-${n}.png`);
 }
 
 function markers(dir: string): void {

@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { FACE_SIZE } from '@cubic/shared';
 import { NARRATOR, NARRATOR_MAX, narratorLine } from '../src/content/narrator';
+import { DEFAULT_BINDINGS } from '../src/input/bindings';
 import {
   CAPTION_MS,
   CARD_MAX_MS,
@@ -13,6 +14,7 @@ import {
   HINT_TEXT,
   START_SETTLE_MS,
   atFaceEdge,
+  controlsHint,
   createOnboarding,
   type GameSnapshot,
   type Onboarding,
@@ -37,9 +39,9 @@ function session(o: Onboarding = createOnboarding()) {
     hints(on: boolean) {
       hints = on;
     },
-    step(ms = 0, interacted = false) {
+    step(ms = 0, interacted = false, dismissed = false) {
       now += ms;
-      return o.step({ now, hints, game: g, interacted });
+      return o.step({ now, hints, game: g, interacted, dismissed });
     },
   };
 }
@@ -60,6 +62,15 @@ test('onboarding: the side card says ON outside and INSIDE inside, with the mirr
   const s = session();
   s.set({ side: 'in' });
   assert.equal(s.step().card, 'in');
+});
+
+test('onboarding: the side card goes at once when it is dismissed, and does not come back', () => {
+  const s = session();
+  assert.equal(s.step().card, 'out');
+  assert.equal(s.step(100, false, true).card, null, 'GOT IT, Esc or a click outside');
+  assert.equal(s.step(100).card, null);
+  assert.equal(s.step(100).controls, true, 'the controls hint is not the card: it stays');
+  assert.equal(s.step(HINT_GAP_MS).hint, 'cube', 'and the context hints can start');
 });
 
 test('onboarding: the side card stays a moment after the first step, then goes; untouched it goes by itself', () => {
@@ -91,7 +102,7 @@ test('onboarding: the controls hint fades only after the player has moved AND in
 });
 
 test('onboarding: the controls hint lists every key of the brief and never sticks forever', () => {
-  const keys = HINT_TEXT.controls.map((c) => `${c.keys.join('/')} ${c.does}`);
+  const keys = controlsHint(DEFAULT_BINDINGS).map((c) => `${c.keys.join('/')} ${c.does}`);
   assert.deepEqual(keys, ['WASD/Arrows move', 'E interact', 'Q drop', 'Enter chat', 'V talk']);
   const s = session();
   s.step();

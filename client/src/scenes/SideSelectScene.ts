@@ -4,7 +4,7 @@ import { menuAction } from '../input/keymap';
 import { C, EASE, ROLE, TIME, hex, type Ramp } from '../style/tokens';
 import type { LobbyPlayer, LobbyState } from '../ui/hooks';
 import { MenuScene, type SceneData } from './flow';
-import { Button, centre, hop, paint, seeded, shake, slice, text, textCentred, type Text } from './kit';
+import { Button, centre, hop, paint, seeded, shake, slice, text, textCentred, type Text, HAND } from './kit';
 
 type Slot = Side | 'mid';
 
@@ -74,7 +74,7 @@ export class SideSelectScene extends MenuScene {
       // the hero's feet land on this row of the cube art
       const heroY = cubeTop + heroRow * z;
       const hero = this.add.sprite(x, heroY, `player-${side}`, 0).setOrigin(0.5, 1).setScale(z).play(`idle-${side}`);
-      image.setInteractive();
+      image.setInteractive({ cursor: HAND });
       image.on('pointerdown', () => this.pick(side));
       return { image, hero, ring, top: cubeTop, heroY };
     };
@@ -100,12 +100,12 @@ export class SideSelectScene extends MenuScene {
     this.centreTitle = textCentred(this, half, py + 13, 'PICK A SIDE');
     this.centreHint = textCentred(this, half, py + ph - 14, '', ROLE.dimOnLight);
     const arrow = (frame: number, x: number, side: Side) => {
-      const a = this.add.image(x, py + 13, 'icons', frame).setInteractive();
+      const a = this.add.image(x, py + 13, 'icons', frame).setInteractive({ cursor: HAND });
       a.on('pointerdown', () => this.pick(side));
     };
     arrow(12, half - pw / 2 + 12, 'out');
     arrow(14, half + pw / 2 - 12, 'in');
-    const zone = this.add.zone(half - pw / 2 + 22, py + 22, pw - 44, ph - 40).setOrigin(0, 0).setInteractive();
+    const zone = this.add.zone(half - pw / 2 + 22, py + 22, pw - 44, ph - 40).setOrigin(0, 0).setInteractive({ cursor: HAND });
     zone.on('pointerdown', () => this.pick(null));
 
     const marker = (role: Role, y: number): Marker => {

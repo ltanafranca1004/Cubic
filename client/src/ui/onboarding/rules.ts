@@ -1,11 +1,14 @@
 import { FACE_SIZE, type Side } from '@cubic/shared';
 import { NARRATOR, narratorLine } from '../../content/narrator';
+import { keyLabel, type Bindings } from '../../input/bindings';
+import { moveKeys } from '../../input/keymap';
 
 // THE HINT RULES: what is on screen, and when. Pure: no DOM, no Phaser, no timers, no
 // clock of its own. The DOM layer (index.ts) feeds it a snapshot a few times a second and
 // draws the view it returns. test/onboarding.test.ts covers every rule in this file.
 //
-//   side card      at the start of a game, once per side per session
+//   side card      at the start of a game, once per side per session. It goes by itself,
+//                  or at once when the player dismisses it (GOT IT, Esc, a click outside)
 //   controls       from the first spawn until the player has moved AND interacted
 //   context hints  cube (the first time the HUD is on screen), edge (the first face edge
 //                  reached), voice (the first time the partner gets quieter). Once each
@@ -28,15 +31,20 @@ export const HINT_TEXT = {
     edge: 'Walk off the edge to fold onto the next face.',
     voice: 'Your partner sounds farther away. Voice fades by face distance.',
   } satisfies Record<ContextHint, string>,
-  /** The keys of the brief. */
-  controls: [
-    { keys: ['WASD', 'Arrows'], does: 'move' },
-    { keys: ['E'], does: 'interact' },
-    { keys: ['Q'], does: 'drop' },
-    { keys: ['Enter'], does: 'chat' },
-    { keys: ['V'], does: 'talk' },
-  ],
+  /** The button that closes the side card. */
+  cardDismiss: 'Got it',
 };
+
+/** The keys of the brief, as they are bound right now (the default: the player's own bindings). */
+export function controlsHint(b?: Readonly<Bindings>): { keys: string[]; does: string }[] {
+  return [
+    { keys: [moveKeys(b), 'Arrows'], does: 'move' },
+    { keys: [keyLabel('interact', b)], does: 'interact' },
+    { keys: [keyLabel('drop', b)], does: 'drop' },
+    { keys: ['Enter'], does: 'chat' },
+    { keys: [keyLabel('talk', b)], does: 'talk' },
+  ];
+}
 
 /** The side card stays at least this long, so a player who walks at once can still read it. */
 export const CARD_MIN_MS = 2500;
@@ -76,6 +84,8 @@ export interface Snapshot {
   game: GameSnapshot | null;
   /** The player pressed an interact key since the last snapshot. */
   interacted: boolean;
+  /** The player closed the side card since the last snapshot (GOT IT, Esc, a click outside). */
+  dismissed?: boolean;
 }
 
 export interface OnboardingView {
@@ -179,7 +189,7 @@ export function createOnboarding(): Onboarding {
       return { ...EMPTY_VIEW, caption: g.won ? null : (caption?.text ?? null) };
     }
 
-    if (card && ((card.moved && s.now - card.since >= CARD_MIN_MS) || s.now - card.since >= CARD_MAX_MS)) card = null;
+    if (card && (s.dismissed || (card.moved && s.now - card.since >= CARD_MIN_MS) || s.now - card.since >= CARD_MAX_MS)) card = null;
 
     if (!seen.has('controls')) {
       controlsSince ??= s.now;

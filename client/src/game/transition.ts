@@ -246,7 +246,8 @@ export function hopBoxes(frame: HopFrame, gx: number, gy: number, size: number):
 
 // ---------- input during a transition ----------
 
-export type Buffered = { kind: 'move'; dx: number; dy: number } | { kind: 'interact' };
+/** A step, or an interact: E (whichever applies), or Q with `only: 'drop'` (never picks up). */
+export type Buffered = { kind: 'move'; dx: number; dy: number } | { kind: 'interact'; only?: 'drop' | 'pick' };
 
 /**
  * After a transition this many buffered inputs go out at once; the rest follow one per

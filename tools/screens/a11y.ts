@@ -117,7 +117,6 @@ async function menus(browser: Browser, renderer: 'webgl' | 'canvas'): Promise<vo
   await shot(a, `01-start-focus${tag}`);
 
   // the gear by keyboard: Tab, Enter. Then the panel: up/down rows, left/right values.
-  // (How to Play is the first button of the top bar, the gear the last)
   for (let i = 0; i < 3 && (await domFocus(a)) !== 'Settings'; i++) await press(a, 'Tab');
   await expect('Tab reaches the settings gear', async () => (await domFocus(a)) === 'Settings');
   await shot(a, `02-gear-focus${tag}`);
@@ -276,6 +275,23 @@ async function game(browser: Browser): Promise<void> {
   await expect('down moves the focus, not the player', async () => (await domFocus(a)) === 'Settings' && (await pose(a, 'out')).y === paused.y);
   await press(a, 'Enter');
   await expect('Settings opens from the pause menu', async () => (await modal(a)) === 'cu-settings');
+  // the tabs: left / right on them; the keyboard reaches every tab and every row
+  await focusOn(a, 'Settings sections');
+  await press(a, 'ArrowRight', 'ArrowRight');
+  await focusOn(a, 'Move up: W. Press to change');
+  await press(a, 'Enter');
+  await expect('Enter on a key button waits for a key', async () => /press a key/i.test((await domFocus(a)) ?? ''));
+  await press(a, 'i');
+  await expect('the key pressed is the new binding', async () => (await domFocus(a)) === 'Move up: I. Press to change');
+  await press(a, 'Enter', 'Escape');
+  await expect('Esc cancels a waiting key button and leaves the panel open', async () => (await domFocus(a)) === 'Move up: I. Press to change' && (await modal(a)) === 'cu-settings');
+  await a.waitForTimeout(250);
+  await shot(a, '16b-settings-controls');
+  await focusOn(a, 'Reset to defaults');
+  await press(a, 'Enter');
+  await focusOn(a, 'Move up: W. Press to change');
+  await focusOn(a, 'Settings sections');
+  await press(a, 'ArrowLeft');
   await focusOn(a, 'Text size');
   await press(a, 'ArrowRight');
   await focusOn(a, 'High contrast');
@@ -356,6 +372,7 @@ async function gamepad(browser: Browser): Promise<void> {
     await page.evaluate((p) => ((globalThis as unknown as { __pad: unknown }).__pad = p), { buttons, axes });
     await page.waitForTimeout(150);
   };
+  await press(page, 'Escape'); // the side card: Esc (Start on the pad) closes it before it would pause
   const p0 = await pose(page, 'out');
   // (the game scene takes keys once its art has loaded: give a first press a few tries)
   for (let i = 0; i < 10 && (await pose(page, 'out')).y === p0.y; i++) {
@@ -388,8 +405,8 @@ const ONLY = process.argv[2]; // run one part: menus | game | items | gamepad
 const browser = await chromium.launch();
 try {
   if (!ONLY || ONLY === 'menus') {
-    await menus(browser, 'webgl');
-    if (process.env.RENDERER !== 'webgl') await menus(browser, 'canvas'); // RENDERER=webgl skips the Canvas pass
+    if (process.env.RENDERER !== 'canvas') await menus(browser, 'webgl');
+    if (process.env.RENDERER !== 'webgl') await menus(browser, 'canvas'); // RENDERER=webgl or canvas: only that one
   }
   if (!ONLY || ONLY === 'game') await game(browser);
   if (!ONLY || ONLY === 'items') await items(browser);

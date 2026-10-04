@@ -30,7 +30,10 @@ export interface UIActions {
   /** Partner volume, 0..1. */
   onSetPartnerVolume(volume: number): void;
   onPlayAgain(): void;
-  /** Q: put down the carried item (never picks one up). */
+  /**
+   * Put down the carried item (never picks one up), at once. The keyboard's drop key does
+   * not come through here: the game scene buffers it with the moves (game/keys.ts).
+   */
   onDrop(): void;
   /** 1 to 4: say a fixed line. `index` is 0..3 into QUICK_CHATS. */
   onQuickChat(index: number): void;
@@ -42,6 +45,9 @@ export type LobbyStatus =
   /** Room created, nobody else here yet. Show the code. */
   | 'waiting'
   | 'partner-joined'
+  /** In a game, the partner's connection dropped: the server holds their seat for a while. */
+  | 'partner-away'
+  /** The partner is gone for good (pressed Leave, or the held seat ran out): the seat is free. */
   | 'partner-left';
 
 /** One player in the lobby. */
@@ -82,6 +88,8 @@ export interface HudState {
   solved: FaceId[];
   /** How many puzzles there are (the registered ones). `solved.length` of them are done. */
   puzzleTotal: number;
+  /** The face of each puzzle, in face order: one progress pip per entry. */
+  puzzleFaces: FaceId[];
   /** Every puzzle is solved: the portal on face 6 is awake. */
   portalOpen: boolean;
   strikes: number;
