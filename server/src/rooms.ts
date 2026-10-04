@@ -6,9 +6,7 @@ import {
   TICK_MS,
   applyInteract,
   applyMove,
-  canPing,
   createGame,
-  makePing,
   needsTick,
   quickIndex,
   tick,
@@ -17,7 +15,6 @@ import {
   type GameState,
   type InteractOnly,
   type MemberInfo,
-  type Ping,
   type QuickChat,
   type Role,
   type RoomInfo,
@@ -63,8 +60,6 @@ interface Member {
   budget: number;
   budgetAt: number;
   chatTimes: number[];
-  /** When they last pinged (null = never), for the ping cooldown. */
-  pingAt: number | null;
   dropTimer: NodeJS.Timeout | null;
 }
 
@@ -74,7 +69,6 @@ type Who = number | Side;
 export interface RoomListener {
   onState?(update: StateUpdate): void;
   onChat?(msg: ChatMessage): void;
-  onPing?(ping: Ping): void;
   onQuick?(quick: QuickChat): void;
   onRoom?(info: RoomInfo): void;
   onTyping?(side: Side, on: boolean): void;
@@ -179,7 +173,6 @@ export class Room {
       budget: LIMITS.moveBurst,
       budgetAt: this.now(),
       chatTimes: [],
-      pingAt: null,
       dropTimer: null,
     };
     this.members.push(m);
@@ -384,17 +377,6 @@ export class Room {
     if (this.chat.length > CHAT_HISTORY) this.chat.shift();
     for (const l of this.listeners) l.onChat?.(msg);
     return msg;
-  }
-
-  /** Ping marker on the sender's own tile. Null while their cooldown runs. */
-  ping(side: Side): Ping | null {
-    const seat = this.playing(side);
-    const now = this.now();
-    if (!seat || !canPing(seat.pingAt, now)) return null;
-    seat.pingAt = now;
-    const ping = makePing(this.state, side, ++this.signalId, now);
-    for (const l of this.listeners) l.onPing?.(ping);
-    return ping;
   }
 
   /**

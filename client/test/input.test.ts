@@ -18,10 +18,10 @@ test('game keys: WASD and the arrows move, in screen directions', () => {
   for (const [k, dir] of Object.entries(dirs)) assert.deepEqual(gameAction(key(k)), { type: 'move', dir }, k);
 });
 
-test('game keys: E interact, Q drop, F ping, M mute, V talk, Enter chat, Esc pause, Tab map', () => {
-  const want: Record<string, GameAction['type']> = { e: 'interact', q: 'drop', f: 'ping', m: 'mute', v: 'talk', Enter: 'chat', Escape: 'pause', Tab: 'map', E: 'interact', Q: 'drop', F: 'ping' };
+test('game keys: E interact, Q drop, M mute, V talk, Enter chat, Esc pause, Tab map', () => {
+  const want: Record<string, GameAction['type']> = { e: 'interact', q: 'drop', m: 'mute', v: 'talk', Enter: 'chat', Escape: 'pause', Tab: 'map', E: 'interact', Q: 'drop' };
   for (const [k, type] of Object.entries(want)) assert.equal(gameAction(key(k))?.type, type, k);
-  for (const k of ['x', 'z', '5', '0', ' ', 'Backspace', 'Shift']) assert.equal(gameAction(key(k)), null, k);
+  for (const k of ['f', 'x', 'z', '5', '0', ' ', 'Backspace', 'Shift']) assert.equal(gameAction(key(k)), null, k);
 });
 
 test('game keys: 1 to 4 are the quick chats, by key or by physical key', () => {
@@ -36,19 +36,19 @@ test('game keys: 1 to 4 are the quick chats, by key or by physical key', () => {
 
 test('game keys: a held key repeats only for move, talk and the map', () => {
   for (const k of ['w', 'ArrowLeft', 'v', 'Tab']) assert.ok(gameAction(key(k, { repeat: true })), k);
-  for (const k of ['e', 'q', 'f', 'm', '1', 'Enter', 'Escape']) assert.equal(gameAction(key(k, { repeat: true })), null, k);
+  for (const k of ['e', 'q', 'm', '1', 'Enter', 'Escape']) assert.equal(gameAction(key(k, { repeat: true })), null, k);
 });
 
 test('game keys: browser shortcuts (Ctrl, Cmd, Alt) are never game keys', () => {
   for (const mod of ['ctrlKey', 'metaKey', 'altKey'] as const) {
-    assert.equal(gameAction(key('f', { [mod]: true })), null);
+    assert.equal(gameAction(key('e', { [mod]: true })), null);
     assert.equal(gameAction(key('w', { [mod]: true })), null);
     assert.equal(menuAction(key('Enter', { [mod]: true })), null);
   }
 });
 
 test('the pause menu documents every game action', () => {
-  const all: GameAction['type'][] = ['move', 'interact', 'drop', 'ping', 'quick', 'mute', 'talk', 'chat', 'pause', 'map'];
+  const all: GameAction['type'][] = ['move', 'interact', 'drop', 'quick', 'mute', 'talk', 'chat', 'pause', 'map'];
   assert.deepEqual([...new Set(CONTROLS.map((c) => c.action))].sort(), [...all].sort());
   for (const c of CONTROLS) assert.ok(c.keys && c.does, c.action);
 });
@@ -110,17 +110,16 @@ test('gamepad: d-pad and left stick move, A B X Start are buttons', () => {
   assert.deepEqual(padInputs(pad([], [-1, 0])), ['left']);
   assert.deepEqual(padInputs(pad([], [0.2, 0.9])), ['down'], 'the stronger axis wins');
   assert.deepEqual(padInputs(pad([], [STICK_DEADZONE - 0.01, 0])), [], 'inside the dead zone');
-  assert.deepEqual(padInputs(pad([0, 1, 2, 9])), ['a', 'b', 'x', 'start']);
+  assert.deepEqual(padInputs(pad([0, 1, 2, 9])), ['a', 'b', 'start'], 'X (button 2) is not bound');
   assert.deepEqual(padInputs(pad([12], [1, 0])), ['up'], 'the d-pad beats the stick');
   assert.deepEqual(padInputs({ buttons: [], axes: [] }), [], 'a pad with nothing on it');
 });
 
 test('gamepad: every input is a key the keyboard mapping already knows', () => {
   const act = (input: Parameters<typeof padKey>[0]) => gameAction(key(padKey(input, 'game')))?.type;
-  assert.deepEqual([act('up'), act('a'), act('b'), act('x'), act('start')], ['move', 'interact', 'drop', 'ping', 'pause']);
+  assert.deepEqual([act('up'), act('a'), act('b'), act('start')], ['move', 'interact', 'drop', 'pause']);
   const menu = (input: Parameters<typeof padKey>[0]) => menuAction(key(padKey(input, 'menu')));
   assert.deepEqual([menu('left'), menu('a'), menu('b'), menu('start')], ['left', 'select', 'back', 'back']);
-  assert.equal(padKey('x', 'menu'), '', 'X does nothing in a menu');
 });
 
 test('gamepad: edges between two polls', () => {
@@ -150,8 +149,6 @@ test('colour cues come with a shape or a word in the HUD', () => {
     assert.ok(ui.includes(shape), `${shape} is drawn`);
     assert.ok(css.includes(`.${shape}`), `${shape} is styled`);
   }
-  assert.match(css, /\.cu-ping\.theirs/);
-  assert.match(css, /\.cu-ping\.mine \{ border: 2u dashed/, 'your own ping has another shape than your partner\'s');
 });
 
 test('captions: longer lines stay longer, inside the limits', () => {

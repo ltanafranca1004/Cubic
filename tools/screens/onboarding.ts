@@ -104,7 +104,7 @@ async function run(browser: Browser, tag: 'webgl' | 'canvas'): Promise<void> {
   // ---- game start: side card, controls hint, the narrator's intro line ----
   await expect('outside: side card, controls and narrator are up', async () => {
     const s = await shown(a);
-    return /^You're ON the cube ?Your partner is in the same spot on the other side\. Their left is your right\.$/.test(s.card ?? '') && /WASD\/Arrows ?move ?E ?interact ?Q ?drop ?Enter ?chat ?V ?talk ?F ?ping/.test(s.keys ?? '') && !!s.cap && s.hint === null;
+    return /^You're ON the cube ?Your partner is in the same spot on the other side\. Their left is your right\.$/.test(s.card ?? '') && /WASD\/Arrows ?move ?E ?interact ?Q ?drop ?Enter ?chat ?V ?talk$/.test(s.keys ?? '') && !!s.cap && s.hint === null;
   });
   await expect('inside: the card says INSIDE', async () => /^You're INSIDE the cube/.test((await shown(b)).card ?? ''));
   await shot(a, '01-start-card-controls-narrator-out');

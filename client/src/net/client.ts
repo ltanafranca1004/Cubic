@@ -2,9 +2,7 @@ import { io, type Socket } from 'socket.io-client';
 import {
   applyInteract,
   applyMove,
-  canPing,
   createGame,
-  makePing,
   quickIndex,
   QUICK_CHATS,
   type ChatMessage,
@@ -14,7 +12,6 @@ import {
   type GameState,
   type InteractOnly,
   type MemberInfo,
-  type Ping,
   type QuickChat,
   type Role,
   type RoomInfo,
@@ -54,8 +51,6 @@ export interface NetHandlers {
   /** Things that just happened. `local` = predicted from our own input. */
   onEvents(events: GameEvent[], local: boolean): void;
   onChat(msg: ChatMessage): void;
-  /** A ping marker was dropped (by either player). */
-  onPing?(ping: Ping): void;
   /** A quick-chat line was said (by either player). */
   onQuick?(quick: QuickChat): void;
   onTyping(on: boolean): void;
@@ -88,7 +83,6 @@ export class Net {
   private server: GameState | null = null;
   private pending: Pending[] = [];
   private seq = 0;
-  private pingAt: number | null = null;
   private localId = 0;
 
   constructor(
@@ -154,7 +148,6 @@ export class Net {
       this.h.onChat(msg);
       this.h.onChange();
     });
-    socket.on('ping', (p) => this.h.onPing?.(p));
     socket.on('quick', (q) => this.h.onQuick?.(q));
     socket.on('typing', (t) => this.h.onTyping(t.on));
     socket.on('voice:ready', () => this.h.onVoiceReady());
@@ -329,16 +322,6 @@ export class Net {
       this.socket.emit('interact', { seq, ...(only ? { only } : {}) });
     }
     this.finish(events);
-  }
-
-  /** Drop a ping marker on our tile. The server owns the cooldown; we skip the obvious no. */
-  ping(): void {
-    if (!this.state || !this.side) return;
-    const now = Date.now();
-    if (!canPing(this.pingAt, now)) return;
-    this.pingAt = now;
-    if (this.socket) this.socket.emit('ping');
-    else this.h.onPing?.(makePing(this.state, this.side, ++this.localId, now));
   }
 
   /** Say one of the fixed quick-chat lines (0..3). */

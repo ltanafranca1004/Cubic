@@ -1,4 +1,4 @@
-import { SPAWN, type GameState } from '@cubic/shared';
+import { PUZZLES, SPAWN, type GameState } from '@cubic/shared';
 import type { UIActions, UIState } from './hooks';
 
 // Mock data so the UI can be built with no server running: open the client with ?mock
@@ -62,6 +62,7 @@ export const mockGameUIState: UIState = {
     },
     objective: 'A crystal sits behind a sealed door. Its mechanism is somewhere inside.',
     solved: [2],
+    puzzleTotal: PUZZLES.length,
     portalOpen: false,
     strikes: 1,
     elapsedMs: 83_000,
@@ -70,10 +71,6 @@ export const mockGameUIState: UIState = {
     partnerFace: 4,
   },
   signals: {
-    pings: [
-      { id: 1, sx: 6, sy: 3, mine: false, alpha: 1 },
-      { id: 2, sx: 2, sy: 6, mine: true, alpha: 1 },
-    ],
     bubbles: [{ id: 3, sx: 6, sy: 5, mine: false, text: 'Here!' }],
   },
   voice: { mic: 'on', mode: 'push', muted: false, link: 'direct', talking: false, partnerLevel: 0.4, signal: 2, partnerVolume: 1 },
@@ -95,6 +92,5 @@ export const mockActions: UIActions = {
   onSetPartnerVolume: (v) => console.log('[ui] onSetPartnerVolume', v),
   onPlayAgain: () => console.log('[ui] onPlayAgain'),
   onDrop: () => console.log('[ui] onDrop'),
-  onPing: () => console.log('[ui] onPing'),
   onQuickChat: (index) => console.log('[ui] onQuickChat', index),
 };

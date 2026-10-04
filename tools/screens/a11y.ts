@@ -1,6 +1,6 @@
 // Keyboard-only check of the whole game, with screenshots into docs/screens/a11y.
 // NO MOUSE: every step is a key press (the script never touches page.mouse or .click()).
-// Two real clients go from the title through the lobby into a game, then chat, ping,
+// Two real clients go from the title through the lobby into a game, then chat,
 // quick chat, hold the cube map, pause, change settings and leave. It fails loudly if a
 // step does not end where it should.
 //
@@ -82,7 +82,6 @@ const modal = (page: Page) =>
   });
 /** What the DOM focus is on: the control's label. */
 const domFocus = (page: Page) => page.evaluate(() => document.activeElement?.getAttribute('aria-label') ?? document.activeElement?.textContent?.trim() ?? null);
-const count = (page: Page, selector: string) => page.evaluate((s) => document.querySelectorAll(s).length, selector);
 const setting = (page: Page, key: string) =>
   page.evaluate((k) => {
     const node = document.querySelector(`#cu-settings [data-key="${k}"]`)!;
@@ -237,16 +236,6 @@ async function game(browser: Browser): Promise<void> {
   await press(a, 'Escape');
   await expect('Esc closes the chat (and does not pause)', async () => (await domFocus(a)) !== 'Chat message' && (await modal(a)) === null);
 
-  // ping: F. The partner sees it on the same face; a second one inside 2 s is refused; gone after 4 s.
-  await press(a, 'f', 'f');
-  await expect('the partner sees the ping', async () => (await count(b, '.cu-ping.theirs')) === 1);
-  await expect('the sender sees their own, as a different shape', async () => (await count(a, '.cu-ping.mine')) === 1 && (await count(a, '.cu-ping.theirs')) === 0);
-  await shot(a, '12-ping-outside-mine');
-  await shot(b, '12-ping-inside-partner');
-  await a.waitForTimeout(600);
-  await expect('the second F was inside the cooldown', async () => (await count(b, '.cu-ping')) === 1);
-  await expect('the ping fades away', async () => (await count(b, '.cu-ping')) === 0 && (await count(a, '.cu-ping')) === 0, 6000);
-
   // quick chat: 1 to 4
   await press(b, '1');
   await expect('the partner sees the bubble', async () => (await a.evaluate(() => document.querySelector('.cu-bubble.theirs')?.textContent)) === 'Here!');
@@ -263,24 +252,6 @@ async function game(browser: Browser): Promise<void> {
     return texts.includes('Wait') && texts.includes('No');
   });
 
-  // a ping is not seen from another face: the inside player walks off face 1 first
-  let left = false;
-  for (const key of ['ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowUp']) {
-    for (let i = 0; i < 14 && !left; i++) {
-      await press(b, key);
-      left = (await pose(b, 'in')).face !== 1;
-    }
-    if (left) break;
-  }
-  if (left) {
-    await a.waitForTimeout(1500); // the cooldown
-    await press(a, 'f');
-    await expect('the sender sees it', async () => (await count(a, '.cu-ping.mine')) === 1);
-    await b.waitForTimeout(400);
-    await expect('a partner on another face does not', async () => (await count(b, '.cu-ping')) === 0);
-    await shot(b, '14-ping-not-seen-from-another-face');
-  } else console.log('   SKIPPED: the inside player could not walk off face 1 with plain arrows');
-
   // Tab holds the cube map: while it is down the arrows turn the map, they do not walk
   const held = await pose(a, 'out');
   await a.keyboard.down('Tab');
@@ -296,9 +267,9 @@ async function game(browser: Browser): Promise<void> {
   await a.waitForTimeout(350); // the panel drops in
   await shot(a, '15-pause-controls');
   const paused = await pose(a, 'out');
-  await press(a, 'f', '1');
+  await press(a, '1');
   await press(a, 'ArrowDown');
-  await expect('down moves the focus, not the player', async () => (await domFocus(a)) === 'Settings' && (await pose(a, 'out')).y === paused.y && (await count(a, '.cu-ping')) === 0);
+  await expect('down moves the focus, not the player', async () => (await domFocus(a)) === 'Settings' && (await pose(a, 'out')).y === paused.y);
   await press(a, 'Enter');
   await expect('Settings opens from the pause menu', async () => (await modal(a)) === 'cu-settings');
   await focusOn(a, 'Text size');
@@ -313,7 +284,6 @@ async function game(browser: Browser): Promise<void> {
   await expect('Esc goes back to the pause menu', async () => (await modal(a)) === 'cu-pause');
   await press(a, 'Escape');
   await expect('Esc again resumes', async () => (await modal(a)) === null && (await screenOf(a)) === 'game');
-  await press(a, 'f');
   await press(b, '1');
   await a.waitForTimeout(300);
   await shot(a, '17-high-contrast-large-text');
@@ -393,9 +363,6 @@ async function gamepad(browser: Browser): Promise<void> {
   await set([], [0, 1]);
   await set([]);
   await expect('the stick walks back down', async () => (await pose(page, 'out')).y >= p0.y);
-  await set([2]);
-  await set([]);
-  await expect('X pings', async () => (await count(page, '.cu-ping.mine')) === 1);
   await set([9]);
   await set([]);
   await expect('Start pauses', async () => (await modal(page)) === 'cu-pause');

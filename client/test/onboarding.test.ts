@@ -92,7 +92,7 @@ test('onboarding: the controls hint fades only after the player has moved AND in
 
 test('onboarding: the controls hint lists every key of the brief and never sticks forever', () => {
   const keys = HINT_TEXT.controls.map((c) => `${c.keys.join('/')} ${c.does}`);
-  assert.deepEqual(keys, ['WASD/Arrows move', 'E interact', 'Q drop', 'Enter chat', 'V talk', 'F ping']);
+  assert.deepEqual(keys, ['WASD/Arrows move', 'E interact', 'Q drop', 'Enter chat', 'V talk']);
   const s = session();
   s.step();
   assert.equal(s.step(CONTROLS_MAX_MS - 1).controls, true);

@@ -35,8 +35,6 @@ export type GameAction =
   | { type: 'interact' }
   /** Q: put down what you carry. */
   | { type: 'drop' }
-  /** F: a ping marker on your tile. */
-  | { type: 'ping' }
   /** 1 to 4: a quick-chat line (index 0..3). */
   | { type: 'quick'; index: 0 | 1 | 2 | 3 }
   /** M: mute or unmute the mic. */
@@ -71,8 +69,6 @@ function rawGameAction(e: KeyLike): GameAction | null {
       return { type: 'interact' };
     case 'q':
       return { type: 'drop' };
-    case 'f':
-      return { type: 'ping' };
     case 'm':
       return { type: 'mute' };
     case 'v':
@@ -141,11 +137,11 @@ export interface PadLike {
   axes: readonly number[];
 }
 
-export type PadInput = Dir | 'a' | 'b' | 'x' | 'start';
+export type PadInput = Dir | 'a' | 'b' | 'start';
 /** How far the stick must lean before it counts. */
 export const STICK_DEADZONE = 0.5;
 /** Standard-mapping button numbers. */
-const PAD_BUTTON = { a: 0, b: 1, x: 2, start: 9, up: 12, down: 13, left: 14, right: 15 } as const;
+const PAD_BUTTON = { a: 0, b: 1, start: 9, up: 12, down: 13, left: 14, right: 15 } as const;
 
 /** What is held on the pad right now. The stick gives one direction: the stronger axis. */
 export function padInputs(pad: PadLike): PadInput[] {
@@ -158,14 +154,13 @@ export function padInputs(pad: PadLike): PadInput[] {
     if (Math.max(Math.abs(x), Math.abs(y)) >= STICK_DEADZONE) dir = Math.abs(x) > Math.abs(y) ? (x < 0 ? 'left' : 'right') : y < 0 ? 'up' : 'down';
   }
   if (dir) out.push(dir);
-  for (const b of ['a', 'b', 'x', 'start'] as const) if (on(PAD_BUTTON[b])) out.push(b);
+  for (const b of ['a', 'b', 'start'] as const) if (on(PAD_BUTTON[b])) out.push(b);
   return out;
 }
 
 /**
  * The pad plays through the keyboard's own mapping: each input stands for a key.
- * Stick or d-pad = arrows. In game: A = E (interact), B = Q (drop), X = F (ping),
- * Start = Esc (pause). In a menu: A = Enter (select), B and Start = Esc (back).
+ * Stick or d-pad = arrows. In game: A = E (interact), B = Q (drop), Start = Esc (pause). In a menu: A = Enter (select), B and Start = Esc (back).
  */
 export function padKey(input: PadInput, where: 'game' | 'menu'): string {
   switch (input) {
@@ -181,8 +176,6 @@ export function padKey(input: PadInput, where: 'game' | 'menu'): string {
       return where === 'game' ? 'e' : 'Enter';
     case 'b':
       return where === 'game' ? 'q' : 'Escape';
-    case 'x':
-      return where === 'game' ? 'f' : '';
     case 'start':
       return 'Escape';
   }
@@ -207,7 +200,6 @@ export const CONTROLS: readonly ControlLine[] = [
   { keys: 'WASD / Arrows', pad: 'Stick / D-pad', does: 'Move', action: 'move' },
   { keys: 'E', pad: 'A', does: 'Pick up / use', action: 'interact' },
   { keys: 'Q', pad: 'B', does: 'Drop', action: 'drop' },
-  { keys: 'F', pad: 'X', does: 'Ping your tile', action: 'ping' },
   { keys: '1 2 3 4', does: 'Here! / Wait / Yes / No', action: 'quick' },
   { keys: 'Enter', does: 'Chat (Enter sends, Esc closes)', action: 'chat' },
   { keys: 'V (hold)', does: 'Push to talk', action: 'talk' },
