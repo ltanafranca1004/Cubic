@@ -980,7 +980,8 @@ export class AmbienceScene extends Phaser.Scene {
    * They are behind the leaves and still easy to find.
    */
   private canopy(face: Face, up: Vec): void {
-    const img = this.add.image(0, 0, VEIL, 0).setOrigin(0, 0).setVisible(false);
+    // half strength: a green turtle behind a green crown has to stay easy to see
+    const img = this.add.image(0, 0, VEIL, 0).setOrigin(0, 0).setAlpha(0.5).setVisible(false);
     face.root.add(img);
     face.tickers.push(() => {
       const { sx, sy } = this.player;
