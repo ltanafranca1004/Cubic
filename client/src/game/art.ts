@@ -1,5 +1,6 @@
 import type Phaser from 'phaser';
 import { TILE_PX, type FaceId, type Side, type TileKind } from '@cubic/shared';
+import { drawPuzzleObject } from './puzzleArt';
 
 // ART. The scene asks an ArtProvider for texture keys and never draws pixels itself, so a
 // provider backed by real tilesets (assets/manifest.json) can replace CodeArt later
@@ -72,6 +73,8 @@ function terrain(g: G, side: Side, face: FaceId, kind: TileKind, variant: number
 }
 
 function object(g: G, side: Side, type: string, state: string | undefined, frame: number) {
+  // the co-op puzzle objects (signs, skylight, bridge, stepping stones): ./puzzleArt.ts
+  if (drawPuzzleObject((x, y, w, h, c) => px(g, x, y, w, h, c), type, state)) return;
   switch (type) {
     case 'plate':
       if (side === 'out') {

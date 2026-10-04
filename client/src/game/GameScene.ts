@@ -22,6 +22,8 @@ const ANIM_MS = 250;
 const LIGHT_NEAR = 1.5;
 const LIGHT_FAR = FACE_SIZE * 0.55;
 const DARK_MAX = 0.92;
+/** Inside: how much of the darkness is left while a skylight is held (a `beam` object that is on). */
+const SKYLIGHT_DARK = 0.3;
 const BG = '#2e222f';
 /** Inside: the wall between two rooms, seen while hopping over it. */
 const WALL_PX = 10;
@@ -261,7 +263,8 @@ export class GameScene extends Phaser.Scene {
         put(this.art.tile(me, face, tileAt(world, me, face, x, y), x, y, this.frame), sx, sy);
       }
     }
-    for (const o of visibleObjects(state, me, face)) {
+    const objects = visibleObjects(state, me, face);
+    for (const o of objects) {
       const [sx, sy] = canonToScreen(me, face, up, o.x, o.y);
       put(this.art.object(me, o.type, o.state, this.frame), sx, sy);
     }
@@ -271,11 +274,13 @@ export class GameScene extends Phaser.Scene {
     }
 
     if (me === 'in') {
-      // The inside is dark: light falls off by tile distance from the player.
+      // The inside is dark: light falls off by tile distance from the player. Daylight
+      // through a held skylight lifts most of it, for the whole room.
+      const lift = objects.some((o) => o.type === 'beam' && o.state === 'on') ? SKYLIGHT_DARK : 1;
       for (let sy = 0; sy < FACE_SIZE; sy++) {
         for (let sx = 0; sx < FACE_SIZE; sx++) {
           const d = Math.hypot(sx - at.sx, sy - at.sy);
-          const dark = Phaser.Math.Clamp((d - LIGHT_NEAR) / (LIGHT_FAR - LIGHT_NEAR), 0, 1) * DARK_MAX;
+          const dark = Phaser.Math.Clamp((d - LIGHT_NEAR) / (LIGHT_FAR - LIGHT_NEAR), 0, 1) * DARK_MAX * lift;
           if (dark <= 0) continue;
           g.fillStyle = `rgba(46, 34, 47, ${dark})`;
           g.fillRect(sx * T, sy * T, T, T);

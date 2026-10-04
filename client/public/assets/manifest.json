@@ -580,6 +580,91 @@
       "frames": {
         "default": 15
       }
+    },
+    "glyph": {
+      "image": "sprites/objects.png",
+      "frames": {
+        "default": 16,
+        "sun": 16,
+        "moon": 17,
+        "star": 18,
+        "drop": 19,
+        "bolt": 20,
+        "ring": 21,
+        "sun-off": 22,
+        "moon-off": 23,
+        "star-off": 24,
+        "drop-off": 25,
+        "bolt-off": 26,
+        "ring-off": 27
+      }
+    },
+    "tablet": {
+      "image": "sprites/objects.png",
+      "frames": {
+        "default": 28,
+        "off": 28,
+        "sun": 29,
+        "moon": 30,
+        "star": 31,
+        "drop": 32,
+        "bolt": 33,
+        "ring": 34,
+        "done": 35
+      }
+    },
+    "lamp": {
+      "image": "sprites/objects.png",
+      "frames": {
+        "default": 36,
+        "off": 36,
+        "on": 37
+      }
+    },
+    "skylight": {
+      "image": "sprites/objects.png",
+      "frames": {
+        "default": 38,
+        "off": 38,
+        "on": 39
+      }
+    },
+    "beam": {
+      "image": "sprites/objects.png",
+      "frames": {
+        "default": 40,
+        "off": 40,
+        "on": 41
+      }
+    },
+    "bridge": {
+      "image": "sprites/objects.png",
+      "frames": {
+        "default": 42,
+        "dark": 42,
+        "lit": 43
+      }
+    },
+    "trail": {
+      "image": "sprites/objects.png",
+      "frames": {
+        "default": 44,
+        "stone": 44,
+        "start": 45,
+        "end": 46
+      }
+    },
+    "step": {
+      "image": "sprites/objects.png",
+      "frames": {
+        "default": 47
+      }
+    },
+    "entry": {
+      "image": "sprites/objects.png",
+      "frames": {
+        "default": 48
+      }
     }
   },
   "items": {
