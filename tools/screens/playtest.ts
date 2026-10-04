@@ -218,7 +218,8 @@ const PUZZLE_SCRIPTS: PuzzleScript[] = [
         const pose = state.players[who].pose;
         const key = Object.entries(MOVE_OF).find(([, m]) => ((p) => p.face === 6 && p.x === x && p.y === y)(stepPose(pose, m[0], m[1]).pose))?.[0];
         if (!key) throw new Error(`${who} at ${pose.x},${pose.y} (face ${pose.face}) is not next to face 6 ${x},${y}`);
-        return [{ who, keys: key }];
+        // a step over the edge plays the face transition: keys pressed during it are buffered, so wait it out
+        return pose.face === 6 ? [{ who, keys: key }] : [{ who, keys: key }, { wait: 700 }];
       },
     });
     const reset: PuzzleStep[] = [{ who: 'out', goto: { object: ['out', 6, 'reset'] } }, { who: 'out', keys: 'e' }];
