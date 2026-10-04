@@ -137,8 +137,11 @@ export class SheetArt implements ArtProvider {
       const now = performance.now();
       if (last.step !== step) this.lastStep[side] = { step, at: now };
       const walking = now - this.lastStep[side].at < WALK_HOLD_MS && last.step !== -1;
-      const list = playerFrames(entry, facing, walking);
-      const index = list[(walking ? step : Math.floor(now / TIME.idleFrame)) % list.length];
+      // Hold the first frame of the walk animation when stopped in a non-down direction,
+      // else use the idle animation (which cycles if facing down, or is static otherwise).
+      const showWalkPose = !walking && facing !== 'down';
+      const list = playerFrames(entry, facing, showWalkPose ? true : walking);
+      const index = showWalkPose ? 0 : (walking ? step : Math.floor(now / TIME.idleFrame)) % list.length;
       const key = index === undefined ? null : this.frame(entry.image, index);
       if (key) return key;
     }
