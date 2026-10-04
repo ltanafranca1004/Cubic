@@ -107,4 +107,4 @@ Other commands: `npm test`, `npm run typecheck`, `npm run lint`, `npm run build`
 - Team Turtles, StormHacks 2026.
 - Music by Kevin MacLeod ([incompetech.com](https://incompetech.com)), licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Details in [CREDITS.md](CREDITS.md).
 - AI voices by [ElevenLabs](https://elevenlabs.io).
-- Turtle sprites by our team.
+- Sprites created by our team.
