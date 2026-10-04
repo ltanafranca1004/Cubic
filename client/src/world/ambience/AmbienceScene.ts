@@ -4,8 +4,9 @@ import { asset } from '../../style/assets';
 import { settings } from '../../style/settings';
 import { C, FACE_STYLE, hex } from '../../style/tokens';
 import { decorSpots, dressed, dripPoints, wadeAt } from '../biomes/decor';
-import { propOnScreen, shownTick } from '../biomes/dress';
-import { PROPS, PROP_COLS, PROP_SHEET, PROP_VEIL, PROP_W } from '../biomes/sheet';
+import { fadingProps, tallProps } from '../biomes/depth';
+import { shownTick } from '../biomes/dress';
+import { PROPS, PROP_COLS, PROP_SHEET, PROP_W } from '../biomes/sheet';
 import { FX, FX_CELL, FX_CLOUD, FX_SHEET } from './frames';
 import { AmbienceLoops, dripSound, stepSound } from './loops';
 import { Budget, LAND_TILES, besideSolid, effectCount, faceKey, facePlan, fleeVector, lightAt, pickTiles, shouldFlee, type EffectId, type FacePlan, type Motion, type Surface, type Tile } from './plan';
@@ -26,7 +27,6 @@ const SHEET = 'fx';
 const CLOUD = 'fx-cloud';
 /** The biome props, cut into tile-sized frames: a cell's upper half, then its lower half one row down. */
 const BIOME = 'biome-props';
-const VEIL = 'biome-veil';
 const upperHalf = (cell: number) => Math.floor(cell / PROP_COLS) * 2 * PROP_COLS + (cell % PROP_COLS);
 const lowerHalf = (cell: number) => upperHalf(cell) + PROP_COLS;
 /** Hidden for this long after walking over an edge (the cube turn), then faded back in. */
@@ -111,7 +111,6 @@ export class AmbienceScene extends Phaser.Scene {
     this.load.spritesheet(SHEET, asset(FX_SHEET), { frameWidth: FX_CELL, frameHeight: FX_CELL });
     this.load.image(CLOUD, asset(FX_CLOUD));
     this.load.spritesheet(BIOME, asset(PROP_SHEET), { frameWidth: PROP_W, frameHeight: T });
-    this.load.spritesheet(VEIL, asset(PROP_VEIL), { frameWidth: PROP_W, frameHeight: T });
   }
 
   create(): void {
@@ -974,21 +973,15 @@ export class AmbienceScene extends Phaser.Scene {
   // ----- the biome layer -----
 
   /**
-   * A tree's crown hangs over the tile behind it. The crown is part of the painted face,
-   * so the character (a sprite on top of the face) would walk over it: this draws every
-   * other pixel of it once more, over the character, while they stand behind a tall prop.
-   * They are behind the leaves and still easy to find.
+   * A tall prop in front of the player is drawn over them, faded. The game view does the
+   * drawing (game/GameScene.ts, by the rule in ../biomes/depth.ts), because the sort has to
+   * sit between the character and the face. This layer only reports it (the dev hook).
    */
   private canopy(face: Face, up: Vec): void {
-    // half strength: a green turtle behind a green crown has to stay easy to see
-    const img = this.add.image(0, 0, VEIL, 0).setOrigin(0, 0).setAlpha(0.5).setVisible(false);
-    face.root.add(img);
+    const props = tallProps(face.side, face.face, up);
     face.tickers.push(() => {
       const { sx, sy } = this.player;
-      const p = propOnScreen(face.face, up, sx, sy + 1, shownTick(), face.motion.reduceMotion);
-      img.setVisible(!!p?.tall);
-      face.overPlayer.canopy = !!p?.tall;
-      if (p?.tall) img.setFrame(upperHalf(p.cell)).setPosition(sx * T, sy * T);
+      face.overPlayer.canopy = fadingProps({ sx, sy, carrying: !!this.state?.players[face.side].carrying }, props).length > 0;
     });
   }
 

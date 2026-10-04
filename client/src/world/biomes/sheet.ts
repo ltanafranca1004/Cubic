@@ -4,11 +4,6 @@
 
 /** Props: trees, cacti, the snowman, tall grass... One cell is one tile wide and two high. */
 export const PROP_SHEET = 'sprites/biomes.png';
-/**
- * The same sheet with every other pixel left out. A crown drawn over the player from this
- * one lets them show through the leaves instead of vanishing behind the tree.
- */
-export const PROP_VEIL = 'sprites/biomes-veil.png';
 export const PROP_W = 16;
 /** The lower half of a cell sits on the prop's tile; the upper half overhangs the tile above. */
 export const PROP_H = 32;

@@ -379,7 +379,8 @@ async function gamepad(browser: Browser): Promise<void> {
     await set([12]);
     await set([]);
   }
-  // a 150 ms hold can reach the key repeat (130 ms), so one press is one or two steps
+  // a 150 ms hold stays under the key repeat (STEP_MS in shared/src/pace.ts, 173 ms at the default pace): one press is one step,
+  // or two if the pace is ever tuned back under 150 ms
   await expect('d-pad up walks up', async () => (await pose(page, 'out')).y < p0.y);
   await set([], [0, 1]);
   await set([]);

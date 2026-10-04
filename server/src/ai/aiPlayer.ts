@@ -1,4 +1,5 @@
 import {
+  AI_STEP_MS,
   CHAT_MAX_LEN,
   PUZZLE_SCRIPTS,
   decide,
@@ -63,7 +64,7 @@ export interface AiOptions {
   log?: (line: string) => void;
 }
 
-const STEP_MS = 200;
+const STEP_MS = AI_STEP_MS; // the walking pace, shared/src/pace.ts (267 ms at the default)
 const MIN_THINK_MS = 6000;
 const TIMEOUT_MS = 3000;
 const BACKOFF_MS = 6000;

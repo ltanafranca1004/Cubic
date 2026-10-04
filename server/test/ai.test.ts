@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { after, test, type TestContext } from 'node:test';
-import { CORE_LINES, FACES, PUZZLE_SCRIPTS, defaultEnv, devSolve, devTeleport, faceDistance, lineKeys, visibleObjects, type FaceId, type PuzzleScript, type Say, type Side } from '@cubic/shared';
+import { AI_STEP_MS, CORE_LINES, FACES, PUZZLE_SCRIPTS, defaultEnv, devSolve, devTeleport, faceDistance, lineKeys, visibleObjects, type FaceId, type PuzzleScript, type Say, type Side } from '@cubic/shared';
 import { HUMAN_SCRIPTS, SimHuman, type HumanOptions } from '../../shared/test/partnerSim';
 import { AiPlayer, LINE_GAP_MS, LINE_MS_PER_CHAR, STALE_MS, lineHoldMs, parseReply, type AiOptions } from '../src/ai/aiPlayer';
 import { Budget, GEMINI_PAUSE_MS } from '../src/ai/budget';
@@ -10,7 +10,7 @@ import { allScriptedLines, bankedScriptLines, hasLine, lineText } from '../src/a
 import { LIMITS, Rooms, type Room } from '../src/rooms';
 
 // The AI partner on a real Room. The clock is fake and the timings are the real ones:
-// a step every 200 ms, one Gemini call per 6 s, a 3 s deadline. Gemini is only asked on
+// a step every AI_STEP_MS, one Gemini call per 6 s, a 3 s deadline. Gemini is only asked on
 // events (here: a free-form chat line, a solve); budget.test.ts has the caps and the rest.
 //
 // Everything here except the two whole-game tests is independent of the puzzles: the bot is
@@ -114,11 +114,12 @@ test('no Gemini key: it plays from the script, silently: it greets, finds the hu
     const { room, ai, said, bot } = setup(human, null, { humanOn: FAR });
     assert.deepEqual(room.info().seats[other(human)], { taken: true, connected: true, isAI: true });
     await pass(1000);
-    assert.ok(bot().steps >= 4 && bot().steps <= 5, `${bot().steps} steps in 1 s`); // one step per 200 ms, no teleport
+    const want = Math.floor(1000 / AI_STEP_MS); // one step per AI_STEP_MS (the walking pace), no teleport
+    assert.ok(bot().steps >= want && bot().steps <= want + 1, `${bot().steps} steps in 1 s`);
     assert.deepEqual(said(), [L(`hello.${other(human)}`)]);
     await pass(1000);
     assert.deepEqual(said(), [L(`hello.${other(human)}`)]); // one line at a time: the greeting is still being said
-    await pass(lineHoldMs(L(`hello.${other(human)}`)) - 1500);
+    await pass(lineHoldMs(L(`hello.${other(human)}`)) - 1500 + AI_STEP_MS); // lines go out on the AI's own tick
     assert.deepEqual(said(), [L(`hello.${other(human)}`), L('follow.far')]); // the next one when it has had its time
     await pass(30_000);
     assert.equal(bot().pose.face, FAR);

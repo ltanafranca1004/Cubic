@@ -5,7 +5,7 @@
 // Two sheets: sprites/biomes.png (cells one tile wide and two high, in the order of
 // client/src/world/biomes/sheet.ts) and tiles/water.png. Our own art, drawn here.
 import { C } from '../../client/src/style/tokens';
-import { POKE_PX, PROP_COLS, PROP_H, PROP_LIST, PROP_SHEET, PROP_VEIL, PROP_W, PROPS, SHORE, TALL, WATER_CELL, WATER_FRAMES, WATER_MASKS, WATER_SHEET, waterRow, type PropName } from '../../client/src/world/biomes/sheet';
+import { POKE_PX, PROP_COLS, PROP_H, PROP_LIST, PROP_SHEET, PROP_W, PROPS, SHORE, TALL, WATER_CELL, WATER_FRAMES, WATER_MASKS, WATER_SHEET, waterRow, type PropName } from '../../client/src/world/biomes/sheet';
 import { Img } from './img';
 
 const W = PROP_W;
@@ -710,7 +710,7 @@ function waterCell(spec: WaterSpec, frame: number, mask: number): Img {
 }
 
 export interface BiomeManifest {
-  props: { image: string; veil: string; cellWidth: number; cellHeight: number; columns: number; frames: Record<string, number[]> };
+  props: { image: string; cellWidth: number; cellHeight: number; columns: number; frames: Record<string, number[]> };
   water: { image: string; cell: number; frames: number; masks: number };
 }
 
@@ -729,10 +729,6 @@ export function buildBiomes(dir: string): BiomeManifest {
     });
   }
   sheet.save(`${dir}/${PROP_SHEET}`);
-  sheet
-    .clone()
-    .map((c, x, y) => ((x + y) % 2 ? null : c))
-    .save(`${dir}/${PROP_VEIL}`);
 
   const water = new Img(WATER_MASKS * WATER_CELL, 6 * WATER_FRAMES * WATER_CELL);
   for (const face of [1, 2, 3, 4, 5, 6] as const)
@@ -741,7 +737,7 @@ export function buildBiomes(dir: string): BiomeManifest {
   water.save(`${dir}/${WATER_SHEET}`);
 
   return {
-    props: { image: PROP_SHEET, veil: PROP_VEIL, cellWidth: W, cellHeight: H, columns: PROP_COLS, frames: PROPS },
+    props: { image: PROP_SHEET, cellWidth: W, cellHeight: H, columns: PROP_COLS, frames: PROPS },
     water: { image: WATER_SHEET, cell: WATER_CELL, frames: WATER_FRAMES, masks: WATER_MASKS },
   };
 }

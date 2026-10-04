@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { FACES, FACE_SIZE, SIDES, TILE_PX, canonToScreen, eq, screenToCanon, stepPose, upsOn, type Pose } from '@cubic/shared';
+import { FACES, FACE_SIZE, SIDES, STEP_MS, TILE_PX, canonToScreen, eq, screenToCanon, stepPose, upsOn, type Pose } from '@cubic/shared';
 import {
   FADE_MS,
   FLUSH_BURST,
@@ -311,9 +311,9 @@ test('input buffer: the flush stays inside the server budget, even with a key he
       server.take(now);
       sent++;
     }
-    // GameScene: the held key repeats (every 130 ms) only once the buffer is empty.
+    // GameScene: the held key repeats (every STEP_MS) only once the buffer is empty.
     if (!buffer.length && now >= nextRepeat) {
-      nextRepeat = now + 130;
+      nextRepeat = now + STEP_MS;
       server.take(now);
       sent++;
     }
