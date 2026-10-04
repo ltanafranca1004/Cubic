@@ -83,8 +83,10 @@ export interface PuzzleCtx extends PuzzleInitCtx {
    * e.g. `ctx.rand(this.face, i) % 10` for the i-th digit.
    */
   rand(...keys: number[]): number;
-  /** Is the puzzle on `face` solved (latched)? For chains: face 4 waits for face 6. */
+  /** Is the puzzle on `face` solved (latched)? For chains: face 6 waits for face 5. */
   faceSolved(face: FaceId): boolean;
+  /** Can `side` NOT stand on this tile right now? Terrain and every puzzle's blockers (isBlocked in game.ts). */
+  blocked(side: Side, tile: TileRef): boolean;
   /** Add a carryable item lying on a tile. Throws if the id is already in use. */
   spawnItem(item: ItemSpawn): void;
   /**
@@ -105,6 +107,13 @@ export interface PuzzleModule<S = unknown> {
 
   /** Initial state. Must be JSON-serializable (no classes, Maps, Sets, functions). */
   init(ctx: PuzzleInitCtx): S;
+
+  /**
+   * Once, when the game is created, after every puzzle's init: lay out what the puzzle needs
+   * lying about from the start (ctx.spawnItem). Same seed = same result, on the server and
+   * in every test. Not called again on a restart of the same state: a new game is a new state.
+   */
+  onStart?(s: S, ctx: PuzzleCtx): void;
 
   /** Extra blocking on top of solid terrain: return true to stop `side` entering `tile`. */
   isBlocked?(s: S, ctx: PuzzleCtx, side: Side, tile: TileRef): boolean;

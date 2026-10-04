@@ -1,5 +1,5 @@
 import { screenToCanon, stepPose } from '../cube';
-import { defaultEnv, itemsOn, visibleObjects, type GameEnv } from '../game';
+import { defaultEnv, facedTile, itemsOn, visibleObjects, type GameEnv } from '../game';
 import { FACE_SIZE, type FaceId, type GameState, type Pose, type Side } from '../types';
 import { findPath, type Move } from './path';
 
@@ -17,8 +17,13 @@ export type BotAction =
   | { type: 'move'; dir: 'up' | 'down' | 'left' | 'right'; steps?: number }
   /** Pick up the item you are standing on. */
   | { type: 'pick_up' }
-  /** Put down the item you carry (on a pot/target it gets placed). */
+  /** Put down the item you carry, on the tile you stand on (on a target you can stand on it gets placed). */
   | { type: 'drop' }
+  /**
+   * Put the item you carry INTO the thing on that tile (your own screen coords): a pot, which
+   * nobody can stand on. Walk to a tile next to it, turn to face it (a step into it), press E.
+   */
+  | { type: 'place'; col: number; row: number }
   /**
    * Press E with empty hands (a key, a button, a flip tile, RESET): the puzzle's onUse hook.
    * With a tile (col, row: your own screen coords) or an object type (the nearest one you
@@ -30,7 +35,7 @@ export type BotAction =
   /** Stay where you are. */
   | { type: 'wait' };
 
-export const BOT_ACTION_TYPES = ['goto', 'go_face', 'step_on', 'move', 'pick_up', 'drop', 'use', 'wait'] as const;
+export const BOT_ACTION_TYPES = ['goto', 'go_face', 'step_on', 'move', 'pick_up', 'drop', 'place', 'use', 'wait'] as const;
 
 /** One thing the body does next: a step, or E. */
 export type BotStep = Move | 'interact';
@@ -50,6 +55,11 @@ export function parseAction(raw: unknown): BotAction | null {
       const col = int(args.col);
       const row = int(args.row);
       return col !== null && row !== null && col >= 0 && col < FACE_SIZE && row >= 0 && row < FACE_SIZE ? { type: 'goto', col, row } : null;
+    }
+    case 'place': {
+      const col = int(args.col);
+      const row = int(args.row);
+      return col !== null && row !== null && col >= 0 && col < FACE_SIZE && row >= 0 && row < FACE_SIZE ? { type: 'place', col, row } : null;
     }
     case 'go_face': {
       const face = int(args.face);
@@ -118,6 +128,21 @@ export function planAction(
     case 'drop':
       if (!state.players[side].carrying) return { error: 'not carrying anything' };
       return { steps: ['interact'] };
+    case 'place': {
+      if (!state.players[side].carrying) return { error: 'not carrying anything' };
+      const [x, y] = screenToCanon(side, pose.face, pose.up, action.col, action.row);
+      /** The step from a pose that runs into that tile, without leaving the face. */
+      const into = (p: Pose) =>
+        Object.values(DIRS).find(([dx, dy]) => {
+          const to = stepPose(p, dx, dy);
+          return !to.crossed && to.pose.face === pose.face && to.pose.x === x && to.pose.y === y;
+        });
+      const there = walk((p) => p.face === pose.face && !!into(p), 'no way to stand next to that tile right now');
+      if (!there.steps) return { error: there.error };
+      if (there.steps.length) return { steps: there.steps };
+      const ahead = facedTile(state, side);
+      return { steps: ahead && ahead.x === x && ahead.y === y ? ['interact'] : [into(pose)!, 'interact'] };
+    }
     case 'move': {
       const steps = Array<Move>(action.steps ?? 1).fill(DIRS[action.dir]!);
       // A straight line can run over an edge: follow it, and refuse it at the leash.

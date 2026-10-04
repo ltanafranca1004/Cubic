@@ -360,30 +360,51 @@ test('two clients play a whole game online', async () => {
 
   // ---------- face 4: botanical-mirror ----------
   {
-    // The flower face 6 left outside: the outside player fetches it (unless it is in hand already).
-    const flower = () => Object.values(a.last.state.items).find((i) => i.side === 'out' && i.kind.startsWith('flower-'))!;
-    assert.ok(flower(), 'face 6 is solved but there is no flower outside');
-    if (flower().carriedBy !== 'out') {
-      await a.walkTo({ face: flower().face, x: flower().x, y: flower().y });
-      await a.interact();
-    }
-    assert.equal(a.last.state.players.out.carrying, flower().id);
-    // Outside sees five empty pots and no colours; inside sees the five flowers and names the pot.
-    const colour = flower().kind.replace('flower-', '');
+    // Five flowers outside: the crate's (face 6) and the four that lay about from the start. One walk each.
+    const loose = () => Object.values(a.last.state.items).filter((i) => i.side === 'out' && i.kind.startsWith('flower-') && !i.placedOn);
+    assert.equal(loose().length, 5, 'face 6 is solved: five flowers are outside');
+    // Outside sees five empty pots and no colours; inside sees the five flowers and names the pots.
     assert.ok(seenOnFace4(a.last.state, 'out', 4).every((o) => o.type === 'f4-pot' && o.state === 'empty'));
     const pots = seenOnFace4(bNow().last.state, 'in', 4).filter((o) => o.type === 'f4-flowerpot');
     assert.equal(new Set(pots.map((o) => o.state)).size, 5);
-    // A wrong pot first: a strike for both, and the flower is back in the outside hands.
-    const wrong = pots.find((o) => o.state !== colour)!;
-    const strikes = a.last.state.strikes;
-    await a.walkTo({ face: 4, x: wrong.x, y: wrong.y });
-    await a.interact();
-    await bNow().until(() => bNow().last.state.strikes === strikes + 1, 'the strike reaches the inside player');
-    assert.deepEqual([a.last.state.strikes, a.last.state.players.out.carrying, a.last.state.solved.includes(4)], [strikes + 1, flower().id, false]);
-    // The pot the inside player names.
-    const right = pots.find((o) => o.state === colour)!;
-    await a.walkTo({ face: 4, x: right.x, y: right.y });
-    await a.interact();
+    /** A pot is solid: walk to a tile next to it, then step into it (a bump) to face it. */
+    const faceTo = async (pot: { x: number; y: number }) => {
+      const into = (p: typeof a.pose) => MOVES.find(([dx, dy]) => ((to) => !to.crossed && to.pose.face === 4 && to.pose.x === pot.x && to.pose.y === pot.y)(stepPose(p, dx, dy)));
+      for (let guard = 0; guard < 200; guard++) {
+        const path = findPath(a.last.state, 'out', (p) => !!into(p), defaultEnv);
+        assert.ok(path, `no way to stand next to the pot at ${pot.x},${pot.y}`);
+        if (path.length === 0) break;
+        await a.move(path[0]![0], path[0]![1]);
+      }
+      const bump = into(a.pose)!;
+      await a.move(bump[0], bump[1]);
+      assert.notDeepEqual([a.pose.x, a.pose.y], [pot.x, pot.y], 'nobody stands on a pot');
+    };
+    const ids = loose().sort((x, y) => Number(y.carriedBy === 'out') - Number(x.carriedBy === 'out')).map((i) => i.id);
+    for (const [n, id] of ids.entries()) {
+      const flower = () => a.last.state.items[id]!;
+      if (flower().carriedBy !== 'out') {
+        await a.walkTo({ face: flower().face, x: flower().x, y: flower().y });
+        await a.interact();
+      }
+      assert.equal(a.last.state.players.out.carrying, id);
+      const colour = flower().kind.replace('flower-', '');
+      if (n === 0) {
+        // A wrong pot first: a strike for both, and the flower is back in the outside hands.
+        const wrong = pots.find((o) => o.state !== colour)!;
+        const strikes = a.last.state.strikes;
+        await faceTo(wrong);
+        await a.interact();
+        await bNow().until(() => bNow().last.state.strikes === strikes + 1, 'the strike reaches the inside player');
+        assert.deepEqual([a.last.state.strikes, a.last.state.players.out.carrying, a.last.state.solved.includes(4)], [strikes + 1, id, false]);
+      }
+      // The pot the inside player names: the flower stays in it.
+      const right = pots.find((o) => o.state === colour)!;
+      await faceTo(right);
+      await a.interact();
+      assert.deepEqual([a.last.state.players.out.carrying, flower().x, flower().y, !!flower().placedOn], [null, right.x, right.y, true]);
+      assert.equal(a.last.state.solved.includes(4), n === ids.length - 1);
+    }
   }
   await solved(4);
   // ---------- end face 4 ----------

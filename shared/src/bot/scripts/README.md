@@ -30,7 +30,7 @@ Nothing in the core, the server or the client changes.
 interface PuzzleScript<M> {
   id: string;                 // the puzzle module's id, e.g. "hidden-code"
   lines: readonly string[];   // every line key it can say, each starting with "<id>."
-  init(): M;                  // fresh memory (JSON). Reset each time the bot enters the face.
+  init(prev?: M): M;          // fresh memory (JSON). Reset each time the bot enters the face (prev = the old one).
   hazards?(o: Observation): Cell[];        // tiles no walk may enter while unsolved
   play(ctx: ScriptCtx<M>): Play | null;    // on the face, unsolved, human on the same wall
   errand?(ctx: ScriptCtx<M>): Play | null; // work away from the face (carry something)

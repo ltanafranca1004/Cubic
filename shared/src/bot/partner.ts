@@ -137,7 +137,7 @@ export function decide(mind: Mind, o: Observation, heard: readonly Heard[], now:
   const newlySolved = o.solvedFaces.filter((f) => !mind.solved.includes(f));
   if (mind.face !== o.face) {
     // A new face: its puzzle starts over in my head, and the lines about a place may be said again.
-    if (here) mind.scripts[here.id] = here.init();
+    if (here) mind.scripts[here.id] = here.init(mind.scripts[here.id]);
     for (const id of Object.keys(mind.said)) {
       const key = id.split('#')[0]!;
       if (key === 'unknown' || here?.lines.includes(key)) delete mind.said[id];

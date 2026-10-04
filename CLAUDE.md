@@ -93,8 +93,8 @@ Every owned folder has a README that says exactly what goes there.
 - **Types:** `shared/src/types.ts`. Changing them affects everyone: ask Luis.
 - **Puzzles:** `PuzzleModule` in `shared/src/puzzles/types.ts`: `init`, `isBlocked(side,
   tile)`, `onEnter` / `onLeave` (tile), `onUse`, `onPush`, `onItem`, `onTick`, `isSolved`,
-  `visible(side)` (per-side visibility), `objective(side)`, `lines(side)`, `bright`, plus
-  `ctx.emit` for custom events. See "Puzzles" below. Example: `hiddenCode.ts`. Template:
+  `visible(side)` (per-side visibility), `objective(side)`, `lines(side)`, `bright`,
+  `onStart` (lay out items when the game is created), plus `ctx.emit` for custom events. See "Puzzles" below. Example: `hiddenCode.ts`. Template:
   `_template.ts`. Registered in `puzzles/index.ts`.
 - **UI:** `UIHost` / `UIState` / `UIActions` in `client/src/ui/hooks.ts`
   (`onCreateRoom`, `onJoinRoom(code)`, `onPlayWithAI(side)`, ...). Mock data in
@@ -211,11 +211,18 @@ portal and no exit to walk to.
 | 1 Grass / Keypad room | `hidden-code` | reads the 3-digit number laid out in the grass; it only reads right at compass drift 0 | types it on the floor keypad, then ENTER | nothing |
 | 2 Desert / Vault | `equation-safe` | counts the berry bushes, round rocks and hopping birds (1 to 4 each) | types 3 x bushes x 2 x birds x rocks, then ENTER; the safe opens | the battery (inside), for face 5 |
 | 3 Snow / Tile room | `mirrored-glyph` | describes the symbol carved in the snow | flips floor tiles (E) until they match it, mirrored; CLEAR in the corner | nothing |
-| 4 Forest / Greenhouse | `botanical-mirror` | plants the flower in the pot the partner names | sees which of the five pots holds that colour | the last link (needs face 6's flower) |
+| 4 Forest / Greenhouse | `botanical-mirror` | collects the five flowers and plants each in the pot the partner names | sees which of the five pots holds each colour | the last link (needs all five flowers, one from face 6) |
 | 5 Rooftop / Laser room | `sequence-laser` | calls the order the seven symbols light up in (E on REPLAY shows it again) | puts the battery in the emitter, presses the symbols in that order | the laser beam on face 6 |
 | 6 Cave / Lava room | `laser-path` | pushes two mirrors so the beam burns the crate on the edge, then calls the beam's route: it is the safe path | stays on the ring until then, walks the tiles behind the beam from the crate's edge tile to the button, E | the flower (outside), for face 4 |
 
 - A wrong code, press, pot or lava tile is a strike. Face 3 has none.
+- **Face 4: five flowers, five pots.** Four flowers lie outside from the start, one each on
+  faces 1, 2, 3 and 5, on a `flower-spot` (legend `f`) the seed picks (`onStart`); the fifth
+  comes out of face 6's crate when it burns (`chain.ts`: `flowerColour`, `startFlowers`).
+  The pots are SOLID on both sides: plant from the tile next to a pot, FACING it
+  (`facedTile`: the last step or bump, `Player.facing`), with E or Q. Right pot: the flower
+  stays for good. Wrong pot: a strike, the flower is back in the hands. All five solve it.
+  The pots never wait for face 6 (they used to, which handed the flower back silently).
 - **Face 6's lava is hot (deadly) from the first second of the game until face 6 is
   solved.** A step in: back on the ring with a strike. Every inside walk across face 6
   keeps to the ring: the bot (`hazardAvoid`), the test harness (`t.go`), the playtest
@@ -285,13 +292,16 @@ When you move a map tile, run `npm test`: the biome test tells you what it now c
   carried item travels across face edges with the player and stays where it is dropped.
 - Map object `type: "target"`, `name` = id, prop `accepts` = item id or kind (empty =
   anything). Dropping an accepted item on it "places" it: the item stays there for good.
+  A target its puzzle blocks (face 4's pots) is filled from the tile next to it, facing it:
+  the item lands on the target's tile. A target that holds an item takes no second one.
 - The server owns item state (`GameState.items`). Puzzles react through
   `onItem(s, ctx, ev)` with `ev.kind` = `picked` | `dropped` | `placed`; it fires for every
   face. Game events: `pickup`, `drop`, `place`.
 - A puzzle can also make, hand back or delete an item: `ctx.spawnItem`, `ctx.giveItem`,
-  `ctx.removeItem`. The game's two items are made that way: the battery (inside, face 2 to
-  the emitter on face 5) and the flower (outside, `flower-<colour>`, face 6 to a pot on
-  face 4). No map has an item of its own.
+  `ctx.removeItem`. The game's items are made that way: the battery (inside, face 2 to
+  the emitter on face 5) and the five flowers (outside, kind `flower-<colour>`: four from
+  face 4's `onStart`, one from face 6's crate; each to its pot on face 4). No map has an
+  item of its own.
 - Items live on one side: the outside player cannot pick up an inside item.
 
 ## Proximity voice

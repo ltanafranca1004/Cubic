@@ -32,7 +32,8 @@ in `default.ts`.
 | `U` | `target` an item can be dropped on, takes anything (on no map today) | object |
 | `0` to `9`, `e` | face 1 inside: a `key` of the floor keypad, named `0` to `9` and `enter` | object |
 | `d` | face 1 inside: a `display` cell (three) | object |
-| `p` | face 4 outside: a pot, a `target` that takes anything (five) | object |
+| `p` | face 4 outside: a pot, a `target` that takes anything (five). Solid on both sides: never on the ring, and with a free tile next to it | object |
+| `f` | faces 1, 2, 3, 5 outside: a `flower-spot`, where one of face 4's loose flowers may lie (the seed picks one per face). Never drawn. Keep it on free floor, off the ring, off decor, away from trees | object |
 | `u` | face 5, both sides, same tiles: `f5-symbol` (seven; the i-th in map order is the i-th symbol) | object |
 | `v` | face 5 outside: `f5-replay` | object |
 | `w` | face 5 inside: the emitter, a `target` named `f5-emitter` | object |

@@ -4,6 +4,7 @@ import { SPAWN, isSolidTile, loadWorld, objectsOn } from './maps';
 import type { MapObject, World } from './maps/types';
 import { PUZZLES } from './puzzles';
 import type { ItemEvent, PuzzleCtx, PuzzleInitCtx, PuzzleLine, PuzzleModule, VisibleObject } from './puzzles/types';
+import { FLOWER_SPOT } from './puzzles/chain';
 import { mix } from './puzzles/util';
 import { FACES, SIDES, type FaceId, type GameEvent, type GameState, type InteractOnly, type Item, type Side, type TileRef } from './types';
 
@@ -49,7 +50,10 @@ export function createGame(now: number, env: GameEnv = defaultEnv, seed: number 
   const init: PuzzleInitCtx = { world: env.world, seed, objects: (side: Side, face: FaceId, type?: string) => objectsOn(env.world, side, face, type) };
   const puzzles: Record<string, unknown> = {};
   for (const p of env.puzzles) puzzles[p.id] = p.init(init);
-  return { players: { out: player('out'), in: player('in') }, puzzles, items, solved: [], strikes: 0, seed, startedAt: now, wonAt: null };
+  const state: GameState = { players: { out: player('out'), in: player('in') }, puzzles, items, solved: [], strikes: 0, seed, startedAt: now, wonAt: null };
+  // what a puzzle lays out at the start (the loose flowers of face 4), with every puzzle's blockers in place
+  for (const p of env.puzzles) p.onStart?.(state.puzzles[p.id], makeCtx(state, env, p, now, []));
+  return state;
 }
 
 /** The game's seed as a plain number. A hand-built state without one reads as 0. */
@@ -82,6 +86,7 @@ function makeCtx(state: GameState, env: GameEnv, puzzle: AnyPuzzle, now: number,
     },
     rand: (...keys) => mix(seedOf(state), ...keys),
     faceSolved: (face) => state.solved.includes(face),
+    blocked: (side, tile) => isBlocked(state, side, tile, env, now),
     spawnItem: ({ id, kind, side, face, x, y, props }) => {
       if (state.items[id]) throw new Error(`duplicate item id "${id}"`);
       state.items[id] = { id, kind, side, face, x, y, carriedBy: null, placedOn: null, props: { ...props } };
@@ -151,6 +156,7 @@ export function applyMove(state: GameState, side: Side, dx: number, dy: number, 
   const events: GameEvent[] = [];
   const player = state.players[side];
   const from = player.pose;
+  player.facing = [dx, dy];
   const { pose: to, crossed } = stepPose(from, dx, dy);
   const fromTile: TileRef = { face: from.face, x: from.x, y: from.y };
   const toTile: TileRef = { face: to.face, x: to.x, y: to.y };
@@ -180,6 +186,17 @@ export function applyMove(state: GameState, side: Side, dx: number, dy: number, 
   return events;
 }
 
+/**
+ * The tile `side` faces: one step on in the direction of their last step or bump (before the
+ * first one: the way the sprite looks). Null when that step would leave the face.
+ */
+export function facedTile(state: GameState, side: Side): TileRef | null {
+  const player = state.players[side];
+  const [dx, dy] = player.facing ?? [player.pose.dir, 0];
+  const { pose, crossed } = stepPose(player.pose, dx, dy);
+  return crossed ? null : { face: pose.face, x: pose.x, y: pose.y };
+}
+
 const accepts = (target: MapObject, item: Item) => {
   const want = target.props.accepts;
   return want === undefined || want === '' || want === item.id || want === item.kind;
@@ -188,6 +205,9 @@ const accepts = (target: MapObject, item: Item) => {
 /**
  * E key, in this order: drop the carried item on this tile; else pick up the item lying on
  * it; else "use" the tile (the onUse hook of the puzzle on this face, with a `use` event).
+ * A target nobody can stand on (a pot: its puzzle blocks the tile) is filled from the tile
+ * next to it, FACING it (facedTile): the item is placed on the target's tile, not dropped
+ * underfoot. A target that already holds an item takes no second one (a bump).
  * `only` narrows it: 'drop' (Q key) never picks up, 'pick' never drops, and neither uses.
  */
 export function applyInteract(state: GameState, side: Side, now: number = Date.now(), env: GameEnv = defaultEnv, only?: InteractOnly): GameEvent[] {
@@ -205,14 +225,19 @@ export function applyInteract(state: GameState, side: Side, now: number = Date.n
 
   if (player.carrying) {
     const item = state.items[player.carrying]!;
-    if (lying) return [{ type: 'bump', side }]; // tile already holds an item
-    Object.assign(item, { side, face, x, y, carriedBy: null });
+    const targets = objectsOn(env.world, side, face, 'target');
+    const ahead = facedTile(state, side);
+    const reach = ahead && isBlocked(state, side, ahead, env, now) ? targets.find((t) => t.x === ahead.x && t.y === ahead.y && accepts(t, item)) : undefined;
+    const spot: TileRef = reach ? { face, x: reach.x, y: reach.y } : tile;
+    const taken = reach ? Object.values(state.items).some((i) => !i.carriedBy && i.side === side && i.face === face && i.x === spot.x && i.y === spot.y) : !!lying;
+    if (taken) return [{ type: 'bump', side }]; // tile already holds an item
+    Object.assign(item, { side, face, x: spot.x, y: spot.y, carriedBy: null });
     player.carrying = null;
-    const target = objectsOn(env.world, side, face, 'target').find((t) => t.x === x && t.y === y);
+    const target = reach ?? targets.find((t) => t.x === x && t.y === y);
     if (target && accepts(target, item)) {
       item.placedOn = objectId(target, side, face);
       events.push({ type: 'place', side, item: item.id, target: item.placedOn });
-      fire({ kind: 'placed', side, item, tile, target });
+      fire({ kind: 'placed', side, item, tile: spot, target });
     } else {
       events.push({ type: 'drop', side, item: item.id });
       fire({ kind: 'dropped', side, item, tile });
@@ -252,7 +277,7 @@ export function visibleObjects(state: GameState, side: Side, face: FaceId, env: 
   const byTile = new Map<string, VisibleObject>();
   const open = portalOpen(state, env);
   for (const o of objectsOn(env.world, side, face)) {
-    if (o.type === 'item') continue;
+    if (o.type === 'item' || o.type === FLOWER_SPOT) continue; // not things to see: an item is in state.items, a spot is only where one may lie
     const state_ = o.type === 'portal' ? (open ? 'open' : 'closed') : undefined;
     byTile.set(`${o.x},${o.y}`, { type: o.type, x: o.x, y: o.y, ...(state_ ? { state: state_ } : {}) });
   }

@@ -48,6 +48,12 @@ export interface Player {
   steps: number;
   /** Id of the item being carried, or null. One item at a time. */
   carrying: string | null;
+  /**
+   * The last step this player tried, in THEIR screen space (dx, dy), whether it moved them
+   * or bumped. It is the way they face: a pot is filled from the tile next to it, facing it.
+   * Not set until the first step; read it with facedTile(state, side) (shared/src/game.ts).
+   */
+  facing?: readonly [number, number];
 }
 
 /**
