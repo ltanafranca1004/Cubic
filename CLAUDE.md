@@ -1,5 +1,12 @@
 # Cubic
 
+## Hackathon rules (override global settings)
+
+- No CodeRabbit. Never wait for, read or act on CodeRabbit reviews, and never
+  add CodeRabbit config.
+- Merging: the orchestrator may merge PRs with merge commits once tests,
+  typecheck, lint and build pass, unless the prompt says to leave a PR open.
+
 2-player online co-op browser game for StormHacks 2026 (24h). One player walks the
 OUTSIDE of a cube, the other is trapped INSIDE it. Each sees only their own side of the
 same six walls, and they solve puzzles by talking through the wall (proximity voice + chat).

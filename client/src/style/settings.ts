@@ -13,10 +13,33 @@ export interface Settings {
   /** How loud your partner is, 0 to 1. */
   voiceVolume: number;
   micMuted: boolean;
+  /** Swap animated transitions and turns for a quick fade or a snap. */
+  reduceMotion: boolean;
+  /** Open mic, or hold V to talk. */
+  micMode: 'open' | 'ptt';
+  textSize: 's' | 'm' | 'l';
+  highContrast: boolean;
+  /** Off = the camera never shakes. */
+  screenShake: boolean;
+  /** Off = no onboarding or context hints. */
+  hints: boolean;
 }
 
 /** The volumes match the AudioManager's own defaults, so nothing jumps when the UI mounts. */
-export const DEFAULT_SETTINGS: Settings = { master: 1, music: 0.6, sfx: 1, voiceOn: true, voiceVolume: 1, micMuted: false };
+export const DEFAULT_SETTINGS: Settings = {
+  master: 1,
+  music: 0.6,
+  sfx: 1,
+  voiceOn: true,
+  voiceVolume: 1,
+  micMuted: false,
+  reduceMotion: false,
+  micMode: 'open',
+  textSize: 'm',
+  highContrast: false,
+  screenShake: true,
+  hints: true,
+};
 
 /** Where the voice settings go: the existing Voice class, through the UI actions. */
 export interface VoiceSink {
