@@ -239,7 +239,8 @@ function mountMobile(cu: HTMLElement, actions: UIActions): Mobile {
 
   // ---------- what the HUD says, kept in sight on a phone ----------
   const pips = $('pips');
-  pips.innerHTML = [1, 2, 3, 4, 5, 6].map((f) => `<i data-face="${f}"></i>`).join('');
+  /** One pip per puzzle, like the HUD column; rebuilt when the list of puzzle faces changes. */
+  let pipFaces = '';
   /** The last chat line already seen (null until the game's first frame), so only a new one from the partner pops up. */
   let seenChat: number | null = null;
 
@@ -265,9 +266,14 @@ function mountMobile(cu: HTMLElement, actions: UIActions): Mobile {
     $('progn').textContent = `${done}/${hud.puzzleTotal}`;
     $('prog').classList.toggle('open', hud.portalOpen);
     $('portal').hidden = !hud.portalOpen;
-    pips.querySelectorAll<HTMLElement>('i').forEach((pip, i) => {
-      pip.classList.toggle('ok', hud.solved.includes((i + 1) as 1));
-      pip.classList.toggle('here', hud.face === i + 1);
+    if (pipFaces !== hud.puzzleFaces.join()) {
+      pipFaces = hud.puzzleFaces.join();
+      pips.innerHTML = hud.puzzleFaces.map((f) => `<i data-face="${f}"></i>`).join('');
+    }
+    pips.querySelectorAll<HTMLElement>('i').forEach((pip) => {
+      const face = Number(pip.dataset.face);
+      pip.classList.toggle('ok', hud.solved.includes(face as 1));
+      pip.classList.toggle('here', hud.face === face);
     });
     $('obj').textContent = hud.objective;
     const carry = $('carry');
