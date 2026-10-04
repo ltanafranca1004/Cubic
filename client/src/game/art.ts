@@ -1,6 +1,6 @@
 import type Phaser from 'phaser';
 import { TILE_PX, type FaceId, type Side, type TileKind, type Vec } from '@cubic/shared';
-import { drawPuzzleItem, drawPuzzleObject } from './puzzleArt';
+import { drawPuzzleItem, drawPuzzleObject, puzzleFrames } from './puzzleArt';
 import type { PropPass } from '../world/biomes/dress';
 import type { Facing } from './turtle';
 
@@ -89,7 +89,7 @@ function terrain(g: G, side: Side, face: FaceId, kind: TileKind, variant: number
 
 function object(g: G, side: Side, type: string, state: string | undefined, frame: number) {
   // the co-op puzzle objects (keypad, buttons, each face's own things): ./puzzleArt
-  if (drawPuzzleObject((x, y, w, h, c) => px(g, x, y, w, h, c), type, state)) return;
+  if (drawPuzzleObject((x, y, w, h, c) => px(g, x, y, w, h, c), type, state, frame)) return;
   switch (type) {
     case 'plate':
       if (side === 'out') {
@@ -209,7 +209,7 @@ export class CodeArt implements ArtProvider {
   }
 
   object(side: Side, type: string, state: string | undefined, frame: number): string {
-    const f = type === 'portal' ? frame % 4 : type === 'crystal' ? frame % 2 : 0;
+    const f = type === 'portal' ? frame % 4 : type === 'crystal' ? frame % 2 : frame % puzzleFrames(type, state);
     return this.make(`o:${side}:${type}:${state ?? ''}:${f}`, (g) => object(g, side, type, state, f));
   }
 
