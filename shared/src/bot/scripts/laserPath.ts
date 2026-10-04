@@ -1,32 +1,36 @@
 import { DIRS, type Dir } from '../talk';
 import { numberWord } from '../vocab';
-import { around, dirOf, same, throughWall, VEC, type Cell } from './grid';
-import { canonDir, onRing, partnerCell, REPEAT_MS, rowColumnIn, runsOf, stepsIn, turnOf } from './kit456';
+import type { Observation } from '../observe';
+import { dirOf, same, throughWall, VEC, type Cell } from './grid';
+import { canonDir, partnerCell, REPEAT_MS, rowColumnIn, runsOf, stepsIn, turnOf } from './kit456';
 import { ASK_MS, canonOf, cellOf, relay, type Tile } from './relayKit';
 import type { Play, PuzzleScript, ScriptCtx } from './types';
 
-// LASER AND INVISIBLE PATH (face 6), both sides.
+// LASER AND LAVA (face 6), both sides.
 //
 // OUTSIDE (mirrors, then relay). The mirrors are this side's own puzzle, so it solves them
 // from what it sees: push "/" along its row into the beam's column (the source's), then
 // push "\" along its column onto the row of "/"; the beam then runs down the column of the
-// crate. Anything else: RESET. When the crate is burnt it presses RESET if a mirror covers
-// a path tile, picks up the flower, and reads the path out.
+// crate, which stands on the edge. Anything else: RESET. When the crate is burnt the
+// mirrors are locked and THE BEAM IS THE PATH: it picks up the flower from the crate's
+// tile and reads the beam out backwards, from that edge tile to the source (the button).
 //
 // THE CONVENTION (both ways). The two players see the room mirrored and maybe turned, and
 // neither sees the other. So directions are always given ON THE WALKER'S OWN SCREEN, and
 // the turn between the screens is agreed with one landmark both can name:
-//   1. The side of the ring the path starts from is named by the face beyond it ("face 4").
+//   1. The side of the ring the path starts on (where the crate stood) is named by the face
+//      beyond it ("face 4").
 //   2. The walker stands on that side and says which way the lava is on their screen
 //      ("right"). The guide sees the same step on their own screen: that fixes the turn.
 //   3. The start tile is given as a row or a column of the walker's screen, counted from
 //      their top / their left, one to twelve: [row, six].
 //   4. Then runs of steps, at most two per line: [step, right, two, then, up, one]; the
 //      last line ends [then, press]. The walker says "yes" after each line ("again" repeats).
-//   5. A fall puts the walker back on the ring beside the start: the guide starts over from
+//   5. A fall puts the walker back on the ring tile the path starts on: the guide starts over from
 //      there (and asks for the lava direction again, in case the walker was turned wrong).
 //
-// INSIDE (doing): stays on the ring while the lava is hot. It asks for the face (1), goes
+// INSIDE (doing): stays on the ring while the lava is hot (from the start of the game). It
+// asks for the face (1), goes
 // there and says where the lava is (2), asks for its tile (3), then walks the steps the
 // human says, one at a time, also onto lava: only tiles it was told. It never sees the path.
 
@@ -73,19 +77,25 @@ export function mirrorPush(fwd: Tile | undefined, back: Tile | undefined, source
   return 'set';
 }
 
-/** The path as I see it drawn, from its start, and the ring tile beside the start. Null while a tile is covered. */
-export function pathOf(cells: readonly Cell[]): { ring: Cell; steps: Cell[] } | null {
-  const ring = cells[0] && around(cells[0]).find(onRing);
-  if (!ring || cells.length < 2) return null;
+/**
+ * The safe path, read off the beam the outside player sees: from the ring tile where the
+ * burnt crate lies, straight to the "\" mirror, along to the "/" mirror, and down to the
+ * source (behind it is the button). `ring` is that first tile, `steps` the single steps
+ * from it, on my screen. Null until the crate is burnt.
+ */
+export function beamRoute(objects: Observation['objects']): { ring: Cell; steps: Cell[] } | null {
+  const one = (type: string, state?: string) => objects.find((x) => x.type === type && (state === undefined || x.state === state));
+  const corners = [one('f6-crate', 'burnt'), one('f6-mirror', 'back'), one('f6-mirror', 'fwd'), one('f6-source')];
   const steps: Cell[] = [];
-  let at = ring;
-  for (const c of cells) {
-    const d = { col: c.col - at.col, row: c.row - at.row };
-    if (!dirOf(d)) return null;
-    steps.push(d);
-    at = c;
+  for (let i = 1; i < corners.length; i++) {
+    const [a, b] = [corners[i - 1], corners[i]];
+    if (!a || !b) return null;
+    const d = { col: Math.sign(b.col - a.col), row: Math.sign(b.row - a.row) };
+    if (!dirOf(d)) return null; // not in one line: this is not the beam that burnt the crate
+    for (let n = Math.abs(b.col - a.col) + Math.abs(b.row - a.row); n > 0; n--) steps.push(d);
   }
-  return { ring, steps };
+  const ring = corners[0]!;
+  return { ring: { col: ring.col, row: ring.row }, steps };
 }
 
 /** One relay line of steps from `i`: at most two runs, in the walker's own screen directions. */
@@ -120,10 +130,10 @@ function outside(ctx: ScriptCtx<Mem>): Play | null {
     return { action: { type: 'move', dir: canonDir(o, push.dx, push.dy), steps: 1 }, status: 'pushing a mirror' };
   }
 
-  // ---- the crate is burnt: the path shows, the flower is out ----
-  const path = pathOf(objs('f6-path'));
+  // ---- the crate is burnt: the beam is the path, the flower is out ----
+  const path = beamRoute(o.objects);
   const flower = o.items.find((i) => i.kind.startsWith('flower-'));
-  if (!path) return pressReset('a mirror covers the path: RESET');
+  if (!path) return null;
   if (!o.carrying && flower) return same(o.position, flower) ? { action: { type: 'pick_up' }, status: 'picking up the flower' } : { action: { type: 'goto', col: flower.col, row: flower.row }, status: 'fetching the flower' };
 
   const inward = path.steps[0]!;
@@ -143,7 +153,7 @@ function outside(ctx: ScriptCtx<Mem>): Play | null {
     mem.since = now;
   };
   if (struck) {
-    // they fell: they are back on the ring beside the start. Their answer may have been off: ask again.
+    // they fell: they are back on the ring tile the path starts on. Their answer may have been off: ask again.
     say(`${ID}.out.fell`, { force: true });
     say(`${ID}.out.lava`, { force: true });
     Object.assign(mem, { phase: 'lava', atStart: true, i: 0, since: now });
@@ -191,7 +201,7 @@ export const sideTile = (edge: Dir, along = 5): Cell => (edge === 'up' ? { col: 
 
 function inside(ctx: ScriptCtx<Mem>): Play | null {
   const { o, mem, heard, tokens, now, struck, objs, say } = ctx;
-  if (!objs('f6-lava').some((l) => l.state === 'hot')) return null; // cold rock: nothing to do yet
+  if (!objs('f6-lava').some((l) => l.state === 'hot')) return null; // crusted over: nothing left to do
   const button = objs('button')[0];
   if (button && same(o.position, button)) return { action: { type: 'use' }, allow: [button], status: 'pressing the button' };
   const ask = (key: string) => {
@@ -203,7 +213,7 @@ function inside(ctx: ScriptCtx<Mem>): Play | null {
   const steps = heard.flatMap((h) => stepsIn(h.text));
   const tile = heard.map((h) => rowColumnIn(h.text)).find((t) => t.row !== undefined || t.column !== undefined);
   if (struck) {
-    // I fell: I am back on the ring beside the start of the path
+    // I fell: I am back on the ring, on the tile the path starts on
     Object.assign(mem, { queue: [], going: null, walked: false, phase: 'steps', since: now });
     say(`${ID}.in.fell`, { force: true });
     return { action: null, status: 'fell in the lava: asking again' };

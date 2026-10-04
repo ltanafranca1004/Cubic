@@ -21,7 +21,7 @@ import { mkdirSync } from 'node:fs';
 import { chromium, devices } from 'playwright';
 import { defaultEnv, objectsOn, visibleObjects, type FaceId } from '../../shared/src/index';
 import { readCode } from '../../shared/src/puzzles/hiddenCode';
-import { LAVA, js, openTitle, players, sleep, toGame, toLobby, toMode, until } from './play';
+import { LAVA, beamPath, js, openTitle, players, sleep, toGame, toLobby, toMode, until } from './play';
 
 const BASE = process.env.BASE ?? 'http://localhost:5514';
 const OUT = (process.env.OUT ?? new URL('../../docs/submission/candidates/', import.meta.url).pathname).replace(/\/?$/, '/');
@@ -113,11 +113,11 @@ try {
     await go('out', face, 6, 5);
     await sleep(CAPTION_MS);
     await a.screenshot({ path: `${OUT}game-outside.png` });
-    await go('out', face, reset.x, reset.y);
-    await use('out'); // RESET takes the mirrors off whatever path tile they cover
     await go('out', face, 2, 7);
-    const line = await sees('out', face, 'f6-path');
-    if (line.length < 2) throw new Error('the outside player sees no path on face 6');
+    // the beam is the path: from the edge tile where the crate stood, back along the beam
+    const [start, ...line] = beamPath(await state());
+    if (!start || line.length < 2) throw new Error('the outside player sees no beam on face 6');
+    await go('in', face, start.x, start.y); // round the ring
     for (const o of line.slice(0, Math.ceil(line.length / 2))) await stepOnto('in', face, o.x, o.y);
     await sleep(1500);
     await b.screenshot({ path: `${OUT}game-inside-lava.png` });

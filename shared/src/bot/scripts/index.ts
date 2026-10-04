@@ -22,7 +22,7 @@ export { mirroredGlyphScript, parseRow, rowPieces, type GlyphRow } from './mirro
 // ---- faces 4-6 (scripts-b) ----
 export { botanicalMirrorScript, potLine } from './botanicalMirror';
 export { sequenceLaserScript, orderLines } from './sequenceLaser';
-export { laserPathScript, mirrorPush, stepLine } from './laserPath';
+export { beamRoute, laserPathScript, mirrorPush, stepLine } from './laserPath';
 // ---- end faces 4-6 ----
 
 /**

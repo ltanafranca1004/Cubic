@@ -3,35 +3,40 @@ import { SOLID } from '../maps/types';
 import { FACE_SIZE } from '../types';
 import { FLOWER_ID, flowerKind } from './chain';
 import { hazardEnter } from './lib/hazard';
-import { onLine, safeLine } from './lib/path';
 import { boxAt, pushBox, resetBoxes, type Box } from './lib/push';
-import { around, at, type XY } from './util';
+import { at, type XY } from './util';
 
-// LASER AND INVISIBLE PATH (face 6: Cave outside, Lava room inside). Needs face 5.
+// LASER AND LAVA (face 6: Cave outside, Lava room inside). Needs face 5.
 //
 // Outside: once face 5 is solved its laser comes up through the middle of the cave floor
 // and runs north. Two mirror boxes ("/" and "\") are pushed like sokoban boxes (walk into
-// one; never pulled) to bend the beam onto the wooden crate on the edge. Rocks and solid
-// terrain stop the beam and the boxes. The beam burns the crate: the FLOWER for face 4
-// appears next to it, and the safe path through the room below shows on the cave floor.
+// one; never pulled) to bend the beam onto the wooden crate on the edge of the face. Rocks
+// and solid terrain stop the beam and the boxes. The beam burns the crate: the FLOWER for
+// face 4 lies where it stood, and the mirrors LOCK (no push moves them, RESET does nothing
+// any more): the beam is frozen, and it stays drawn.
 //
-// Inside: the outer ring is floor, everything else is lava. Any lava tile off the safe path
-// (and every lava tile before the crate burns) drops the player back on the ring next to
-// the start of the path, with a strike. The path is the same after a fall, and only the
-// outside player sees it. The inside player walks it to the button and presses E: solved.
-// The lava is only hot (deadly) while the laser of face 5 is on and this face is unsolved:
-// before that nobody has a reason to be here and the pathfinding (bot, test scripts) walks
-// straight across; after the solve it cools again. It is LAVA TO LOOK AT the whole time:
-// all 99 tiles are in visible('in') in every state ("hot" flows and glows, "cold" is the
-// same lava under a dark crust), and the room is `bright`, so no darkness hides them.
+// Inside: the outer ring is floor, everything else is HOT lava from the first second of the
+// game. A step into it drops the player back on the ring with a strike. There is no safe
+// way through until the crate burns. From then on THE BEAM IS THE PATH: the lava tiles
+// right behind the frozen beam (same canonical tiles), from the ring tile where the crate
+// stood to the button, which sits behind the beam source. Nothing shows it inside: every
+// lava tile looks the same, the outside player reads the beam out. The inside player walks
+// it to the button and presses E: solved, and the lava crusts over ("cold", walkable).
+// It is LAVA TO LOOK AT the whole time: all 99 tiles are in visible('in') in every state,
+// and the room is `bright`, so no darkness hides them.
 //
-// NEVER STUCK: E on the RESET tile (outside) puts both mirrors back where they started.
-// A mirror can cover a path tile on the outside player's screen: RESET uncovers it.
+// A fall puts the player on RESPAWN before the burn, and on the ring tile where the path
+// starts (the crate's tile) after it.
+//
+// NEVER STUCK: until the crate burns, E on the RESET tile (outside) puts both mirrors back
+// where they started. After the burn nothing can be moved, so nothing can be lost.
 // EDGE RULE: mirrors never reach the ring (pushBox refuses it), rocks and the beam source
-// are not on it, the crate on the ring does not block, and lava never blocks.
+// are not on it, and lava never blocks. ONE EXCEPTION: the crate stands on the ring and is
+// solid for the outside player until it burns away.
 //
 // Map objects used: outside "f6-source" (where the beam starts), "f6-rock", "f6-crate"
-// (on the ring), "reset"; inside "button". The mirrors move, so they are listed here.
+// (on the ring), "reset"; inside "button" (on the tile behind the source). The mirrors
+// move, so they are listed here.
 
 const FACE = 6;
 const BEAM = '#ff3b3b';
@@ -41,13 +46,17 @@ export const MIRROR_START: readonly Box[] = [
   { id: 'fwd-a', x: 4, y: 2 },
   { id: 'back-b', x: 9, y: 4 },
 ];
-/** First tile of the safe path, and the ring tile beside it where a fall puts you back. */
-export const PATH_START: XY = { x: 1, y: 5 };
+/** Mirrors that burn the crate: where the dev tools' "Solve puzzle" puts them. */
+export const MIRROR_SOLVED: readonly Box[] = [
+  { id: 'fwd-a', x: 5, y: 2 },
+  { id: 'back-b', x: 9, y: 2 },
+];
+/** The ring tile a fall puts you back on while there is no path yet. After the burn: the crate's tile. */
 export const RESPAWN: XY = { x: 0, y: 5 };
 
 interface State {
   mirrors: Box[];
-  /** The beam has burnt the crate: the flower is out and the path exists. */
+  /** The beam has burnt the crate: the flower is out, the mirrors are locked and the beam is the path. */
   burnt: boolean;
   done: boolean;
 }
@@ -96,46 +105,31 @@ function beam(s: State, ctx: PuzzleInitCtx): { points: XY[]; tiles: XY[] } {
   return from ? traceBeam(from, s.mirrors, (t) => solidOut(ctx, t) || fixed(ctx, t)) : { points: [], tiles: [] };
 }
 
+const crateOf = (ctx: PuzzleInitCtx): XY | undefined => ctx.objects('out', FACE, 'f6-crate')[0];
+
 /**
- * The lava tiles a path may use: under open cave floor only (no terrain, no fixed object,
- * no mirror start, not beside a stalagmite), so the outside player can always see it drawn.
+ * The safe tiles of the lava room, in walking order: from the ring tile where the crate
+ * stood, back along the frozen beam, to the tile behind the beam source (the button).
+ * [] until the crate burns.
  */
-function field(ctx: PuzzleInitCtx): XY[] {
-  const tiles = ctx.world.out[FACE].tiles;
-  const objects = ctx.objects('out', FACE);
-  const out: XY[] = [];
-  for (let y = 1; y < FACE_SIZE - 1; y++)
-    for (let x = 1; x < FACE_SIZE - 1; x++) {
-      const t = { x, y };
-      if (solidOut(ctx, t) || objects.some((o) => at(o, t)) || MIRROR_START.some((m) => at(m, t))) continue;
-      if (around(t).some((n) => tiles[n.y]![n.x] === 'tree')) continue;
-      out.push(t);
-    }
-  return out;
+function safePath(s: State, ctx: PuzzleInitCtx): XY[] {
+  const from = source(ctx);
+  return s.burnt && from ? [from, ...beam(s, ctx).tiles].reverse() : [];
 }
-
-/** The safe path, from PATH_START to the button, in walking order. Never rerolled. */
-export function safePath(ctx: PuzzleInitCtx): XY[] {
-  const button = ctx.objects('in', FACE, 'button')[0];
-  return button ? safeLine(ctx.seed, 0, field(ctx), PATH_START, button) : [];
-}
-
-/** Is the lava deadly? Only while the laser is on and the button has not been pressed. */
-const hot = (s: State, ctx: Pick<PuzzleCtx, 'faceSolved'>): boolean => ctx.faceSolved(5) && !s.done;
 
 /** Burn the crate if the beam is on it. Called after anything that can move the beam. */
 function settleBeam(s: State, ctx: PuzzleCtx): void {
   if (s.burnt || !ctx.faceSolved(5)) return;
-  const crate = ctx.objects('out', FACE, 'f6-crate')[0];
+  const crate = crateOf(ctx);
   if (!crate || !beam(s, ctx).tiles.some((t) => at(t, crate))) return;
   burn(s, ctx, crate);
   ctx.emit('burn');
 }
 
-/** The crate is ash: the path exists and the flower lands on the floor tile beside it, off the ring. */
+/** The crate is ash: the mirrors are locked, the beam is the path and the flower lies where the crate stood. */
 function burn(s: State, ctx: PuzzleCtx, crate: XY): void {
   s.burnt = true;
-  const spot = around(crate).find((n) => !ring(n)) ?? crate;
+  const spot = crate;
   if (!ctx.state.items[FLOWER_ID]) ctx.spawnItem({ id: FLOWER_ID, kind: flowerKind(ctx.seed), side: 'out', face: FACE, x: spot.x, y: spot.y });
 }
 
@@ -145,11 +139,12 @@ export const laserPath: PuzzleModule<State> = {
 
   init: () => ({ mirrors: MIRROR_START.map((b) => ({ ...b })), burnt: false, done: false }),
 
-  // Mirrors, rocks and the beam source are in the outside player's way. None is ever on the ring.
-  isBlocked: (s, ctx, side, tile) => side === 'out' && !ring(tile) && (!!boxAt(s.mirrors, tile) || fixed(ctx, tile)),
+  // Mirrors, rocks and the beam source are in the outside player's way. None is ever on the
+  // ring. The crate is, and it is solid until it burns away (the one exception to the edge rule).
+  isBlocked: (s, ctx, side, tile) => side === 'out' && (ring(tile) ? !s.burnt && at(crateOf(ctx), tile) : !!boxAt(s.mirrors, tile) || fixed(ctx, tile)),
 
   onPush(s, ctx, side, tile, dx, dy) {
-    if (side !== 'out') return false;
+    if (side !== 'out' || s.burnt) return false; // burnt: the mirrors are locked
     const flower = ctx.state.items[FLOWER_ID];
     const free = (t: XY) => !solidOut(ctx, t) && !fixed(ctx, t) && !(flower && !flower.carriedBy && flower.face === FACE && at(flower, t));
     if (!pushBox(s.mirrors, tile, dx, dy, free)) return false;
@@ -159,7 +154,7 @@ export const laserPath: PuzzleModule<State> = {
 
   onUse(s, ctx, side, tile) {
     if (side === 'out') {
-      if (!ctx.objects('out', FACE, 'reset').some((r) => at(r, tile))) return;
+      if (s.burnt || !ctx.objects('out', FACE, 'reset').some((r) => at(r, tile))) return; // burnt: locked
       resetBoxes(s.mirrors, MIRROR_START);
       ctx.emit('toggle');
       settleBeam(s, ctx);
@@ -172,9 +167,10 @@ export const laserPath: PuzzleModule<State> = {
   },
 
   onEnter(s, ctx, side, tile) {
-    if (side !== 'in' || !hot(s, ctx) || ring(tile)) return;
-    if (s.burnt && onLine(safePath(ctx), tile)) return;
-    if (hazardEnter(ctx, side, tile, [tile], RESPAWN)) ctx.emit('splash');
+    if (side !== 'in' || s.done || ring(tile)) return;
+    const path = safePath(s, ctx);
+    if (path.some((p) => at(p, tile))) return;
+    if (hazardEnter(ctx, side, tile, [tile], path[0] ?? RESPAWN)) ctx.emit('splash');
   },
 
   // Face 5 can be solved while the mirrors already stand right: the beam arrives on a tick.
@@ -187,25 +183,27 @@ export const laserPath: PuzzleModule<State> = {
   // The lava lights the room: the inside player sees all of it, not only the tiles nearby.
   bright: true,
 
-  // The dev tools' "Solve puzzle": the crate is burnt, the flower is out and the lava is cold, as after the button.
+  // The dev tools' "Solve puzzle": the mirrors stand in the beam, the crate is burnt, the flower is out
+  // and the lava is cold, as after the button.
   devSolve(s, ctx) {
-    const crate = ctx.objects('out', FACE, 'f6-crate')[0];
-    if (!s.burnt && crate) burn(s, ctx, crate);
+    const crate = crateOf(ctx);
+    if (!s.burnt && crate) {
+      if (!beam(s, ctx).tiles.some((t) => at(t, crate))) resetBoxes(s.mirrors, MIRROR_SOLVED);
+      burn(s, ctx, crate);
+    }
     s.done = true;
   },
 
   visible(s, ctx, side) {
     const out: VisibleObject[] = [];
     if (side === 'in') {
-      // every lava tile looks the same: the path is not in here
+      // every lava tile looks the same, hot until the button is pressed: the path is not in here
       const button = ctx.objects('in', FACE, 'button')[0];
       for (let y = 1; y < FACE_SIZE - 1; y++)
-        for (let x = 1; x < FACE_SIZE - 1; x++) if (!at(button, { x, y })) out.push({ type: 'f6-lava', x, y, state: hot(s, ctx) ? 'hot' : 'cold' });
+        for (let x = 1; x < FACE_SIZE - 1; x++) if (!at(button, { x, y })) out.push({ type: 'f6-lava', x, y, state: s.done ? 'cold' : 'hot' });
       if (button) out.push({ type: 'button', x: button.x, y: button.y, state: s.done ? 'on' : 'off' });
       return out;
     }
-    // the path first, in walking order; a mirror standing on a path tile covers it
-    if (s.burnt) safePath(ctx).forEach((t, i, line) => out.push({ type: 'f6-path', x: t.x, y: t.y, state: i === line.length - 1 ? 'goal' : 'path' }));
     for (const m of s.mirrors) out.push({ type: 'f6-mirror', x: m.x, y: m.y, state: mirrorKind(m) });
     const src = source(ctx);
     if (src) out.push({ type: 'f6-source', x: src.x, y: src.y, state: ctx.faceSolved(5) ? 'on' : 'off' });
@@ -214,7 +212,7 @@ export const laserPath: PuzzleModule<State> = {
   },
 
   lines(s, ctx, side) {
-    if (side !== 'out' || !ctx.faceSolved(5)) return [];
+    if (side !== 'out' || !(ctx.faceSolved(5) || s.burnt)) return [];
     const { points } = beam(s, ctx);
     const out: PuzzleLine[] = [];
     for (let i = 1; i < points.length; i++) out.push({ from: [points[i - 1]!.x, points[i - 1]!.y], to: [points[i]!.x, points[i]!.y], colour: BEAM });
@@ -222,12 +220,12 @@ export const laserPath: PuzzleModule<State> = {
   },
 
   objective(s, ctx, side) {
-    if (s.done) return 'The lava has crusted over again.';
+    if (s.done) return 'The lava has crusted over. The beam still burns in the cave.';
     if (side === 'out') {
-      if (s.burnt) return "The flower waits beside the cooled lava. Your partner's path glows beneath their feet.";
-      return ctx.faceSolved(5) ? 'Mirrors stand ready. Beam seeks the crate. RESET returns them to rest.' : 'Mirrors await. Cold crate sits empty. Cave waits for light from above.';
+      if (s.burnt) return 'The crate is ash, the mirrors are locked. The beam is the safe path: call it from the edge to its source.';
+      return ctx.faceSolved(5) ? 'Push the mirrors: bend the beam onto the crate on the edge. RESET puts them back.' : 'Two mirrors, a crate on the edge. The cave waits for light from above.';
     }
-    if (!ctx.faceSolved(5)) return 'Lava under a dark crust, cold for now, and a button in the middle. The laser above is still dead.';
-    return s.burnt ? 'A safe path glows through lethal heat. The button waits for touch.' : 'Laser light fills the cavern. Stone cools where fire once flowed.';
+    if (s.burnt) return 'Still lava everywhere. Your partner sees the safe way: walk only where they say, to the button.';
+    return 'Hot lava, and a button in the middle. Stay on the edge: there is no safe way yet.';
   },
 };

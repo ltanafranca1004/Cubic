@@ -37,10 +37,10 @@ in `default.ts`.
 | `v` | face 5 outside: `f5-replay` | object |
 | `w` | face 5 inside: the emitter, a `target` named `f5-emitter` | object |
 | `x` | face 6 outside: `f6-rock` (stops the beam, the mirrors and the player) | object |
-| `y` | face 6 outside: `f6-crate`, on the ring (does not block) | object |
+| `y` | face 6 outside: `f6-crate`, ON THE RING, solid until the laser burns it (the one exception to the edge rule). Keep its column clear: the beam comes down it | object |
 | `z` | face 6 outside: `reset` | object |
 | `Y` | face 6 outside: `f6-source`, where the beam comes up | object |
-| `X` | face 6 inside: `button` | object |
+| `X` | face 6 inside: `button`. Must stand on the tile behind the outside `Y` (the beam is the safe path and ends there) | object |
 | `C` | `crystal` of the old stub puzzles: still in the legend, on no map | object |
 
 The legend is `LEGEND` in `shared/src/maps/strings.ts`, one section per face. A character
@@ -56,8 +56,8 @@ the map only has to keep those tiles free:
 - Face 3: the symbol outside (`GLYPH` in `mirroredGlyph.ts`), a flip tile on every tile
   inside.
 - Face 4 inside: the five flowerpots, on the outside pots' tiles.
-- Face 6: the two mirrors (they move; their start tiles are in `laserPath.ts`), the path,
-  and the lava on every inside tile off the ring.
+- Face 6: the two mirrors (they move; their start tiles are in `laserPath.ts`) and the
+  lava on every inside tile off the ring. The safe path is the outside beam: no object.
 
 The outside faces also have a **biome layer** that only looks and never blocks (tall
 grass, mushrooms, drifts, puddles, the snowman skin): `client/src/world/biomes/decor.ts`,

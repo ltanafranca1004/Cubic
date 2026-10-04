@@ -28,16 +28,18 @@ does, which map objects it uses and why nobody can get stuck in it.
 | 3 | `mirroredGlyph.ts` | `mirrored-glyph` | describes the symbol in the snow | flips tiles with E to copy it (mirrored); CLEAR in the corner | nothing | nothing |
 | 4 | `botanicalMirror.ts` | `botanical-mirror` | plants the flower in the pot the partner names | sees which of five pots holds that colour | face 6 (the flower) | the end of the chain |
 | 5 | `sequenceLaser.ts` | `sequence-laser` | calls the order seven symbols light up in; E on REPLAY | battery into the emitter, then E on the symbols in that order | face 2 (the battery) | the laser on face 6 |
-| 6 | `laserPath.ts` | `laser-path` | pushes two mirrors until the beam burns the crate, then calls the path it reveals | walks that path over the lava to the button, E | face 5 | the flower (outside) |
+| 6 | `laserPath.ts` | `laser-path` | pushes two mirrors until the beam burns the crate on the edge, then calls the beam's route (it is the safe path) | walks the tiles behind the beam over the lava to the button, E | face 5 | the flower (outside) |
 
 Chain: 2 -> 5 -> 6 -> 4. Faces 1 and 3 stand alone. The game is won the moment all six are
 solved (the world has no portal). Strikes: a wrong code (1, 2), a wrong press (5), a wrong
-pot (4), a lava tile off the path (6). Face 3 has none.
+pot (4), a lava tile off the beam (6). Face 3 has none.
 
-**The lava of face 6** is deadly only while face 5 is solved and face 6 is not. Before the
-laser is on and after the button is pressed it is cold: anyone walks straight across.
-That is deliberate, so the pathfinding (the bot, the test scripts) never has to know about
-lava on a face nobody has a reason to be on yet.
+**The lava of face 6** is deadly from the start of the game until face 6 is solved; then
+it is cold and anyone walks straight across. Every walk inside keeps to the ring until
+then (the bot's `hazardAvoid`, `t.go` in the tests). The safe path is the laser beam: the
+tiles under it, from the ring tile where the crate stood to the button behind the source,
+and only once the crate is burnt (which locks the mirrors). The crate stands on the ring
+and is solid until it burns: the one exception to the edge rule.
 
 `chain.ts` holds what one face hands to the next (the battery, the flower, the flower's
 colour), so the modules agree without reading each other's state.

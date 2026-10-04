@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { io, type Socket } from 'socket.io-client';
-import { FACE_SIZE, defaultEnv, pathTo, visibleObjects, type ChatMessage, type ClientToServer, type GameEvent, type RoomInfo, type Seat, type ServerToClient, type Side, type StateUpdate, type FaceId, type TileRef } from '@cubic/shared';
+import { FACE_SIZE, defaultEnv, visibleObjects, type ChatMessage, type ClientToServer, type GameEvent, type RoomInfo, type Seat, type ServerToClient, type Side, type StateUpdate, type FaceId, type TileRef } from '@cubic/shared';
 import { readCode } from '../../shared/src/puzzles/hiddenCode';
 import { createApp, type App } from '../src/app';
 import { LIMITS } from '../src/rooms';
 // face 4 (botanical-mirror): what a side sees, under its own name so the other faces' blocks can import theirs
 import { visibleObjects as seenOnFace4 } from '@cubic/shared';
-import { MOVES, findPath, stepPose } from '@cubic/shared'; // faces 5 and 6
+import { MOVES, findPath, hazardAvoid, linesOn, stepPose } from '@cubic/shared'; // faces 5 and 6
 
 // Scripted two-client game over real sockets: rooms, codes, the lobby (pick sides, ready,
 // start), chat, validation, reconnect, items, every puzzle and the win.
@@ -103,10 +103,10 @@ class Client {
     await this.until(() => this.last.acks[this.side] >= seq, `ack ${seq}`);
   }
 
-  /** Walk to a tile with real validated moves, re-planning from the server state. */
+  /** Walk to a tile with real validated moves, re-planning from the server state. Never through a deadly tile (face 6's lava). */
   async walkTo(target: TileRef) {
     for (let guard = 0; guard < 200; guard++) {
-      const path = pathTo(this.last.state, this.side, target, defaultEnv);
+      const path = findPath(this.last.state, this.side, (p) => p.face === target.face && p.x === target.x && p.y === target.y, defaultEnv, undefined, hazardAvoid(this.last.state, this.side));
       assert.ok(path, `${this.side}: no path to face ${target.face} ${target.x},${target.y}`);
       if (path.length === 0 || this.last.state.wonAt !== null) return;
       await this.move(path[0]![0], path[0]![1]);
@@ -334,12 +334,16 @@ test('two clients play a whole game online', async () => {
     }
     await b2.until(() => b2.events.some((e) => e.type === 'puzzle' && e.name === 'burn'), 'the crate burns');
     assert.equal(a.last.state.items.flower?.side, 'out'); // left lying for face 4
-    await reset(); // the mirrors off whatever path tile they cover
-    // only the outside player sees the path; the inside player walks what they are told
-    const path = visibleObjects(a.last.state, 'out', 6).filter((o) => o.type === 'f6-path');
-    assert.ok(path.length > 1 && !visibleObjects(b2.last.state, 'in', 6).some((o) => o.type === 'f6-path'));
-    const edge = [[-1, 0], [1, 0], [0, -1], [0, 1]].map(([dx, dy]) => [path[0]!.x + dx!, path[0]!.y + dy!] as const).find(([x, y]) => x === 0 || y === 0 || x === FACE_SIZE - 1 || y === FACE_SIZE - 1)!;
-    // inside: round the lava to the face next door, then onto the ring tile beside the path's start
+    // the beam is the path: only the outside player sees it; the inside player walks what they are told,
+    // from the edge tile where the crate stood back along the beam to its source (the button)
+    const beam = linesOn(a.last.state, 'out', 6);
+    assert.ok(beam.length > 1 && linesOn(b2.last.state, 'in', 6).length === 0);
+    const tiles: { x: number; y: number }[] = [{ x: beam[0]!.from[0], y: beam[0]!.from[1] }];
+    for (const { from, to } of beam) for (let [x, y] = from; x !== to[0] || y !== to[1]; ) tiles.push({ x: (x += Math.sign(to[0] - from[0])), y: (y += Math.sign(to[1] - from[1])) });
+    const [start, ...path] = tiles.reverse();
+    const edge = [start!.x, start!.y] as const;
+    assert.ok(edge[0] === 0 || edge[1] === 0 || edge[0] === FACE_SIZE - 1 || edge[1] === FACE_SIZE - 1, 'the beam ends on the ring');
+    // inside: round the lava to the face next door, then onto the ring tile the path starts on
     const beside = findPath(b2.last.state, 'in', (p) => p.face !== 6 && MOVES.some(([dx, dy]) => ((q) => q.face === 6 && q.x === edge[0] && q.y === edge[1])(stepPose(p, dx, dy).pose)), defaultEnv, (face) => face !== 6);
     assert.ok(beside, 'a way to face 6 that stays off its lava');
     for (const [dx, dy] of beside) await b2.move(dx, dy);

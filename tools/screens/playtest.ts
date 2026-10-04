@@ -30,7 +30,9 @@
 //                 crate) lie in GameState.items AND their sprite is on that player's canvas
 //   CARRY-RENDER  the carried item's sprite is above the turtle's head, on the canvas
 //   LAVA-RENDER   face 6 inside: 99 hot lava tiles in the view AND each one mostly
-//                 lava-coloured on the canvas
+//                 lava-coloured on the canvas. Checked twice: at game START, before any
+//                 puzzle is solved (the lava is hot from the first second), and again
+//                 on face 6's own turn, after the crate burnt
 // Each is a step of its own, with a numbered picture in OUT.
 //
 // NEW PUZZLE? Add one entry to PUZZLE_SCRIPTS below. The run fails if a puzzle registered
@@ -53,6 +55,8 @@ import {
   compassDrift,
   defaultEnv,
   findPath,
+  hazardAvoid,
+  linesOn,
   neighbours,
   objectsOn,
   stepPose,
@@ -237,7 +241,8 @@ const PUZZLE_SCRIPTS: PuzzleScript[] = [
       ],
     };
   })(),
-  // Face 6. Laser and Invisible Path.
+  // Face 6. Laser and Lava. The lava is hot from the start of the game (LAVA-RENDER at game
+  // START is its own step, before the first puzzle: see puzzles()). The safe path is the beam.
   ((): PuzzleScript => {
     /** Step from where `who` stands onto the tile next to them: the key for it depends on how their screen is turned. */
     const stepOnto = (who: Side, x: number, y: number): PuzzleStep => ({
@@ -253,37 +258,72 @@ const PUZZLE_SCRIPTS: PuzzleScript[] = [
     const reset: PuzzleStep[] = [{ who: 'out', goto: { object: ['out', 6, 'reset'] } }, { who: 'out', keys: 'e' }];
     /** Stand on `from`, walk into the mirror on `box`. */
     const push = (from: [number, number], box: [number, number]): PuzzleStep[] => [{ who: 'out', goto: { tile: { face: 6, x: from[0], y: from[1] } } }, stepOnto('out', box[0], box[1])];
-    const path = (state: GameState) => visibleObjects(state, 'out', 6).filter((o) => o.type === 'f6-path');
+    const ring = (t: { x: number; y: number }) => t.x === 0 || t.y === 0 || t.x === FACE_SIZE - 1 || t.y === FACE_SIZE - 1;
+    /** The tiles under the beam the OUTSIDE player sees, walked backwards: from the crate's edge tile to the source. */
+    const beamPath = (state: GameState): { x: number; y: number }[] => {
+      const lines = linesOn(state, 'out', 6);
+      if (!lines.length) return [];
+      const tiles = [{ x: lines[0]!.from[0], y: lines[0]!.from[1] }];
+      for (const { from, to } of lines) for (let [x, y] = from; x !== to[0] || y !== to[1]; ) tiles.push({ x: (x += Math.sign(to[0] - from[0])), y: (y += Math.sign(to[1] - from[1])) });
+      return tiles.reverse();
+    };
+    const mirrors = (state: GameState) => JSON.stringify(visibleObjects(state, 'out', 6).filter((o) => o.type === 'f6-mirror'));
     return {
       id: 'laser-path',
       steps: [
-        // outside: mirrors to their start, then three pushes bend the beam onto the crate
+        // outside: mirrors to their start, then three pushes bend the beam onto the crate on the edge
         ...reset,
+        { who: 'out', shot: 'crate-on-the-edge-and-the-beam' },
         ...push([3, 2], [4, 2]),
         ...push([9, 5], [9, 4]),
         ...push([9, 4], [9, 3]),
         { expect: 'the crate burnt and the flower is out', check: (state) => visibleObjects(state, 'out', 6).some((o) => o.type === 'f6-crate' && o.state === 'burnt') && state.items.flower?.side === 'out' },
+        {
+          expect: 'the flower lies where the crate stood, on the edge, and the beam still ends there',
+          check: (state) => {
+            const crate = objectsOn(defaultEnv.world, 'out', 6, 'f6-crate')[0]!;
+            const end = linesOn(state, 'out', 6).at(-1)?.to;
+            return ring(crate) && state.items.flower?.x === crate.x && state.items.flower?.y === crate.y && end?.[0] === crate.x && end?.[1] === crate.y;
+          },
+        },
         { who: 'out', drawn: { lying: 'flower' } },
-        // RESET takes the mirrors off whatever path tile they cover
-        ...reset,
-        // inside: the path is read from the OUTSIDE player's view (they say it out loud).
-        // First round the lava to the face next door, then onto the ring tile beside the start.
+        // the burn locked the mirrors: RESET moves nothing any more
         {
           who: 'out',
           plan: (state) => {
-            const line = path(state);
-            if (line.length < 2) throw new Error('the outside player sees no path on face 6');
+            const before = mirrors(state);
+            return [...reset, { expect: 'RESET does not move the locked mirrors', check: (s) => mirrors(s) === before && beamPath(s).length > 2 }];
+          },
+        },
+        // inside: the path is read off the beam the OUTSIDE player sees (they say it out loud).
+        // Round the ring to the tile where the crate stood, one deliberate step into the lava
+        // beside the path (a strike, and back on that tile), then along the beam to the button.
+        {
+          who: 'out',
+          plan: (state) => {
+            const [start, ...line] = beamPath(state);
+            if (!start || line.length < 2) throw new Error('the outside player sees no beam on face 6');
+            if (!ring(start)) throw new Error(`the beam ends at ${start.x},${start.y}, not on the ring`);
             const first = line[0]!;
-            const edge = [[-1, 0], [1, 0], [0, -1], [0, 1]].map(([dx, dy]) => ({ x: first.x + dx!, y: first.y + dy! })).find((n) => n.x === 0 || n.y === 0 || n.x === 11 || n.y === 11);
-            if (!edge) throw new Error('the path does not start beside the ring');
-            const onEdge = (p: Pose) => p.face === 6 && p.x === edge.x && p.y === edge.y;
-            const way = findPath(state, 'in', (p) => p.face !== 6 && Object.values(MOVE_OF).some((m) => onEdge(stepPose(p, m[0], m[1]).pose)), defaultEnv, (face) => face !== 6);
-            if (!way) throw new Error('no way for the inside player to face 6 that stays off its lava');
-            const beside = structuredClone(state);
-            for (const m of way) applyMove(beside, 'in', m[0], m[1], 0);
-            const { face, x, y } = beside.players.in.pose;
-            // on the ring of face 6, the laser on and the button not pressed: the room must be a lake of hot lava
-            return [{ who: 'in', goto: { tile: { face, x, y } } }, stepOnto('in', edge.x, edge.y), { who: 'in', drawn: { lava: 'hot' } }, ...line.map((o) => stepOnto('in', o.x, o.y)), { who: 'in', keys: 'e' }];
+            // a ring tile next to the start, and the lava tile beside the first path tile
+            const aside = [{ x: start.x + 1, y: start.y }, { x: start.x - 1, y: start.y }, { x: start.x, y: start.y + 1 }, { x: start.x, y: start.y - 1 }].find((n) => n.x >= 0 && n.y >= 0 && n.x < FACE_SIZE && n.y < FACE_SIZE && ring(n));
+            if (!aside) throw new Error('no ring tile beside the start of the path');
+            const lava = { x: aside.x + first.x - start.x, y: aside.y + first.y - start.y };
+            const strikes = state.strikes;
+            const inAt = (s: GameState, t: { x: number; y: number }) => s.players.in.pose.face === 6 && s.players.in.pose.x === t.x && s.players.in.pose.y === t.y;
+            return [
+              { who: 'in', goto: { tile: { face: 6, ...start } } },
+              { expect: 'the walk round the ring cost no strike', check: (s) => s.strikes === strikes },
+              { who: 'in', drawn: { lava: 'hot' } },
+              stepOnto('in', aside.x, aside.y),
+              stepOnto('in', lava.x, lava.y),
+              { expect: `one step into the lava at ${lava.x},${lava.y}: one strike, and back on the start of the path`, check: (s) => s.strikes === strikes + 1 && inAt(s, start) },
+              { who: 'in', shot: 'lava-step-respawn' },
+              ...line.map((o) => stepOnto('in', o.x, o.y)),
+              { expect: 'the beam tiles cost no strike, and end on the button', check: (s) => s.strikes === strikes + 1 && inAt(s, line.at(-1)!) && objectsOn(defaultEnv.world, 'in', 6, 'button').some((b) => inAt(s, b)) },
+              { who: 'in', keys: 'e' },
+              { who: 'out', shot: 'after-the-button-the-beam-stays' },
+            ];
           },
         },
         // the flower stays where it lies: face 4's script picks it up
@@ -660,7 +700,8 @@ const lost: string[] = [];
 
 /**
  * Walk `side` to a pose accepted by `goal`, with the keyboard, planning on the live state
- * with the game's own pathfinding. `allow` fences the faces the path may use.
+ * with the game's own pathfinding. `allow` fences the faces the path may use. Like a
+ * careful player it never walks through a deadly tile (the hot lava inside face 6).
  */
 async function goTo(page: Page, side: Side, what: string, goal: (p: Pose) => boolean, allow?: (face: FaceId) => boolean): Promise<Move[]> {
   const walked: Move[] = [];
@@ -668,7 +709,7 @@ async function goTo(page: Page, side: Side, what: string, goal: (p: Pose) => boo
     await settle(page);
     const state = await stateOf(page);
     if (goal(state.players[side].pose)) return walked;
-    const path = findPath(state, side, goal, defaultEnv, allow);
+    const path = findPath(state, side, goal, defaultEnv, allow, hazardAvoid(state, side));
     if (!path) throw new Error(`${side}: no path to ${what} from ${at(state.players[side].pose)}`);
     const want = structuredClone(state);
     for (const m of path) applyMove(want, side, m[0], m[1], 0);
@@ -1522,7 +1563,7 @@ async function seen(run: Run, page: Page, side: Side, what: Drawn, picture: (nam
       const ring = (o: { x: number; y: number }) => o.x === 0 || o.y === 0 || o.x === FACE_SIZE - 1 || o.y === FACE_SIZE - 1;
       check(lava.length === want && !lava.some(ring), `the inside player's view has ${lava.length} lava tiles (${lava.filter(ring).length} on the ring), expected ${want} inside the ring`);
       check(lava.every((o) => o.state === what.lava), `lava states in the view: ${[...new Set(lava.map((o) => o.state))].join(', ')}, expected all ${what.lava}`);
-      check((state.solved.includes(5) && !state.solved.includes(6)) === (what.lava === 'hot'), `solved faces [${state.solved}], but the lava is ${what.lava}`);
+      check(!state.solved.includes(6) === (what.lava === 'hot'), `solved faces [${state.solved}], but the lava is ${what.lava}`); // hot from the start, until face 6 is solved
       if (what.lava !== 'hot') return `${lava.length} cold lava tiles in the state (cold lava is dark rock: no colour check)`;
       // the pixels: every lava tile the turtle and its item do not cover is mostly warm
       await page.waitForTimeout(FLIP_MS);
@@ -1593,6 +1634,18 @@ async function puzzles(run: Run): Promise<void> {
   });
 
   const scripts = PUZZLE_SCRIPTS.filter((s) => !PUZZLE_FILTER || s.id === PUZZLE_FILTER);
+  // GAME START, nothing solved: face 6's lava is hot already. The inside player walks to the
+  // ring of face 6 (goTo keeps off the lava) and LAVA-RENDER must hold there.
+  if (scripts.some((s) => s.id === 'laser-path')) {
+    const there = await step(run, 'game start: nothing is solved, the inside player walks to the ring of face 6 without a strike', async () => {
+      check((await stateOf(b)).solved.length === 0, `already solved: [${(await stateOf(b)).solved}]`);
+      await goTo(b, 'in', 'face 6', (p) => p.face === 6);
+      await b.waitForTimeout(FLIP_MS);
+      const state = await stateOf(b);
+      check(state.solved.length === 0 && state.strikes === 0, `solved [${state.solved}], ${state.strikes} strike(s)`);
+    });
+    if (there) await seen(run, b, 'in', { lava: 'hot' }, (name, who) => picture(`start-${name}`, who));
+  }
   for (const script of scripts) {
     const module = PUZZLES.find((p) => p.id === script.id);
     const result: PuzzleResult = { renderer: run.renderer, id: script.id, completed: false, stuck: '' };

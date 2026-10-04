@@ -62,8 +62,8 @@ export function findPath(
 
 /**
  * What the body knows to be deadly, from what its OWN side sees: an object of this type in
- * this state. Face 6 inside: the lava ("f6-lava", "hot" while face 5 is solved and face 6
- * is not; "cold" lava is plain floor).
+ * this state. Face 6 inside: the lava ("f6-lava", "hot" from the start of the game until
+ * face 6 is solved; "cold" lava is plain floor).
  */
 export const HAZARD_OBJECTS: readonly { type: string; state: string }[] = [{ type: 'f6-lava', state: 'hot' }];
 /** Objects that stand in the middle of a hazard: as deadly as it, while the face has any hazard tile. */

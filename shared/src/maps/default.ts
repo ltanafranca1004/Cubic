@@ -113,6 +113,8 @@ export const STRING_MAPS: Record<Side, Record<FaceId, string[]>> = {
     // ============================================================
     // FACE 6 OUTSIDE: Cave (laser-path)
     // ============================================================
+    // y = the crate, ON THE RING (the one solid thing allowed there: it burns away). Keep
+    // its column free of terrain and rocks: the beam comes down it.
     6: [
       '............',
       '.T........T.',
@@ -222,14 +224,16 @@ export const STRING_MAPS: Record<Side, Record<FaceId, string[]>> = {
     // ============================================================
     // FACE 6 INSIDE: Lava room (laser-path)
     // ============================================================
+    // X = the button. It must stand on the tile behind the outside beam source (Y on the
+    // outside map): the beam is the safe path through the lava and ends there.
     6: [
       '............',
       '............',
       '............',
       '............',
       '............',
+      '.....X......',
       '............',
-      '......X.....',
       '............',
       '............',
       '............',

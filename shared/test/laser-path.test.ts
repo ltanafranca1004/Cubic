@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { FACE_SIZE, MOVES, SIDES, applyMove, brightFace, createGame, isBlocked, linesOn, onRing, visibleObjects, type GameState, type Side } from '../src/index';
+import { FACE_SIZE, MOVES, SIDES, applyMove, brightFace, createGame, devSolve, hazardTiles, isBlocked, linesOn, objectiveFor, onRing, visibleObjects, type GameState, type Side } from '../src/index';
 import { FLOWER_ID, flowerKind } from '../src/puzzles/chain';
-import { MIRROR_START, PATH_START, RESPAWN, traceBeam } from '../src/puzzles/laserPath';
+import { MIRROR_SOLVED, MIRROR_START, RESPAWN, traceBeam } from '../src/puzzles/laserPath';
 import type { Box } from '../src/puzzles/lib/push';
 import { solver, type Solver } from './harness';
 import { insideGo, pushMirrors, resetMirrors, shownPath, stepTo, toPathStart } from './laser-solutions';
 import { SOLUTIONS } from './solutions';
 
-// LASER AND INVISIBLE PATH (face 6). Run just this file: npx tsx --test shared/test/laser-path.test.ts
+// LASER AND LAVA (face 6). Run just this file: npx tsx --test shared/test/laser-path.test.ts
 
 const FACE = 6;
 const ID = 'laser-path';
@@ -25,15 +25,19 @@ function withLaser(seed: number): Solver {
   assert.ok(t.state.solved.includes(5));
   return t;
 }
-/** ... and the crate burnt, the mirrors back at their start. */
+/** ... and the crate burnt: the mirrors are locked and the beam is the path. */
 function withPath(seed: number): Solver {
   const t = withLaser(seed);
   resetMirrors(t);
   pushMirrors(t);
-  resetMirrors(t);
   assert.ok(burnt(t.state));
   return t;
 }
+/** May this ring tile be blocked? Only the crate's, only for the outside player, only until it burns away. */
+const crateException = (t: Solver, state: GameState, side: Side, x: number, y: number): boolean => {
+  const crate = t.find('out', FACE, 'f6-crate');
+  return side === 'out' && !burnt(state) && crate.x === x && crate.y === y;
+};
 
 test('laser-path: beam geometry, every turn of both mirror kinds', () => {
   const none = (_t: { x: number; y: number }) => false;
@@ -110,7 +114,8 @@ test('laser-path: SOLVABLE (search over every push from the start), needs at lea
         for (const m of mirrors(state)) assert.ok(!onRing(m.x, m.y), `a mirror reached the ring at ${m.x},${m.y}`);
         for (const side of SIDES)
           for (let y = 0; y < FACE_SIZE; y++)
-            for (let x = 0; x < FACE_SIZE; x++) if (onRing(x, y)) assert.equal(isBlocked(state, side, tile(x, y), t.env), false, `${side} ring ${x},${y} blocked with mirrors at ${layout}`);
+            // EDGE RULE, with its one exception: the unburnt crate (it burns away)
+            for (let x = 0; x < FACE_SIZE; x++) if (onRing(x, y)) assert.equal(isBlocked(state, side, tile(x, y), t.env), crateException(t, state, side, x, y), `${side} ring ${x},${y} with mirrors at ${layout}`);
       }
       for (const [dx, dy] of MOVES) {
         const s = structuredClone(state) as GameState;
@@ -132,21 +137,21 @@ test('laser-path: SOLVABLE (search over every push from the start), needs at lea
   assert.ok(layouts.size > 20, 'the search really moved the mirrors about');
 });
 
-test('laser-path: the intended pushes burn the crate once; the flower appears once, outside, beside it', () => {
+test('laser-path: the intended pushes burn the crate once; the flower appears once, outside, where the crate stood', () => {
   const t = withLaser(6);
   resetMirrors(t);
-  pushMirrors(t);
-  assert.ok(burnt(t.state));
   const crate = t.find('out', FACE, 'f6-crate');
   assert.ok(onRing(crate.x, crate.y), 'the crate stands on the edge');
+  assert.equal(isBlocked(t.state, 'out', tile(crate.x, crate.y), t.env), true, 'the crate is solid until it burns');
+  assert.equal(isBlocked(t.state, 'in', tile(crate.x, crate.y), t.env), false, 'nothing stands there inside');
+  pushMirrors(t);
+  assert.ok(burnt(t.state));
   assert.equal(see(t, 'out').find((o) => o.type === 'f6-crate')?.state, 'burnt');
   const flower = t.state.items[FLOWER_ID]!;
   assert.deepEqual([flower.side, flower.face, flower.kind, flower.carriedBy], ['out', FACE, flowerKind(t.state.seed ?? 0), null]);
-  assert.equal(Math.abs(flower.x - crate.x) + Math.abs(flower.y - crate.y), 1);
-  assert.ok(!onRing(flower.x, flower.y));
-  // again: reset, push, wait. Still one burn, one flower, and the face is not solved yet
-  resetMirrors(t);
-  pushMirrors(t);
+  assert.deepEqual([flower.x, flower.y], [crate.x, crate.y]);
+  assert.equal(isBlocked(t.state, 'out', tile(crate.x, crate.y), t.env), false, 'ash: the tile is open, and it is a ring tile like any other');
+  // time passes: still one burn, one flower, and the face is not solved yet
   t.wait(1000);
   assert.equal(names(t.events).filter((n) => n === 'burn').length, 1);
   assert.equal(Object.values(t.state.items).filter((i) => i.kind.startsWith('flower')).length, 1);
@@ -172,7 +177,8 @@ test('laser-path: RESET puts the mirrors back, from anywhere', () => {
   // the inside player cannot reset
   pushMirrors(t);
   const moved = structuredClone(mirrors(t.state));
-  t.go('in', t.find('out', FACE, 'reset')); // the laser is off: the lava is cold
+  const reset = t.find('out', FACE, 'reset');
+  t.state.players.in.pose = { ...t.state.players.in.pose, face: FACE, x: reset.x, y: reset.y }; // put there: the lava keeps a walker out
   t.interact('in');
   assert.deepEqual(mirrors(t.state), moved);
 });
@@ -201,20 +207,56 @@ test('laser-path: mirrors and rocks block the outside player; a mirror is not pu
   assert.deepEqual(mirrors(t.state)[1], { id: 'back-b', x: 7, y: 4 });
 });
 
-test('laser-path: the path is seeded, contiguous from its start to the button, and the same after a fall', () => {
-  const paths = [21, 22, 23].map((seed) => {
-    const t = withPath(seed);
+test('laser-path: the burn locks the mirrors: no push, no RESET, and the beam stays drawn', () => {
+  const t = withPath(7);
+  const locked = structuredClone(mirrors(t.state));
+  const beam = linesOn(t.state, 'out', FACE, t.env);
+  assert.equal(beam.length, 3);
+  // push each mirror from all four sides: it is a wall now
+  for (const m of locked)
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+      const from = tile(m.x - dx, m.y - dy);
+      if (isBlocked(t.state, 'out', from, t.env)) continue;
+      t.go('out', from);
+      assert.deepEqual(stepTo(t, 'out', tile(m.x, m.y)).map((e) => e.type), ['bump']);
+    }
+  const mark = t.events.length;
+  resetMirrors(t);
+  assert.ok(!names(t.events.slice(mark)).includes('toggle'), 'RESET does nothing after the burn');
+  assert.deepEqual(mirrors(t.state), locked);
+  assert.deepEqual(linesOn(t.state, 'out', FACE, t.env), beam);
+  // ... also after the button
+  SOLUTIONS[ID]!(t);
+  assert.ok(t.state.solved.includes(FACE));
+  assert.deepEqual(linesOn(t.state, 'out', FACE, t.env), beam);
+  assert.deepEqual(linesOn(t.state, 'in', FACE, t.env), []);
+});
+
+test('laser-path: the safe path IS the beam: from the edge tile where the crate stood to the button behind the source', () => {
+  const src = solver(createGame(1)).find('out', FACE, 'f6-source');
+  const button = solver(createGame(1)).find('in', FACE, 'button');
+  assert.deepEqual([button.x, button.y], [src.x, src.y], 'the button stands behind the beam source');
+  for (const seed of [21, 22, 23]) {
+    const t = withLaser(seed);
+    resetMirrors(t);
+    assert.deepEqual(shownPath(t), [], 'no path before the crate burns');
+    pushMirrors(t);
     const path = shownPath(t);
-    const button = t.find('in', FACE, 'button');
-    assert.deepEqual([path[0]!.x, path[0]!.y], [PATH_START.x, PATH_START.y]);
-    assert.deepEqual([path.at(-1)!.x, path.at(-1)!.y, path.at(-1)!.state], [button.x, button.y, 'goal']);
+    const crate = t.find('out', FACE, 'f6-crate');
+    assert.deepEqual([path[0]!.x, path[0]!.y], [crate.x, crate.y]);
+    assert.deepEqual([path.at(-1)!.x, path.at(-1)!.y], [button.x, button.y]);
     for (let i = 1; i < path.length; i++) assert.equal(Math.abs(path[i]!.x - path[i - 1]!.x) + Math.abs(path[i]!.y - path[i - 1]!.y), 1, 'a step at a time');
-    for (const p of path) assert.ok(!onRing(p.x, p.y), 'the path is lava tiles only');
     assert.equal(new Set(path.map((p) => `${p.x},${p.y}`)).size, path.length);
-    return path.map((p) => `${p.x},${p.y}`).join(' ');
-  });
-  assert.notEqual(paths[0], paths[1]);
-  assert.notEqual(paths[1], paths[2]);
+    assert.equal(path.filter((p) => onRing(p.x, p.y)).length, 1, 'only its first tile is on the ring');
+    // every tile of it is safe, every other lava tile is deadly
+    const safe = new Set(path.map((p) => `${p.x},${p.y}`));
+    for (let y = 1; y < FACE_SIZE - 1; y++)
+      for (let x = 1; x < FACE_SIZE - 1; x++) {
+        // the tiles under the beam, and no others: what the puzzle calls safe is what the outside player sees
+        const underBeam = linesOn(t.state, 'out', FACE, t.env).some((l) => (l.from[0] === l.to[0] ? x === l.from[0] && (y - l.from[1]) * (y - l.to[1]) <= 0 : y === l.from[1] && (x - l.from[0]) * (x - l.to[0]) <= 0));
+        assert.equal(safe.has(`${x},${y}`), underBeam, `${x},${y}`);
+      }
+  }
 });
 
 test('laser-path: the inside player sees lava and a button, never the path', () => {
@@ -227,28 +269,43 @@ test('laser-path: the inside player sees lava and a button, never the path', () 
   pushMirrors(t);
   assert.ok(shownPath(t).length > 0);
   assert.deepEqual(see(t, 'in'), before, 'burning the crate changes nothing inside');
-  assert.equal(see(t, 'in').some((o) => o.type === 'f6-path'), false);
+  assert.deepEqual(linesOn(t.state, 'in', FACE, t.env), [], 'no beam inside');
   assert.equal(see(t, 'out').some((o) => o.type === 'f6-lava'), false);
+  assert.equal(see(t, 'out').some((o) => o.type === 'f6-path'), false, 'the old drawn path is gone: the beam is the path');
 });
 
-test('laser-path: lava off the path is a strike and a trip back to the start; before the crate burns all of it is', () => {
+test('laser-path: the lava is hot from the first second: a step in is a strike and a trip back to the ring', () => {
+  const t = solver(createGame(1));
+  assert.equal(t.state.solved.length, 0);
+  assert.equal(hazardTiles(t.state, 'in', FACE, t.env).length, 100, 'the whole inside of the ring, button included');
+  assert.equal(hazardTiles(t.state, 'out', FACE, t.env).length, 0);
+  t.go('in', tile(5, 0));
+  assert.equal(t.state.strikes, 0, 'the walk there kept to the ring');
+  const evs = stepTo(t, 'in', tile(5, 1));
+  const p = t.state.players.in.pose;
+  assert.deepEqual([p.face, p.x, p.y, t.state.strikes], [FACE, RESPAWN.x, RESPAWN.y, 1]);
+  assert.ok(onRing(RESPAWN.x, RESPAWN.y));
+  assert.ok(names(evs).includes('splash'));
+  assert.ok(!t.state.solved.includes(FACE));
+});
+
+test('laser-path: lava off the path is a strike and a trip back to the start of the path; before the crate burns all of it is', () => {
   const t = withLaser(21);
-  const fall = (what: string) => {
+  const fall = (what: string, back: { x: number; y: number }) => {
     const strikes = t.state.strikes;
     return (evs: ReturnType<Solver['move']>) => {
       const p = t.state.players.in.pose;
-      assert.deepEqual([p.face, p.x, p.y], [FACE, RESPAWN.x, RESPAWN.y], `${what}: back beside the start, on face 6`);
+      assert.deepEqual([p.face, p.x, p.y], [FACE, back.x, back.y], `${what}: back on the ring of face 6`);
       assert.equal(t.state.strikes, strikes + 1, what);
       assert.ok(names(evs).includes('splash'), what);
     };
   };
-  insideGo(t, tile(RESPAWN.x, RESPAWN.y));
-  // no path yet: even its first tile is lava
-  fall('before the burn')(stepTo(t, 'in', tile(PATH_START.x, PATH_START.y)));
-  // the button does nothing yet either way: it cannot be reached
+  const crate = t.find('out', FACE, 'f6-crate');
   resetMirrors(t);
+  // no path yet: the tile the path will start with is lava like the rest
+  insideGo(t, tile(crate.x, crate.y));
+  fall('before the burn', RESPAWN)(stepTo(t, 'in', tile(crate.x, crate.y - 1)));
   pushMirrors(t);
-  resetMirrors(t);
   const path = toPathStart(t);
   const shown = shownPath(t).map((o) => `${o.x},${o.y}`);
   // walk the path until a neighbour tile is lava off it, and step there
@@ -257,15 +314,23 @@ test('laser-path: lava off the path is a strike and a trip back to the start; be
     stepTo(t, 'in', p);
     const off = [tile(p.x + 1, p.y), tile(p.x - 1, p.y), tile(p.x, p.y + 1), tile(p.x, p.y - 1)].find((n) => !onRing(n.x, n.y) && !shown.includes(`${n.x},${n.y}`));
     if (!off) continue;
-    fall('off the path')(stepTo(t, 'in', off));
+    fall('off the path', crate)(stepTo(t, 'in', off));
     fell = true;
     break;
   }
   assert.ok(fell);
   assert.deepEqual(shownPath(t).map((o) => `${o.x},${o.y}`), shown, 'the path does not change after a fall');
+  // every lava tile off the path is deadly, every tile on it is safe (stepped onto from a neighbour)
+  for (let y = 1; y < FACE_SIZE - 1; y++)
+    for (let x = 1; x < FACE_SIZE - 1; x++) {
+      const c = solver(structuredClone(t.state) as GameState, t.env);
+      c.state.players.in.pose = { ...c.state.players.in.pose, face: FACE, x, y: y - 1 };
+      stepTo(c, 'in', tile(x, y));
+      assert.equal(c.state.strikes > t.state.strikes, !shown.includes(`${x},${y}`), `lava ${x},${y}`);
+    }
   // the ring never hurts
   const strikes = t.state.strikes;
-  for (let i = 0; i < 4; i++) stepTo(t, 'in', tile(0, RESPAWN.y + (i % 2 ? 0 : 1)));
+  for (let i = 0; i < 4; i++) stepTo(t, 'in', tile(crate.x + (i % 2 ? 0 : 1), crate.y));
   assert.equal(t.state.strikes, strikes);
 });
 
@@ -284,18 +349,53 @@ test('laser-path: solved only by the button at the end of the path; then the lav
   assert.equal(t.state.strikes, strikes);
   assert.equal(see(t, 'in').find((o) => o.type === 'button')?.state, 'on');
   assert.ok(see(t, 'in').filter((o) => o.type === 'f6-lava').every((o) => o.state === 'cold'));
+  assert.equal(hazardTiles(t.state, 'in', FACE, t.env).length, 0);
   // walk off across what was lava
   t.go('in', tile(11, 6));
   assert.equal(t.state.strikes, strikes);
 });
 
-test('laser-path: before the laser is on, the lava is cold (nobody is dropped back)', () => {
-  const t = solver(createGame(1));
+test('laser-path: the dev "Solve puzzle" leaves what a real solve leaves: mirrors in the beam, crate burnt, flower on its tile, cold lava', () => {
+  const s = createGame(3);
+  devSolve(s, 5, 1000);
+  devSolve(s, 6, 1000);
+  const t = solver(s);
+  assert.deepEqual(mirrors(s), MIRROR_SOLVED);
+  const crate = t.find('out', FACE, 'f6-crate');
+  assert.deepEqual(linesOn(s, 'out', FACE).at(-1)!.to, [crate.x, crate.y], 'the beam ends on the crate tile');
+  assert.equal(see(t, 'out').find((o) => o.type === 'f6-crate')?.state, 'burnt');
+  assert.deepEqual([s.items[FLOWER_ID]!.x, s.items[FLOWER_ID]!.y], [crate.x, crate.y]);
   assert.ok(see(t, 'in').filter((o) => o.type === 'f6-lava').every((o) => o.state === 'cold'));
+  t.go('out', t.item(FLOWER_ID));
+  assert.deepEqual(t.interact('out').map((e) => e.type), ['pickup']);
   t.go('in', t.find('in', FACE, 'button'));
-  t.interact('in');
-  assert.equal(t.state.strikes, 0);
-  assert.ok(!t.state.solved.includes(FACE), 'the button does nothing before the crate burns');
+  assert.equal(s.strikes, 0);
+});
+
+test('laser-path: the objective says what each side has to do, in every state', () => {
+  const t = solver(createGame(5));
+  const both = () => SIDES.map((side) => {
+    t.state.players[side].pose = { ...t.state.players[side].pose, face: FACE, x: 0, y: 0 };
+    return objectiveFor(t.state, side, t.env);
+  });
+  const seen = new Set<string>();
+  const stage = (what: string) => {
+    for (const line of both()) {
+      assert.ok(line && line.length > 10, what);
+      assert.ok(!/green|glow/i.test(line), `${what}: no drawn path any more`);
+      seen.add(line);
+    }
+  };
+  stage('start');
+  assert.match(both()[1]!, /lava/i);
+  devSolve(t.state, 5, 1000);
+  stage('laser on');
+  (t.state.puzzles[ID] as { mirrors: Box[] }).mirrors = structuredClone(MIRROR_SOLVED) as Box[];
+  t.wait(250);
+  assert.ok(burnt(t.state));
+  stage('burnt');
+  assert.match(both()[0]!, /beam/i);
+  assert.equal(seen.size, 5);
 });
 
 test('laser-path: the lava is there for the inside player in every state, and nothing hides it', () => {
@@ -312,9 +412,10 @@ test('laser-path: the lava is there for the inside player in every state, and no
     for (let y = 0; y < FACE_SIZE; y++) for (let x = 0; x < FACE_SIZE; x++) assert.equal(seen.has(`${x},${y}`), !onRing(x, y), `${when}: ${x},${y}`);
     assert.equal(see(t, 'in').some((o) => o.type === 'f6-path'), false, `${when}: the path is never in the inside view`);
   };
-  whole(solver(createGame(33)), 'cold', 'at the start');
+  whole(solver(createGame(33)), 'hot', 'at the start, before anything is solved');
+  whole(withLaser(33), 'hot', 'laser on');
   const t = withPath(33);
-  whole(t, 'hot', 'laser on, crate burnt');
+  whole(t, 'hot', 'crate burnt');
   // the tiles of the path look like every other tile
   const path = new Set(shownPath(t).map((p) => `${p.x},${p.y}`));
   assert.ok(path.size > 2);

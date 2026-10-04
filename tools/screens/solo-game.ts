@@ -50,7 +50,7 @@ import {
   type TileRef,
 } from '../../shared/src/index';
 import { canonDir, partnerCell, runsOf, turnOf } from '../../shared/src/bot/scripts/kit456';
-import { opposite, pathOf } from '../../shared/src/bot/scripts/laserPath';
+import { beamRoute, opposite } from '../../shared/src/bot/scripts/laserPath';
 import { watchShow } from '../../shared/src/bot/scripts/sequenceLaser';
 import { readCode } from '../../shared/src/puzzles/hiddenCode';
 import { QUIET_ARGS, quiet } from './quiet';
@@ -453,14 +453,10 @@ async function laserPath(p: Player): Promise<void> {
     await sleep(300);
     await p.look();
   }
-  // the path shows now, as I see it drawn; a mirror standing on it covers a tile
-  const drawn = () => pathOf(p.o.objects.filter((x) => x.type === 'f6-path'));
-  for (let n = 0; !drawn(); n++) {
-    if (n > 3) throw new Error('the path of face 6 stays covered');
-    await reset();
-    await sleep(300);
-    await p.look();
-  }
+  // the mirrors are locked now and the beam I see is the path: from the edge tile where the
+  // crate stood, back along the beam to its source
+  const drawn = () => beamRoute(p.o.objects);
+  if (!drawn()) throw new Error('the crate of face 6 is burnt, but I cannot read the beam off my screen');
   const flower = p.o.items.find((i) => i.kind.startsWith('flower-'));
   if (!p.o.carrying && flower) {
     await p.goToTile({ face: 6, ...canonOf(p.o, flower) });

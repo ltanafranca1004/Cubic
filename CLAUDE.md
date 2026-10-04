@@ -195,7 +195,10 @@ block by themselves; a puzzle's `isBlocked` decides.
 **EDGE RULE: nothing solid on the outer ring of any face** (row 0, row 11, column 0,
 column 11): no solid terrain there, and no puzzle may block a ring tile for either side, so
 a player crossing in from the next face can always step in. `shared/test/maps.test.ts`
-checks the terrain; boxes refuse the ring (`lib/push.ts`).
+checks the terrain and the puzzles; boxes refuse the ring (`lib/push.ts`).
+**One exception:** the wooden crate of face 6 (`f6-crate`, outside) stands on the ring and
+is solid until the laser burns it away; from then on its tile is open like any other. The
+tests allow exactly that object, only while it is unburnt. Nothing else may join it.
 
 ## Puzzles
 
@@ -210,16 +213,25 @@ portal and no exit to walk to.
 | 3 Snow / Tile room | `mirrored-glyph` | describes the symbol carved in the snow | flips floor tiles (E) until they match it, mirrored; CLEAR in the corner | nothing |
 | 4 Forest / Greenhouse | `botanical-mirror` | plants the flower in the pot the partner names | sees which of the five pots holds that colour | the last link (needs face 6's flower) |
 | 5 Rooftop / Laser room | `sequence-laser` | calls the order the seven symbols light up in (E on REPLAY shows it again) | puts the battery in the emitter, presses the symbols in that order | the laser beam on face 6 |
-| 6 Cave / Lava room | `laser-path` | pushes two mirrors so the beam burns the crate, then calls the safe path it reveals | walks that path over the lava to the button, E | the flower (outside), for face 4 |
+| 6 Cave / Lava room | `laser-path` | pushes two mirrors so the beam burns the crate on the edge, then calls the beam's route: it is the safe path | stays on the ring until then, walks the tiles behind the beam from the crate's edge tile to the button, E | the flower (outside), for face 4 |
 
 - A wrong code, press, pot or lava tile is a strike. Face 3 has none.
-- **Face 6's lava is deadly only while face 5 is solved and face 6 is not.** Before the
-  laser is on, and after the button is pressed, it is cold and walkable (so the bot and
-  the test scripts can cross it). While it is hot the inside player must stay on the ring.
+- **Face 6's lava is hot (deadly) from the first second of the game until face 6 is
+  solved.** A step in: back on the ring with a strike. Every inside walk across face 6
+  keeps to the ring: the bot (`hazardAvoid`), the test harness (`t.go`), the playtest
+  (`goTo`). After the button it crusts over (`cold`) and is walkable.
+  **The beam is the safe path.** There is none until the laser burns the crate. The burn
+  locks the mirrors (no push, RESET does nothing any more; before the burn RESET works),
+  so the beam is frozen and stays drawn for the outside player. The safe tiles are exactly
+  the tiles under that beam (same canonical tiles), from the ring tile where the crate
+  stood (`9,11`) to the beam source; the button stands behind the source (`5,5`). Nothing
+  marks them inside: the outside player reads the beam out. A fall puts the player on
+  `RESPAWN` (`0,5`) before the burn, and on the crate's ring tile (the start of the path)
+  after it. The crate is on the ring and solid until it burns (the edge rule's one
+  exception); the flower lands on its tile.
   It LOOKS like lava the whole time: all 99 tiles are `f6-lava` objects in every state
   (`hot` flows, 4 frames, still with reduce motion; `cold` is lava under a dark crust), and
-  the room is `bright`. The path is never in the inside view. Browser check:
-  `tools/screens/lava.ts`.
+  the room is `bright`. Browser check: `tools/screens/lava.ts`.
 - Hooks beyond the basics: `onUse` (E on a tile with empty hands and no item to pick up:
   keys, buttons, flip tiles), `onPush` (a step into a tile on the same face: move a box and
   return true), `lines(side)` (beams drawn over the face), `bright` (the inside of the

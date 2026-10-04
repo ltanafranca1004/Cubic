@@ -244,7 +244,8 @@ test('faces: the cube shows what the puzzles show, in its state, and the HUD onl
   assert.ok(!has('out', 1, 'code-mark', true) && !has('in', 4, 'f4-flowerpot', true));
   assert.ok(has('out', 3, 'f3-glyph', true) && has('in', 1, 'key', true) && has('in', 6, 'f6-lava', true));
   // the frame is the one of the object's state, not the type's default
-  const manifest: CubeManifest = { objects: { 'f6-lava': { image: 'objects.png', frames: { default: 1, hot: 1, cold: 2 } }, unknown: { image: 'objects.png', frames: { default: 9 } } } };
+  // (the lava is hot from the start of the game)
+  const manifest: CubeManifest = { objects: { 'f6-lava': { image: 'objects.png', frames: { default: 1, hot: 2, cold: 1 } }, unknown: { image: 'objects.png', frames: { default: 9 } } } };
   const lava = startObjects('in', 6).find((o) => o.type === 'f6-lava')!;
   assert.equal(faceOps(manifest, 'in', 6, false).find((o) => o.x === lava.x && o.y === lava.y)!.frame, 2);
 });

@@ -22,13 +22,11 @@ import {
   lineKeys,
   newMind,
   nextStep,
-  objectsOn,
   observe,
   parseAction,
   parseHuman,
   parseStringMap,
   planAction,
-  seedOf,
   visibleObjects,
   type FaceId,
   type GameEnv,
@@ -42,7 +40,7 @@ import {
 } from '../src/index';
 import { LOST_MS } from '../src/bot/partner';
 import { readCode } from '../src/puzzles/hiddenCode';
-import { safePath } from '../src/puzzles/laserPath';
+import { MIRROR_SOLVED } from '../src/puzzles/laserPath';
 import { play, type HumanScript } from './partnerSim';
 
 // THE PARTNER CORE, on a cube of its own: blank faces and made-up puzzles. Nothing in the
@@ -394,11 +392,11 @@ function lavaGame(): GameState {
 }
 const ringOf6 = (p: { face: FaceId; x: number; y: number }) => p.face !== 6 || p.x === 0 || p.y === 0 || p.x === FACE_SIZE - 1 || p.y === FACE_SIZE - 1;
 
-test('hot lava: with face 5 solved the inside body routes around the inside of face 6', () => {
+test('hot lava: the inside body routes around the inside of face 6, from the start of the game', () => {
   const s = lavaGame();
   const across = (p: { face: FaceId; x: number; y: number }) => p.face === 6 && p.x === FACE_SIZE - 1 && p.y === 5;
   assert.equal(hazardTiles(s, 'in', 6).length, 100); // the whole inside of the face, button included
-  assert.equal(hazardTiles(createGame(T0), 'in', 6).length, 0); // cold before the laser: plain floor
+  assert.equal(hazardTiles(createGame(T0), 'in', 6).length, 100); // hot before the laser too
   assert.equal(hazardTiles(s, 'out', 6).length, 0); // the cave above it is not lava
   // the blind path walks straight through; the careful one is longer and never leaves the ring
   const blind = findPath(s, 'in', across)!;
@@ -439,8 +437,9 @@ test('hot lava: the brain with no script follows the human to face 6 and stays o
 
   // a script that was told the path lists it in `allow`: the body walks exactly those lava tiles and presses the button
   const g = lavaGame();
-  (g.puzzles['laser-path'] as { burnt: boolean }).burnt = true; // the crate is burnt: the path exists
-  const path = safePath({ world: defaultEnv.world, seed: seedOf(g), objects: (side, face, type) => objectsOn(defaultEnv.world, side, face, type) });
+  // the crate is burnt: the beam is the path, from the crate's edge tile to the source
+  Object.assign(g.puzzles['laser-path'] as object, { burnt: true, mirrors: structuredClone(MIRROR_SOLVED) });
+  const path = [10, 9, 8, 7, 6, 5, 4, 3, 2].map((y) => ({ x: 9, y })).concat([8, 7, 6, 5].map((x) => ({ x, y: 2 })), [3, 4, 5].map((y) => ({ x: 5, y })));
   const allow = () =>
     path.map((t) => {
       const [col, row] = canonToScreen('in', 6, g.players.in.pose.up, t.x, t.y);

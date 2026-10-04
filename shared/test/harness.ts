@@ -7,7 +7,8 @@ import {
   needsTick,
   seedOf,
   objectsOn,
-  pathTo,
+  findPath,
+  hazardAvoid,
   tick,
   type FaceId,
   type GameEnv,
@@ -97,7 +98,8 @@ export function solver(state: GameState, env: GameEnv = defaultEnv, startAt = 10
     wait: (ms) => record(advance(ms)),
     go(side, target) {
       const where = `face ${target.face} ${target.x},${target.y}`;
-      const path = pathTo(state, side, target, env);
+      // like a careful player: never through a deadly tile (the lava inside face 6)
+      const path = findPath(state, side, (p) => p.face === target.face && p.x === target.x && p.y === target.y, env, undefined, hazardAvoid(state, side, env));
       assert.ok(path, `no path for ${side} to ${where}`);
       const out: GameEvent[] = [];
       for (const [dx, dy] of path) {

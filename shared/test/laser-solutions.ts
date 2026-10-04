@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { MOVES, findPath, stepPose, visibleObjects, type Pose, type TileRef } from '../src/index';
+import { MOVES, linesOn, stepPose, visibleObjects, type Pose, type TileRef } from '../src/index';
 import { BATTERY_ID } from '../src/puzzles/chain';
 import type { SolutionScript, Solver } from './harness';
 
@@ -7,7 +7,6 @@ import type { SolutionScript, Solver } from './harness';
 // their unit tests share. Not a test file. Everything goes through real moves, and each
 // player only uses what their own side can see (visibleObjects).
 
-const LAVA_FACE = 6;
 const onTile = (t: TileRef) => (p: Pose) => p.face === t.face && p.x === t.x && p.y === t.y;
 
 /** One step onto the tile next to `side` (canonical), whichever way their screen is turned. */
@@ -19,26 +18,11 @@ export function stepTo(t: Solver, side: 'out' | 'in', tile: TileRef) {
 }
 
 /**
- * Walk the INSIDE player somewhere without wading through the lava of face 6: other faces
- * are reached around it, and a ring tile of face 6 is entered from the face next door.
+ * Walk the INSIDE player somewhere without wading through the lava of face 6. t.go keeps
+ * off deadly tiles for every walk now (the lava is hot from the start), round the ring.
  */
 export function insideGo(t: Solver, target: TileRef): void {
-  const here = () => t.state.players.in.pose;
-  const walk = (goal: (p: Pose) => boolean, what: string) => {
-    const path = findPath(t.state, 'in', goal, t.env, (face) => face !== LAVA_FACE);
-    assert.ok(path, `inside: no way to ${what}`);
-    for (const [dx, dy] of path) t.move('in', dx, dy);
-  };
-  if (t.state.solved.includes(LAVA_FACE)) return void t.go('in', target); // the lava is cold
-  if (onTile(target)(here())) return;
-  if (here().face === LAVA_FACE) walk((p) => p.face !== LAVA_FACE, 'leave face 6'); // from the ring: one step
-  if (target.face !== LAVA_FACE) walk(onTile(target), `face ${target.face} ${target.x},${target.y}`);
-  else {
-    const beside = (p: Pose) => p.face !== LAVA_FACE && MOVES.some((m) => onTile(target)(stepPose(p, m[0], m[1]).pose));
-    walk(beside, 'the tile next to face 6');
-    stepTo(t, 'in', target);
-  }
-  assert.ok(onTile(target)(here()), `inside did not arrive at face ${target.face} ${target.x},${target.y}`);
+  t.go('in', target);
 }
 
 const symbols = (t: Solver, side: 'out' | 'in') => visibleObjects(t.state, side, 5, t.env).filter((o) => o.type === 'f5-symbol');
@@ -115,24 +99,31 @@ export function pushMirrors(t: Solver): void {
   }
 }
 
-/** The safe path as the OUTSIDE player sees it drawn, from its start to the button. */
-export const shownPath = (t: Solver) => visibleObjects(t.state, 'out', 6, t.env).filter((o) => o.type === 'f6-path');
+/**
+ * The safe path as the OUTSIDE player reads it off the beam they see drawn, once the crate
+ * is burnt: every tile under the beam, walked backwards, from the edge tile where the crate
+ * stood to the beam source (the button is behind it). [] while the crate is whole.
+ */
+export function shownPath(t: Solver): TileRef[] {
+  if (!visibleObjects(t.state, 'out', 6, t.env).some((o) => o.type === 'f6-crate' && o.state === 'burnt')) return [];
+  const lines = linesOn(t.state, 'out', 6, t.env);
+  if (!lines.length) return [];
+  const tiles: TileRef[] = [{ face: 6, x: lines[0]!.from[0], y: lines[0]!.from[1] }];
+  for (const { from, to } of lines) {
+    const [dx, dy] = [Math.sign(to[0] - from[0]), Math.sign(to[1] - from[1])];
+    for (let x = from[0], y = from[1]; x !== to[0] || y !== to[1]; ) tiles.push({ face: 6, x: (x += dx), y: (y += dy) });
+  }
+  return tiles.reverse();
+}
 
-/** The inside player goes to the ring tile next to the start of the path. Returns the path. */
+/** The inside player goes round the ring to the tile the path starts on. Returns the rest of the path. */
 export function toPathStart(t: Solver): TileRef[] {
-  const path = shownPath(t).map((o) => ({ face: 6 as const, x: o.x, y: o.y }));
-  assert.ok(path.length > 1, 'the outside player sees no path on face 6');
+  const path = shownPath(t);
+  assert.ok(path.length > 1, 'the outside player sees no burnt crate and beam on face 6');
   const first = path[0]!;
-  // the outside player says where it starts: the edge tile beside the first path tile
-  const edge = [
-    { x: first.x - 1, y: first.y },
-    { x: first.x + 1, y: first.y },
-    { x: first.x, y: first.y - 1 },
-    { x: first.x, y: first.y + 1 },
-  ].find((n) => n.x === 0 || n.y === 0 || n.x === 11 || n.y === 11);
-  assert.ok(edge, 'the path does not start beside the ring');
-  insideGo(t, { face: 6, ...edge });
-  return path;
+  assert.ok(first.x === 0 || first.y === 0 || first.x === 11 || first.y === 11, 'the beam does not end on the ring');
+  insideGo(t, first);
+  return path.slice(1);
 }
 
 /** Face 6. `before` is the script of face 5 (the laser), run only if it is not solved yet. */
@@ -140,10 +131,12 @@ export const solveLaserPath =
   (before: SolutionScript): SolutionScript =>
   (t) => {
     if (!t.state.solved.includes(5)) before(t);
-    resetMirrors(t);
-    pushMirrors(t);
-    // the crate is burnt. RESET takes the mirrors off whatever path tile they may cover
-    resetMirrors(t);
+    // (not again when the crate is burnt already: the mirrors are locked by then)
+    if (!shownPath(t).length) {
+      resetMirrors(t);
+      pushMirrors(t);
+    }
+    // the crate is burnt: the mirrors are locked and the beam is the path
     const strikes = t.state.strikes;
     for (const tile of toPathStart(t)) stepTo(t, 'in', tile);
     t.interact('in'); // the button, at the end of the path

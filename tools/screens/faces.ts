@@ -16,7 +16,7 @@
 import { mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { chromium, type Page } from 'playwright';
-import { STEP_MS, defaultEnv, findPath, objectsOn, stepPose, visibleObjects, type FaceId, type GameState, type Move, type Pose, type Side, type TileRef } from '../../shared/src/index';
+import { STEP_MS, defaultEnv, findPath, hazardAvoid, linesOn, objectsOn, stepPose, visibleObjects, type FaceId, type GameState, type Move, type Pose, type Side, type TileRef } from '../../shared/src/index';
 import { readCode } from '../../shared/src/puzzles/hiddenCode';
 
 const BASE = process.env.BASE ?? 'http://localhost:5509';
@@ -165,8 +165,6 @@ const settle = (side: Side) => until('every input acknowledged', async () => (aw
 const onTile = (t: TileRef) => (p: Pose) => p.face === t.face && p.x === t.x && p.y === t.y;
 const state = () => stateOf(a);
 const sees = async (side: Side, face: FaceId, type: string) => visibleObjects(await stateOf(page(side)), side, face).filter((o) => o.type === type);
-/** Is the lava of face 6 deadly right now? Then the inside player walks around that face. */
-const hot = (s: GameState) => s.solved.includes(5) && !s.solved.includes(LAVA);
 
 /** Walk `side` to a pose accepted by `goal`, planned on the live state with the game's own pathfinding. */
 async function goTo(side: Side, what: string, goal: (p: Pose) => boolean): Promise<void> {
@@ -174,7 +172,8 @@ async function goTo(side: Side, what: string, goal: (p: Pose) => boolean): Promi
     await settle(side);
     const s = await stateOf(page(side));
     if (goal(s.players[side].pose)) return;
-    const path = findPath(s, side, goal, defaultEnv, side === 'in' && hot(s) ? (f) => f !== LAVA : undefined);
+    // never through a deadly tile: the lava inside face 6 is hot from the start of the game
+    const path = findPath(s, side, goal, defaultEnv, undefined, hazardAvoid(s, side));
     if (!path) throw new Error(`${side}: no path to ${what}`);
     let face = s.players[side].pose.face;
     for (const m of path) {
@@ -315,7 +314,7 @@ await go('out', 5, 6, 10);
   await shot(5, 'solved');
 }
 
-// ---------- face 6: laser and invisible path ----------
+// ---------- face 6: laser and lava (the beam is the path) ----------
 console.log('face 6');
 {
   const reset = objectTile('out', 6, 'reset');
@@ -334,12 +333,14 @@ console.log('face 6');
   }
   await until('the crate burnt and the flower is out', async () => (await sees('out', 6, 'f6-crate')).some((o) => o.state === 'burnt') && (await state()).items.flower?.side === 'out');
   await go('out', 6, 2, 7);
-  await shot(6, 'beam', ['out']); // the beam on the crate, the flower beside it, the path drawn
-  await go('out', 6, reset.x, reset.y);
-  await use('out'); // RESET takes the mirrors off whatever path tile they cover
-  await go('out', 6, 2, 7);
-  const line = await sees('out', 6, 'f6-path');
-  if (line.length < 2) throw new Error('the outside player sees no path on face 6');
+  await shot(6, 'beam', ['out']); // the beam on the edge where the crate stood, the flower on its tile: the beam is the path
+  // the tiles under the beam, backwards: from the crate's edge tile to the source (the button)
+  const lines = linesOn(await state(), 'out', 6);
+  const tiles = [{ x: lines[0]!.from[0], y: lines[0]!.from[1] }];
+  for (const { from, to } of lines) for (let [x, y] = from; x !== to[0] || y !== to[1]; ) tiles.push({ x: (x += Math.sign(to[0] - from[0])), y: (y += Math.sign(to[1] - from[1])) });
+  const [start, ...line] = tiles.reverse();
+  if (!start || line.length < 2) throw new Error('the outside player sees no beam on face 6');
+  await go('in', 6, start.x, start.y); // round the ring
   for (const [i, o] of line.entries()) {
     await stepOnto('in', LAVA, o.x, o.y);
     if (i === Math.floor(line.length / 2)) await shot(6, 'path', ['out', 'in'], 400); // half way over the lava
