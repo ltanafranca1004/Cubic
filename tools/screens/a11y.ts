@@ -388,7 +388,8 @@ async function gamepad(browser: Browser): Promise<void> {
     await set([12]);
     await set([]);
   }
-  await expect('d-pad up walks up', async () => (await pose(page, 'out')).y === p0.y - 1);
+  // a 150 ms hold can reach the key repeat (130 ms), so one press is one or two steps
+  await expect('d-pad up walks up', async () => (await pose(page, 'out')).y < p0.y);
   await set([], [0, 1]);
   await set([]);
   await expect('the stick walks back down', async () => (await pose(page, 'out')).y >= p0.y);

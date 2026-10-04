@@ -34,7 +34,7 @@ export const DEFAULT_SETTINGS: Settings = {
   voiceVolume: 1,
   micMuted: false,
   reduceMotion: false,
-  micMode: 'open',
+  micMode: 'ptt',
   textSize: 'm',
   highContrast: false,
   screenShake: true,
