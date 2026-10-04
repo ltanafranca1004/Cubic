@@ -596,17 +596,17 @@
         "9": 25,
         "default": 16,
         "enter": 26,
-        "0-ok": 27,
-        "1-ok": 28,
-        "2-ok": 29,
-        "3-ok": 30,
-        "4-ok": 31,
-        "5-ok": 32,
-        "6-ok": 33,
-        "7-ok": 34,
-        "8-ok": 35,
-        "9-ok": 36,
-        "enter-ok": 37
+        "0-green": 27,
+        "1-green": 28,
+        "2-green": 29,
+        "3-green": 30,
+        "4-green": 31,
+        "5-green": 32,
+        "6-green": 33,
+        "7-green": 34,
+        "8-green": 35,
+        "9-green": 36,
+        "enter-green": 37
       }
     },
     "display": {
@@ -623,27 +623,37 @@
         "8": 47,
         "9": 48,
         "default": 38,
-        "blank": 38
+        "empty": 38,
+        "0-green": 49,
+        "1-green": 50,
+        "2-green": 51,
+        "3-green": 52,
+        "4-green": 53,
+        "5-green": 54,
+        "6-green": 55,
+        "7-green": 56,
+        "8-green": 57,
+        "9-green": 58
       }
     },
     "button": {
       "image": "sprites/objects.png",
       "frames": {
-        "default": 49,
-        "off": 49,
-        "on": 50
+        "default": 59,
+        "off": 59,
+        "on": 60
       }
     },
     "reset": {
       "image": "sprites/objects.png",
       "frames": {
-        "default": 51
+        "default": 61
       }
     },
     "clear": {
       "image": "sprites/objects.png",
       "frames": {
-        "default": 52
+        "default": 62
       }
     }
   },
