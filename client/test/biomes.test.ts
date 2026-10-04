@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { FACES, FACE_SIZE, createGame, defaultEnv, onRing, visibleObjects, type FaceId } from '@cubic/shared';
 import { DECOR, DECOR_LEGEND, TREES, WIND_STEPS, decorAt, decorSpots, dressed, dripPoints, isTall, overhangTiles, propAt, propCell, shoreMask, skinAt, wadeAt, windStep } from '../src/world/biomes/decor';
-import { PROPS, PROP_CELLS, PROP_COLS, PROP_H, PROP_LIST, PROP_SHEET, PROP_VEIL, PROP_W, TALL, WATER_CELL, WATER_FRAMES, WATER_MASKS, WATER_SHEET, type PropName } from '../src/world/biomes/sheet';
+import { PROPS, PROP_CELLS, PROP_COLS, PROP_H, PROP_LIST, PROP_SHEET, PROP_W, TALL, WATER_CELL, WATER_FRAMES, WATER_MASKS, WATER_SHEET, type PropName } from '../src/world/biomes/sheet';
 
 const ASSETS = new URL('../public/assets/', import.meta.url);
 const out = (face: FaceId) => defaultEnv.world.out[face];
@@ -199,13 +199,12 @@ test('the sheets hold every cell the table names, and the manifest agrees', () =
   assert.equal(props.width, PROP_COLS * PROP_W);
   assert.equal(props.height % PROP_H, 0);
   assert.ok((props.height / PROP_H) * PROP_COLS >= PROP_CELLS);
-  assert.deepEqual(size(PROP_VEIL), props, 'the veil is the same sheet with holes');
   assert.deepEqual(Object.values(PROPS).flat(), Array.from({ length: PROP_CELLS }, (_, i) => i), 'no gaps, no repeats');
   for (const name of TALL) assert.ok(PROPS[name], name);
   assert.deepEqual(size(WATER_SHEET), { width: WATER_MASKS * WATER_CELL, height: FACES.length * WATER_FRAMES * WATER_CELL });
-  const manifest = JSON.parse(readFileSync(new URL('manifest.json', ASSETS), 'utf8')) as { biomes: { props: { image: string; veil: string; frames: Record<string, number[]> }; water: { image: string } } };
+  const manifest = JSON.parse(readFileSync(new URL('manifest.json', ASSETS), 'utf8')) as { biomes: { props: { image: string; veil?: string; frames: Record<string, number[]> }; water: { image: string } } };
   assert.equal(manifest.biomes.props.image, PROP_SHEET);
-  assert.equal(manifest.biomes.props.veil, PROP_VEIL);
+  assert.equal(manifest.biomes.props.veil, undefined, 'the dithered veil sheet is gone: a tall prop in front of the turtle is faded as a whole (world/biomes/depth.ts)');
   assert.equal(manifest.biomes.water.image, WATER_SHEET);
   assert.deepEqual(manifest.biomes.props.frames, PROPS);
 });

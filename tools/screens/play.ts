@@ -3,9 +3,10 @@
 // when it is imported. Menus are clicked like a player would, the game is played with real
 // keys, and the page is only ever read (window.__cubic, dev builds).
 import type { Browser, Page } from 'playwright';
-import { defaultEnv, findPath, stepPose, visibleObjects, type FaceId, type GameState, type Move, type Pose, type Side, type TileRef } from '../../shared/src/index';
+import { STEP_MS as PACE_MS, defaultEnv, findPath, stepPose, visibleObjects, type FaceId, type GameState, type Move, type Pose, type Side, type TileRef } from '../../shared/src/index';
 
-export const STEP_MS = 130;
+/** The wait after a key tap: one step of the walking pace (shared/src/pace.ts), so the scripts follow the knob. */
+export const STEP_MS = PACE_MS;
 export const FLIP_MS = 650;
 /** The face whose lava is deadly while face 5 is solved and it is not. */
 export const LAVA: FaceId = 6;

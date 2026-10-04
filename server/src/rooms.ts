@@ -47,7 +47,9 @@ import {
 // do cancels it. When it runs out only THEY are removed: the other player stays (and is
 // the host), the seat opens. Each player has their own clock: nothing one player does or
 // fails to do ever removes the other. An AI is never inactive, and a player who is not
-// connected is "gone" (the hold above), not inactive.
+// connected is "gone" (the hold above), not inactive: their clock stands still meanwhile
+// and goes on where it was when they are back. A host waiting ALONE in a lobby has no
+// clock at all: it starts for both when the second player comes in.
 
 const CODE_LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // no I or O: they read as 1 and 0
 const CODE_LEN = 4;
@@ -69,6 +71,18 @@ export const LIMITS = { moveBurst: 5, moveRefillMs: 90, lobbyHoldMs: 15_000, sea
  * the countdown runs before they are removed.
  */
 export const INACTIVITY = { idleMs: 240_000, warnMs: 60_000 };
+/** What an inactivity timer may be set to: 1 second to 24 hours. */
+export const INACTIVITY_RANGE = { min: 1000, max: 86_400_000 };
+/**
+ * An inactivity timer from the environment, in ms. Not a number, empty, zero or less =
+ * `fallback`. Anything else is kept inside INACTIVITY_RANGE: setTimeout fires at once for
+ * a delay over 2^31 ms, which would remove everyone the moment they sat down.
+ */
+export function inactivityMs(value: unknown, fallback: number): number {
+  const n = typeof value === 'string' && value.trim() === '' ? NaN : Number(value);
+  if (!Number.isFinite(n) || n <= 0) return fallback;
+  return Math.min(INACTIVITY_RANGE.max, Math.max(INACTIVITY_RANGE.min, Math.round(n)));
+}
 /** m:ss, rounded up: what is left of a countdown. */
 const clock = (ms: number) => {
   const s = Math.max(0, Math.ceil(ms / 1000));
@@ -94,8 +108,15 @@ interface Member {
   away: SeatAway['kind'] | null;
   until: number;
   dropTimer: NodeJS.Timeout | null;
-  /** When they last did something (this room's clock). */
+  /**
+   * When they last did something (this room's clock). While they are disconnected the
+   * clock stands still: `idleFor` keeps how long they had been idle, and `activeAt` is
+   * moved by the time they were away when they come back.
+   */
   activeAt: number;
+  idleFor: number;
+  /** The newest chat id when they came in: system lines up to it were never theirs to see. */
+  sawFrom: number;
   /** The inactivity countdown is running: when they are removed. 0 = no countdown. */
   idleUntil: number;
   idleTimer: NodeJS.Timeout | null;
@@ -235,13 +256,20 @@ export class Room {
       until: 0,
       dropTimer: null,
       activeAt: this.now(),
+      idleFor: 0,
+      sawFrom: this.chatId,
       idleUntil: 0,
       idleTimer: null,
       note: null,
     };
     this.members.push(m);
     this.seatPlayer(m);
-    this.watch(m);
+    // The second player is here: nobody waits alone any more, both clocks start now (a
+    // countdown that is already running is left alone).
+    for (const x of this.members) {
+      if (this.phase === 'lobby' && !x.idleUntil && x.connected) x.activeAt = this.now();
+      this.watch(x);
+    }
     return m;
   }
 
@@ -253,11 +281,21 @@ export class Room {
     return m.role === 'host' ? 'P1' : 'P2';
   }
 
+  /**
+   * Waiting alone in a lobby for someone to come in with the code. That is not being
+   * inactive, however long it takes: no clock runs. (In a running game, and in a solo
+   * room, a player alone has one like anybody.)
+   */
+  private waitingAlone(): boolean {
+    return this.phase === 'lobby' && this.members.length < 2;
+  }
+
   /** (Re)start `m`'s own inactivity timer. Only a connected human has one. */
   private watch(m: Member): void {
     if (m.idleTimer) clearTimeout(m.idleTimer);
     m.idleTimer = null;
     if (m.isAI || !m.connected || this.closed || !this.members.includes(m)) return;
+    if (!m.idleUntil && this.waitingAlone()) return; // (a countdown that already runs goes on)
     const at = m.idleUntil || m.activeAt + INACTIVITY.idleMs;
     m.idleTimer = setTimeout(() => this.idleCheck(m), Math.max(0, at - this.now()));
     m.idleTimer.unref();
@@ -298,7 +336,8 @@ export class Room {
    */
   private note(m: Member, kind: SystemNote['kind']): void {
     const now = this.now();
-    const who = this.label(m);
+    // who they were when the countdown began: a later change of role or phase rewrites nothing
+    const who = m.note?.system?.who ?? this.label(m);
     const text =
       kind === 'idle'
         ? `${who} inactive, removed in ${clock(m.idleUntil - now)}`
@@ -307,7 +346,7 @@ export class Room {
           : kind === 'removed'
             ? `${who} left due to inactivity`
             : `${who} ${m.away === 'left' ? 'left' : 'disconnected'}`;
-    const system: SystemNote = kind === 'idle' ? { kind, who, until: m.idleUntil, now } : { kind, who };
+    const system: SystemNote = kind === 'idle' ? { kind, who, id: m.id, until: m.idleUntil, now } : { kind, who, id: m.id, now };
     const msg: ChatMessage = { id: m.note?.id ?? ++this.chatId, from: m.side ?? 'out', isAI: false, text, at: now, system };
     if (m.note) this.notes = this.notes.map((n) => (n.id === msg.id ? msg : n));
     else this.notes.push(msg);
@@ -333,10 +372,14 @@ export class Room {
     if (gone) this.note(m, 'gone');
   }
 
-  /** The chat as a newcomer gets it: what was said and the system lines, in order. */
-  private log(): ChatMessage[] {
+  /**
+   * The chat as `m` gets it on (re)joining: what was said and the system lines, in order.
+   * Only the system lines from their own time in the room: a newcomer is not told about
+   * the countdown or the removal of whoever had the place before them.
+   */
+  private log(m: Member): ChatMessage[] {
     const now = this.now();
-    const notes = this.notes.map((n) => (n.system?.kind === 'idle' ? { ...n, system: { ...n.system, now } } : n));
+    const notes = this.notes.filter((n) => n.id > m.sawFrom).map((n) => ({ ...n, system: { ...n.system!, now } }));
     return [...this.chat, ...notes].sort((a, b) => a.id - b.id);
   }
 
@@ -437,10 +480,20 @@ export class Room {
     if (!m) throw new Error('That room is gone.');
     if (m.dropTimer) clearTimeout(m.dropTimer);
     m.dropTimer = null;
+    const now = this.now();
+    // The time they were gone was never "inactive", but coming back is not a fresh start
+    // either: the clock goes on from where it stood (a flapping connection must not keep
+    // an absent player in the room for ever).
+    if (!m.connected) m.activeAt = now - m.idleFor;
     m.away = null;
     m.connected = true;
-    // back at the keys: the time they were gone was never "inactive", their clock starts now
-    m.activeAt = this.now();
+    // A refresh or a rejoin is the player doing something: a running countdown is off, and
+    // the next one is at least a countdown's length away. More than that only by real activity.
+    if (m.idleUntil) {
+      m.idleUntil = 0;
+      this.note(m, 'back');
+    }
+    m.activeAt = Math.max(m.activeAt, now - Math.max(0, INACTIVITY.idleMs - INACTIVITY.warnMs));
     this.watch(m);
     // The page that comes back numbers its moves from 1 again. Keeping the old ack would
     // make it throw away every prediction until its count passed the old one.
@@ -471,6 +524,7 @@ export class Room {
 
   /** Keep `m`'s place while they are not here. The window starts again with every call. */
   private hold(m: Member, kind: SeatAway['kind']): void {
+    if (m.connected) m.idleFor = this.now() - m.activeAt; // the clock stands still while they are gone
     m.connected = false;
     m.away = kind;
     this.unwatch(m, true); // gone, not inactive: the hold (and its banner) takes over
@@ -509,6 +563,7 @@ export class Room {
     const rest = this.members[0]!;
     rest.role = 'host';
     rest.ready = false;
+    this.watch(rest); // alone in a lobby now: waiting for someone is not being inactive
     this.emitRoom();
     this.emitState([]);
   }
@@ -530,7 +585,7 @@ export class Room {
   }
 
   private seatView(m: Member): Seat {
-    return { code: this.code, id: m.id, role: m.role, side: m.side, token: m.token, room: this.info(), state: this.state, chat: this.log() };
+    return { code: this.code, id: m.id, role: m.role, side: m.side, token: m.token, room: this.info(), state: this.state, chat: this.log(m) };
   }
 
   /** Whoever holds `side`, once the game is running (nothing moves in the lobby). */
@@ -577,8 +632,8 @@ export class Room {
     return events;
   }
 
-  /** Chat line. Returns the stored message, or null if it was empty or rate limited. */
-  say(side: Side, text: string): ChatMessage | null {
+  /** Chat line. Returns the stored message, or null if it was empty or rate limited. `key`: the AI's line key. */
+  say(side: Side, text: string, key?: string): ChatMessage | null {
     const seat = this.playing(side);
     if (!seat || typeof text !== 'string') return null;
     this.touch(seat);
@@ -588,7 +643,7 @@ export class Room {
     seat.chatTimes = seat.chatTimes.filter((t) => now - t < CHAT_WINDOW_MS);
     if (seat.chatTimes.length >= CHAT_PER_WINDOW) return null;
     seat.chatTimes.push(now);
-    const msg: ChatMessage = { id: ++this.chatId, from: side, isAI: seat.isAI, text: clean, at: now };
+    const msg: ChatMessage = { id: ++this.chatId, from: side, isAI: seat.isAI, text: clean, at: now, ...(key && seat.isAI ? { key } : {}) };
     this.chat.push(msg);
     if (this.chat.length > CHAT_HISTORY) this.chat.shift();
     for (const l of this.listeners) l.onChat?.(msg);

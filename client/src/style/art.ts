@@ -3,7 +3,7 @@ import { TILE_PX, defaultEnv, type FaceId, type Side, type TileKind, type Vec } 
 import type { ArtProvider } from '../game/art';
 import { WALK_HOLD_MS, hasFacing, playerFrames, type Facing, type PlayerFrames } from '../game/turtle';
 import { dressed } from '../world/biomes/decor';
-import { dressFace } from '../world/biomes/dress';
+import { dressFace, type PropPass } from '../world/biomes/dress';
 import { asset } from './assets';
 import { settings } from './settings';
 import { TIME } from './tokens';
@@ -145,9 +145,9 @@ export class SheetArt implements ArtProvider {
     return this.fallback.player(side, step, facing);
   }
 
-  dress(g: CanvasRenderingContext2D, side: Side, face: FaceId, up: Vec, frame: number): void {
+  dress(g: CanvasRenderingContext2D, side: Side, face: FaceId, up: Vec, frame: number, pass?: PropPass): void {
     const sheets = side === 'out' ? this.biomeSheets() : null;
-    if (sheets) dressFace(g, sheets, face, up, frame, settings().reduceMotion);
+    if (sheets) dressFace(g, sheets, face, up, frame, settings().reduceMotion, pass);
   }
 
   playerWalk(side: Side, facing: Facing, tick: number): string | null {

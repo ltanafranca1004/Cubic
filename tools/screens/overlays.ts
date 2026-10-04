@@ -588,7 +588,7 @@ async function touch(browser: Browser): Promise<void> {
 }
 
 const ONLY = process.argv[2]; // shots | behaviour | touch
-const browser = await chromium.launch();
+const browser = await chromium.launch({ args: ['--mute-audio'] });
 try {
   for (const size of SIZES) {
     if (process.env.SIZE && Number(process.env.SIZE) !== size.width) continue; // SIZE=1280 RENDERER=canvas: one of the four

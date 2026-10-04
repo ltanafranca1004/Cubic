@@ -9,6 +9,7 @@ import {
   objectiveFor,
   portalFace,
   portalOpen,
+  relayText,
   sameWall,
   signalBars,
   signalsFor,
@@ -108,6 +109,17 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
         if (line) showCaption(line.text, { speaker: 'AI' });
         void voice.playClip(clip);
       },
+      onTtsChain: (chain) => {
+        // a relay line: the caption is its pieces, the sound is their clips in a row
+        let text: string;
+        try {
+          text = relayText(chain.pieces);
+        } catch {
+          text = net.chat.find((m) => m.id === chain.chatId)?.text ?? chain.pieces.join(' ');
+        }
+        showCaption(text, { speaker: 'AI' });
+        void voice.playChain(chain, () => voice.speakText(text));
+      },
       onSpeak: (text) => {
         showCaption(text, { speaker: 'AI' });
         voice.speakText(text);
@@ -139,6 +151,7 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
     onCreateRoom: () => net.createRoom(),
     onJoinRoom: (code) => net.joinRoom(code),
     onPlayWithAI: (side) => net.playWithAI(side),
+    onResumeSolo: () => net.resumeSolo(),
     onPickSide: (side) => net.pickSide(side),
     onSetReady: (ready) => net.setReady(ready),
     onStartGame: () => net.startGame(),
@@ -196,11 +209,13 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
       mode: room?.mode ?? null,
       side: viewSide(),
       aiAvailable: net.info.aiAvailable,
+      soloLeft: net.code ? null : net.leftSolo(),
       lobby: lobbyOf(),
       chat: net.chat,
       partnerTyping,
       partnerAway: inGame ? net.partnerAway() : null,
       notice: inGame ? null : noticeOf(),
+      idleUntil: net.idleUntil(),
       hud: inGame ? hudOf(net.state!, viewSide()!, Date.now()) : null,
       voice: voice.snapshot(signalBars(proximity())),
       signals: inGame ? signalsFor(net.state!, viewSide()!, quicks, Date.now()) : NO_SIGNALS,

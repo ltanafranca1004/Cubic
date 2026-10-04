@@ -20,9 +20,11 @@ import {
   type ServerInfo,
   type ServerToClient,
   type Side,
+  type TtsChain,
   type TtsClip,
   type VoiceChunk,
 } from '@cubic/shared';
+import { soloLeftUntil, type Saved } from './left';
 
 // Socket client + move prediction. The local player's input is applied at once to a
 // predicted copy of the state with the same /shared code the server runs; every server
@@ -57,7 +59,6 @@ const SEAT_KEY = 'cubic.seat';
  */
 const LEFT_KEY = 'cubic.left';
 
-type Saved = { code: string; token: string };
 function saved(key: string): Saved | null {
   try {
     return JSON.parse(sessionStorage.getItem(key) ?? 'null');
@@ -78,7 +79,8 @@ function localNote(msg: ChatMessage): ChatMessage {
   const s = msg.system;
   if (!s) return msg;
   const now = Date.now();
-  return { ...msg, at: now, system: s.until !== undefined && s.now !== undefined ? { ...s, until: s.until - s.now + now, now } : s };
+  const skew = now - s.now; // our clock minus the server's
+  return { ...msg, at: msg.at + skew, system: { ...s, now, ...(s.until !== undefined ? { until: s.until + skew } : {}) } };
 }
 
 type Pending = { seq: number; kind: 'move'; dx: number; dy: number } | { seq: number; kind: 'interact'; only?: InteractOnly };
@@ -96,6 +98,8 @@ export interface NetHandlers {
   onVoiceSignal(data: unknown): void;
   onVoiceChunk(chunk: VoiceChunk): void;
   onTts(clip: TtsClip): void;
+  /** A relay line as a chain of clips, one per vocabulary piece. */
+  onTtsChain?(chain: TtsChain): void;
   /** Say an AI line with the browser's own voice. */
   onSpeak(text: string): void;
 }
@@ -176,9 +180,13 @@ export class Net {
       this.h.onChange();
       this.tryRejoin();
     });
-    socket.on('disconnect', () => {
+    socket.on('disconnect', (reason) => {
       this.online = false;
       this.h.onChange();
+      // The server closed this socket (our seat was opened in another tab, see `removed`):
+      // socket.io does not reconnect after that by itself. We have no seat any more, so
+      // connecting again only puts the menus back online.
+      if (reason === 'io server disconnect') socket.connect();
     });
     socket.on('info', (info) => {
       this.info = info;
@@ -208,9 +216,16 @@ export class Net {
       this.h.onChat(msg);
       this.h.onChange();
     });
-    socket.on('removed', () => {
-      // the server took us out of the room: say why on the mode screen
-      this.error = 'You were removed for inactivity.';
+    socket.on('removed', (msg) => {
+      // The server took us out of the room: say why on the mode screen. Not a Leave: there
+      // is no seat to come back to (nothing is kept for "continue"), and when another tab
+      // took the seat the room is not told anything, the token is that tab's now.
+      this.error = msg?.reason === 'replaced' ? 'This seat was opened in another tab.' : 'You were removed for inactivity.';
+      try {
+        if (saved(LEFT_KEY)?.code === this.code) sessionStorage.removeItem(LEFT_KEY);
+      } catch {
+        // ignore
+      }
       this.forget();
     });
     socket.on('quick', (q) => this.h.onQuick?.(q));
@@ -219,6 +234,7 @@ export class Net {
     socket.on('voice:signal', (m) => this.h.onVoiceSignal(m.data));
     socket.on('voice:chunk', (c) => this.h.onVoiceChunk(c));
     socket.on('tts', (c) => this.h.onTts(c));
+    socket.on('tts:chain', (c) => this.h.onTtsChain?.(c));
     socket.on('speak', (m) => this.h.onSpeak(m.text));
   }
 
@@ -345,6 +361,32 @@ export class Net {
     if (this.begin()) this.socket!.emit('room:createAI', { side }, (res) => this.adopt(res));
   }
 
+  /** The solo game this tab left and can still go back to: until when, or null. */
+  leftSolo(): number | null {
+    return soloLeftUntil(saved(LEFT_KEY), Date.now());
+  }
+
+  /**
+   * Back into the solo game we pressed Leave in: the same path as a friend room (the code
+   * and our token give the held seat back), only the code is not typed.
+   */
+  resumeSolo(): void {
+    const left = saved(LEFT_KEY);
+    if (!left?.solo) return;
+    if (!this.begin()) return;
+    this.socket!.emit('room:join', { code: left.code, token: left.token }, (res) => {
+      if (!res.ok) {
+        // the window passed: the room is closed and the AI has stopped
+        try {
+          sessionStorage.removeItem(LEFT_KEY);
+        } catch {
+          // ignore
+        }
+      }
+      this.adopt(res.ok ? res : { ok: false, error: 'That game is over. Start a new one.' });
+    });
+  }
+
   /** A lobby action. The server owns the rules: on a refusal we only show its reason. */
   private lobby(send: (ack: (res: { ok: true } | { ok: false; error: string }) => void) => void): void {
     if (!this.socket) return;
@@ -372,10 +414,12 @@ export class Net {
 
   leave(): void {
     const seat = saved(SEAT_KEY);
+    // a solo game has no code to come back with: remember that it was one, and when we left
+    const solo = this.room?.mode === 'ai';
     this.socket?.emit('room:leave');
     this.forget();
     try {
-      if (seat) sessionStorage.setItem(LEFT_KEY, JSON.stringify(seat));
+      if (seat) sessionStorage.setItem(LEFT_KEY, JSON.stringify(solo ? { ...seat, solo, at: Date.now() } : seat));
     } catch {
       // storage blocked: coming back with the code will be a new join
     }
@@ -452,6 +496,15 @@ export class Net {
     if (!this.socket || !this.online || !this.code || now - this.activityAt < ACTIVITY_EVERY_MS) return;
     this.activityAt = now;
     this.socket.emit('activity');
+  }
+
+  /**
+   * Our own inactivity countdown is running: when we are removed, on OUR clock. Null when
+   * there is none.
+   */
+  idleUntil(): number | null {
+    const s = this.chat.find((m) => m.system?.kind === 'idle' && m.system.id === this.id)?.system;
+    return s?.until ?? null;
   }
 
   sendChat(text: string): void {

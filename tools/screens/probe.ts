@@ -3,7 +3,7 @@
 import { chromium } from 'playwright';
 
 const [, , url, out, wait = '1500', w = '1280', h = '720', ...clicks] = process.argv;
-const browser = await chromium.launch();
+const browser = await chromium.launch({ args: ['--mute-audio'] });
 const page = await browser.newPage({ viewport: { width: Number(w), height: Number(h) } });
 page.on('console', (m) => (m.type() === 'error' || m.type() === 'warning') && console.log(`[${m.type()}]`, m.text()));
 page.on('pageerror', (e) => console.log('[pageerror]', e.message));

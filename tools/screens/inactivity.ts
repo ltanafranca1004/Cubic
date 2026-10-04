@@ -18,6 +18,9 @@ const SIZE = { width: 1280, height: 720 };
 const IDLE = 10_000;
 const WARN = 5000;
 const REMOVED = 'YOU WERE REMOVED FOR INACTIVITY.';
+const REPLACED = 'THIS SEAT WAS OPENED IN ANOTHER TAB.';
+/** What the idle player's own banner says. */
+const YOU = /^You are inactive\. Press any key\. Removed in 0:0[1-5]$/;
 
 mkdirSync(OUT, { recursive: true });
 const LOG = `${OUT}run.log`;
@@ -118,7 +121,7 @@ async function lobby(browser: Browser): Promise<void> {
   const { idle: b, active: a } = await pair(browser);
   const code = (await view(a)).code!;
   const stop = keepActive(a, ['d']); // A already stands on the inside: the key changes nothing, it is only a key
-  await until('the countdown in both lobbies', async () => COUNTDOWN('P1').test((await view(a)).banner) && COUNTDOWN('P1').test((await view(b)).banner), IDLE + 4000);
+  await until('the countdown in both lobbies', async () => COUNTDOWN('P1').test((await view(a)).banner) && YOU.test((await view(b)).banner), IDLE + 4000);
   log(`A sees "${(await view(a)).banner}", B sees "${(await view(b)).banner}"`);
   await shot(a, '1-lobby-countdown-A');
   await shot(b, '1-lobby-countdown-B');
@@ -144,6 +147,8 @@ async function lobby(browser: Browser): Promise<void> {
   await until('C in the lobby', () => has(c, 'READY'), 6000);
   const vc = await view(c);
   check(vc.code === code && vc.role === 'guest', `a new player joined ${code} as the guest`);
+  check(vc.banner === '', `the newcomer (now P2) is not shown the old removal line: banner "${vc.banner}"`);
+  await shot(c, '1-lobby-newcomer-C');
   check((await view(a)).role === 'host' && (await view(a)).code === code, 'A is still the host of the same room');
   await stop();
   await closeAll(a, b, c);
@@ -158,6 +163,8 @@ async function game(browser: Browser): Promise<void> {
   const stop = keepActive(a, ['a', 'd']);
   await until('the countdown in both chats', async () => (await view(a)).sys.some((t) => COUNTDOWN('OUTSIDE').test(t)) && (await view(b)).sys.some((t) => COUNTDOWN('OUTSIDE').test(t)), IDLE + 6000);
   log(`A's chat: ${JSON.stringify((await view(a)).sys)}, B's chat: ${JSON.stringify((await view(b)).sys)}`);
+  const own = (await view(b)).banner;
+  check(YOU.test(own) && (await view(a)).banner === '', `B, the idle one, also gets the banner "${own}"; A has no banner`);
   await shot(a, '2-game-countdown-A');
   await shot(b, '2-game-countdown-B');
   await a.locator('#cu-log').screenshot({ path: `${OUT}2-game-countdown-A-chat.png` });
@@ -307,6 +314,100 @@ async function talking(browser: Browser): Promise<void> {
   await closeAll(a, b);
 }
 
+// ---------- 7. a host waiting alone in a lobby ----------
+async function alone(browser: Browser): Promise<void> {
+  log('--- 7. lobby: the host waits ALONE and touches nothing, for the whole idle window and the countdown');
+  const a = await open(browser);
+  await toMode(a);
+  await click(a, 'CREATE LOBBY');
+  await until('the side select screen', () => has(a, 'LEAVE'), 6000);
+  const code = (await view(a)).code!;
+  const start = Date.now();
+  let checks = 0;
+  while (Date.now() - start < IDLE + WARN + 5000) {
+    const va = await view(a);
+    if (va.code !== code || va.phase !== 'lobby' || va.banner !== '' || va.mode === REMOVED) {
+      await shot(a, '7-alone-A-FAILED');
+      check(false, `the lone host was warned or removed after ${Math.round((Date.now() - start) / 1000)} s: ${JSON.stringify(va)}`);
+    }
+    checks++;
+    await sleep(1000);
+  }
+  check(true, `the lone host was in lobby ${code} with no warning at every one of ${checks} checks over ${(IDLE + WARN + 5000) / 1000} s`);
+  await shot(a, '7-alone-after-A');
+  // the friend can still come in, and only then do the clocks run
+  const b = await open(browser);
+  await toMode(b);
+  await click(b, 'JOIN LOBBY');
+  await until('the join popup', () => has(b, 'CANCEL'));
+  await b.waitForTimeout(350);
+  await b.keyboard.type(code, { delay: 50 });
+  await click(b, 'JOIN');
+  await until('B in the lobby', () => has(b, 'READY'), 6000);
+  check((await view(a)).role === 'host' && (await view(b)).code === code, `the friend joined ${code}; the host is still the host`);
+  await sleep(IDLE - 3000);
+  check((await view(a)).banner === '', 'the clocks started when the friend sat down: no warning yet after most of the idle window');
+  await closeAll(a, b);
+}
+
+// ---------- 8. the seat is opened in another tab ----------
+async function duplicate(browser: Browser): Promise<void> {
+  log('--- 8. game: B\'s tab is duplicated (the copy has the same sessionStorage, so the same token)');
+  const { idle: b, active: a } = await pair(browser);
+  await toGame(b, a);
+  const seat = await js<string>(b, `sessionStorage.getItem('cubic.seat')`);
+  const stop = keepActive(a, ['a', 'd']);
+  // what "Duplicate tab" does: a new page of the same browser profile, born with a copy of the session storage
+  const copy = await b.context().newPage();
+  await copy.addInitScript((value) => sessionStorage.setItem('cubic.seat', value), seat);
+  await copy.goto(`${BASE}/?renderer=canvas`);
+  await until('the copy in the game', async () => (await view(copy)).screen === 'game', 15_000);
+  await until('the old tab on the mode screen with the reason', async () => (await view(b)).mode === REPLACED, 6000);
+  await sleep(700);
+  const vb = await view(b);
+  check(vb.code === null && vb.online && (await has(b, 'CREATE LOBBY')), `the old tab is on the mode screen, online, with "${vb.mode}" (not stuck on "reconnecting")`);
+  await shot(b, '8-duplicate-old-tab-B');
+  await sleep(3000); // no tug of war: the old tab does not take the seat back
+  const vc = await view(copy);
+  const va = await view(a);
+  check(vc.screen === 'game' && vc.side === 'out' && vc.code === va.code && vc.online, 'the new tab holds the seat, in the same game');
+  check((await view(b)).mode === REPLACED && (await view(b)).code === null, 'the old tab stays out');
+  check(va.screen === 'game' && va.sys.length === 0 && va.banner === '', `A plays on and is told nothing: chat ${JSON.stringify(va.sys)}, banner "${va.banner}"`);
+  await shot(copy, '8-duplicate-new-tab');
+  await stop();
+  await closeAll(a, b);
+}
+
+// ---------- 9. solo ----------
+async function solo(browser: Browser): Promise<void> {
+  log('--- 9. solo (the scripted AI partner, AI_FAKE=1): the human does nothing');
+  const a = await open(browser);
+  await toMode(a);
+  await click(a, 'PLAY SOLO');
+  await until('the solo popup', () => has(a, 'OUTSIDE'));
+  await a.waitForTimeout(350);
+  await click(a, 'OUTSIDE');
+  await until('the solo game', async () => (await view(a)).screen === 'game', 10_000);
+  await until('the countdown: the chat line and the banner', async () => {
+    const v = await view(a);
+    return v.sys.some((t) => COUNTDOWN('OUTSIDE').test(t)) && YOU.test(v.banner);
+  }, IDLE + 8000);
+  const va = await view(a);
+  log(`chat: ${JSON.stringify(va.log)}; banner: "${va.banner}"`);
+  check(va.sys.length === 1, 'one countdown line, about the human only (the AI is never inactive, and its lines did not stop the clock)');
+  await shot(a, '9-solo-countdown');
+  await until('back on the mode screen', async () => (await view(a)).mode === REMOVED, WARN + 5000);
+  await sleep(700);
+  check((await view(a)).code === null, `the room is closed: on the mode screen with "${REMOVED}"`);
+  check((await js<number | null>(a, 'window.__cubic.leftSolo()')) === null, 'nothing is kept to continue (no left seat)');
+  await click(a, 'PLAY SOLO');
+  await until('the solo popup', () => has(a, 'OUTSIDE'));
+  await a.waitForTimeout(350);
+  check(!(await has(a, 'CONTINUE LAST GAME')), 'the solo popup does not offer CONTINUE LAST GAME');
+  await shot(a, '9-solo-removed-popup');
+  await closeAll(a);
+}
+
 writeFileSync(LOG, '');
 log(`inactivity check against ${BASE} (server timers: INACTIVE_MS=${IDLE} INACTIVE_WARN_MS=${WARN})`);
 const browser = await chromium.launch({ headless: true, args: ['--mute-audio', '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] });
@@ -317,6 +418,9 @@ try {
   await background(browser);
   await both(browser);
   await talking(browser);
+  await alone(browser);
+  await duplicate(browser);
+  await solo(browser);
   log('ALL PASSED');
 } catch (e) {
   log(`FAILED: ${e instanceof Error ? e.message : String(e)}`);

@@ -4,8 +4,10 @@ import { menuAction, pasteCode, stepFocus, typeCode } from '../input/keymap';
 import { overlayOwnsInput } from '../input/overlay';
 import { CODEPAD_EVENT } from '../input/touch';
 import { EASE, ROLE, TIME, hex } from '../style/tokens';
+import { AiPopup } from './AiPopup';
 import { BLOCKED_TEXT, MenuScene, type SceneData } from './flow';
 import { Button, centre, paint, shake, slice, text, textCentred, type Text } from './kit';
+import { draftOf, type PopupDraft, type Restorable, type SoloFocus } from './popupState';
 
 const CODE_LEN = 4;
 
@@ -23,7 +25,7 @@ export class ModeScene extends MenuScene {
   private statusX = 0;
   /** Index into [...buttons, back]; -1 until a key is pressed. */
   private focus = -1;
-  private popup: JoinPopup | null = null;
+  private popup: JoinPopup | AiPopup | null = null;
   /** The join request we are waiting on, to tell its error from an old one. */
   private joining = false;
   /**
@@ -38,8 +40,9 @@ export class ModeScene extends MenuScene {
 
   create(data: SceneData): void {
     const { W, H } = this;
-    // rebuilt by a resize with the join popup open: it comes back with the letters typed so far
-    const draft = data.rebuilt && this.popup?.open ? this.popup.value : null;
+    // rebuilt by a resize with a popup open: the join popup comes back with the letters typed
+    // so far, the solo popup with the focus where it was
+    const draft = draftOf(this.popup, data.rebuilt);
     this.popup = null;
     if (!data.rebuilt) this.joining = false;
     this.focus = -1;
@@ -55,11 +58,8 @@ export class ModeScene extends MenuScene {
       { label: 'CREATE LOBBY', onClick: () => actions.onCreateRoom() },
       { label: 'JOIN LOBBY', onClick: () => this.openJoin() },
     ];
-    // The AI partner is switched off in config.ts for now; nothing else changes.
-    if (ENABLE_AI) {
-      items.push({ label: 'PLAY OUTSIDE WITH AI', ai: true, onClick: () => actions.onPlayWithAI('out') });
-      items.push({ label: 'PLAY INSIDE WITH AI', ai: true, onClick: () => actions.onPlayWithAI('in') });
-    }
+    // Solo: the AI partner takes the other side (config.ts switches it off).
+    if (ENABLE_AI) items.push({ label: 'PLAY SOLO', ai: true, onClick: () => this.openSolo() });
     const menuH = items.length * bh + (items.length - 1) * gap;
     const top = cy - Math.round(menuH / 2) + 8;
     // a small title and one clear vertical menu, on a panel
@@ -93,7 +93,12 @@ export class ModeScene extends MenuScene {
     this.events.once('shutdown', () => window.removeEventListener('paste', onPaste));
     if (import.meta.env.DEV) {
       // the letters in the join popup (null = not open) and the status line (tools/screens/check.ts)
-      Object.assign(window, { __cubicJoinCode: () => (this.scene.isActive() ? (this.popup?.value ?? null) : null), __cubicModeStatus: () => (this.scene.isActive() ? this.status.text : '') });
+      // and what a resize would keep of the open popup (null = none)
+      Object.assign(window, {
+        __cubicJoinCode: () => (this.scene.isActive() ? (this.popup?.value ?? null) : null),
+        __cubicModeStatus: () => (this.scene.isActive() ? this.status.text : ''),
+        __cubicPopup: () => (this.scene.isActive() ? draftOf(this.popup, true) : null),
+      });
     }
 
     if (data.intro) {
@@ -104,7 +109,8 @@ export class ModeScene extends MenuScene {
         this.tweens.add({ targets: o, y, alpha: 1, delay: TIME.dive * 0.8 + i * 50, duration: TIME.panel, ease: EASE.out });
       });
     }
-    if (draft !== null) this.openJoin(draft);
+    if (draft?.kind === 'join') this.openJoin(draft.code);
+    else if (draft?.kind === 'solo') this.openSolo(draft.focus);
     this.begin(data);
   }
 
@@ -124,6 +130,7 @@ export class ModeScene extends MenuScene {
 
     if (this.popup) {
       this.popup.setBusy(s.status === 'connecting');
+      if (this.popup instanceof AiPopup) this.popup.setResume(this.soloHeld());
       if (this.joining && s.status !== 'connecting') {
         this.joining = false;
         if (s.error) this.popup.fail(s.error);
@@ -146,6 +153,39 @@ export class ModeScene extends MenuScene {
         this.sync();
       },
       draft,
+    );
+    this.setFocus(-1);
+    this.sync();
+  }
+
+  /** This tab left a solo game and the server still holds it. */
+  private soloHeld(): boolean {
+    const until = this.ui.soloLeft;
+    return !!until && Date.now() < until;
+  }
+
+  /**
+   * PLAY SOLO: choose your side, the AI takes the other one. `focus`: where the keyboard
+   * was, when a resize rebuilt the scene under the popup.
+   */
+  private openSolo(focus: SoloFocus | null = null): void {
+    if (this.popup) return;
+    this.popup = new AiPopup(
+      this,
+      (side) => {
+        this.joining = true;
+        this.ctx.actions.onPlayWithAI(side);
+      },
+      () => {
+        this.joining = true;
+        this.ctx.actions.onResumeSolo();
+      },
+      () => {
+        this.popup = null;
+        this.dismissed = this.ui.error;
+        this.sync();
+      },
+      { resume: this.soloHeld(), focus },
     );
     this.setFocus(-1);
     this.sync();
@@ -182,7 +222,7 @@ export class ModeScene extends MenuScene {
  * Type a 4-letter room code. Letters only, upper-cased as you type; Enter joins, Esc
  * closes. A bad code shakes the boxes and says why. The cube keeps turning behind the veil.
  */
-class JoinPopup {
+class JoinPopup implements Restorable {
   private root: Phaser.GameObjects.Container;
   private boxes: Phaser.GameObjects.Container;
   /** Where the code boxes rest: the shake swings around this. */
@@ -204,6 +244,10 @@ class JoinPopup {
   /** Still up (not cancelled). */
   get open(): boolean {
     return !this.closed;
+  }
+  /** What a resize keeps: the letters. */
+  draft(): PopupDraft {
+    return { kind: 'join', code: this.code };
   }
   private readonly w = 196;
   private readonly h = 126;

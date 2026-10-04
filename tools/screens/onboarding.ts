@@ -216,7 +216,7 @@ async function run(browser: Browser, tag: 'webgl' | 'canvas'): Promise<void> {
   await c.close();
 }
 
-const browser = await chromium.launch();
+const browser = await chromium.launch({ args: ['--mute-audio'] });
 try {
   for (const tag of ['webgl', 'canvas'] as const) if (!process.env.RENDERER || process.env.RENDERER === tag) await run(browser, tag); // RENDERER=webgl or canvas: only that one
 } catch (e) {

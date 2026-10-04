@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
-import { afterEach, beforeEach, mock, test } from 'node:test';
+import { afterEach, beforeEach, mock, test, type TestContext } from 'node:test';
 import { io, type Socket } from 'socket.io-client';
 import type { ChatMessage, ClientToServer, RoomInfo, Seat, ServerToClient, Side } from '@cubic/shared';
 import { createApp } from '../src/app';
-import { INACTIVITY, LIMITS, Rooms, type Room } from '../src/rooms';
+import { AiPlayer } from '../src/ai/aiPlayer';
+import { INACTIVITY, INACTIVITY_RANGE, LIMITS, Rooms, inactivityMs, type Room } from '../src/rooms';
 
 // Inactivity: a player who does nothing for INACTIVITY.idleMs gets a countdown in the chat
 // (INACTIVITY.warnMs), anything they do cancels it, and when it runs out only THEY are
@@ -93,7 +94,7 @@ test('game: A active, B idle: a countdown line for B, B is removed, A is never r
   assert.deepEqual(texts(), []); // 3:59: nothing yet
   pass(1000);
   assert.deepEqual(texts(), ['INSIDE inactive, removed in 1:00']);
-  assert.deepEqual(notes[0]!.system, { kind: 'idle', who: 'INSIDE', until: START + IDLE + WARN, now: START + IDLE });
+  assert.deepEqual(notes[0]!.system, { kind: 'idle', who: 'INSIDE', id: guest.id, until: START + IDLE + WARN, now: START + IDLE });
   assert.deepEqual(removed, []);
 
   passWhile(WARN - 10_000, 10_000, walk);
@@ -278,7 +279,7 @@ test('solo: the AI is never inactive; an idle human is warned in the chat, then 
   assert.deepEqual([closed(), rooms.size], [1, 0]);
 });
 
-test('reconnect during the countdown: the drop ends it (gone, not inactive), the seat is held, and coming back starts a fresh clock', () => {
+test('reconnect during the countdown: the drop ends it (gone, not inactive), the seat is held, and coming back is not a fresh 4 minutes', () => {
   fake();
   const { room, host, guest, notes, removed, texts } = game();
   passWhile(IDLE + 30_000, 10_000, () => room.activity(host.id));
@@ -297,10 +298,242 @@ test('reconnect during the countdown: the drop ends it (gone, not inactive), the
   const back = room.resume(room.idOfToken(guest.token)!);
   assert.deepEqual([back.id, back.side], [guest.id, 'in']);
   assert.equal(notes.length, 2); // no line for coming back: the banner already went
-  passWhile(IDLE - 10_000, 10_000, () => room.activity(host.id));
-  assert.equal(notes.length, 2); // a full 4 minutes from the moment they came back
+  // back, but they still have not DONE anything: the next countdown is one countdown's length away
+  passWhile(WARN - 10_000, 10_000, () => room.activity(host.id));
+  assert.equal(notes.length, 2);
   passWhile(10_000, 10_000, () => room.activity(host.id));
   assert.equal(notes[2]!.text, 'INSIDE inactive, removed in 1:00');
+  passWhile(WARN, 10_000, () => room.activity(host.id));
+  assert.deepEqual(removed, [guest.id]);
+});
+
+test('a host waiting ALONE in a lobby is never warned or removed, and the room is not deleted; the clock starts for both when the second player sits', () => {
+  fake();
+  const rooms = new Rooms();
+  const room = rooms.create('friend');
+  const host = room.join();
+  const { notes, removed, closed } = watch(room);
+  pass(300_000); // the reviewer's probe: one join(), 300 s
+  assert.deepEqual([notes.length, removed.length, closed(), rooms.get(room.code)], [0, 0, 0, room]);
+  pass(3_600_000); // an hour: the friend is slow
+  assert.deepEqual([notes.length, removed.length, closed()], [0, 0, 0]);
+  assert.equal(room.idOfToken(host.token), host.id);
+
+  // the friend comes in with the code: both clocks start NOW, with the full 4 minutes
+  const guest = room.join();
+  assert.deepEqual([guest.role, room.info().members.host!.id], ['guest', host.id]);
+  pass(IDLE - 1000);
+  assert.equal(notes.length, 0);
+  pass(1000);
+  assert.deepEqual(notes.map((n) => n.text), ['P1 inactive, removed in 1:00', 'P2 inactive, removed in 1:00']);
+
+  // the guest is removed while the host plays on: the host waits alone again, with no clock
+  room.activity(host.id);
+  pass(WARN);
+  assert.deepEqual(removed, [guest.id]);
+  pass(3_600_000);
+  assert.deepEqual([removed, closed(), room.info().members.host!.id], [[guest.id], 0, host.id]);
+
+  // same when the guest presses Leave or drops out of the lobby
+  const again = room.join();
+  room.leave(again.id);
+  pass(3_600_000);
+  const third = room.join();
+  room.drop(third.id);
+  pass(3_600_000);
+  assert.deepEqual([removed, closed(), room.info().members], [[guest.id], 0, { host: { id: host.id, connected: true, isAI: false, side: null, ready: false }, guest: null }]);
+});
+
+test('in a running game a player left alone still has a clock (the seat is open, but they are not waiting in a lobby)', () => {
+  fake();
+  const { rooms, room, host, guest, removed, closed, texts } = game();
+  room.leave(guest.id);
+  pass(LIMITS.seatHoldMs); // the guest's seat is given up: the host is alone in the game
+  assert.equal(room.info().members.guest, null);
+  pass(IDLE - LIMITS.seatHoldMs);
+  assert.deepEqual(texts(), ['OUTSIDE inactive, removed in 1:00']);
+  pass(WARN);
+  assert.deepEqual([removed, closed(), rooms.size], [[host.id], 1, 0]);
+});
+
+test('a rejoin with no drop before it (a refresh whose new socket is first) ends the countdown: not removed 30 s later', () => {
+  fake();
+  const { room, host, guest, notes, removed, texts } = game();
+  passWhile(IDLE + 30_000, 10_000, () => room.activity(host.id)); // 0:30 left
+  const seat = room.resume(guest.id); // still "connected": the old socket has not gone yet
+  assert.deepEqual(texts(), ['INSIDE inactive, removed in 1:00', 'INSIDE is back']);
+  assert.equal(notes[1]!.id, notes[0]!.id);
+  assert.deepEqual(seat.chat.filter((m) => m.system).map((m) => m.text), ['INSIDE is back']);
+  passWhile(50_000, 10_000, () => room.activity(host.id)); // past the old deadline
+  assert.deepEqual([removed, notes.length], [[], 2]);
+  // it is not a fresh 4 minutes either: with nothing done, a new countdown a minute after
+  passWhile(10_000, 10_000, () => room.activity(host.id));
+  assert.equal(notes[2]!.text, 'INSIDE inactive, removed in 1:00');
+  room.move('in', 0, -1); // real activity: "is back", and now the full window
+  passWhile(IDLE - 10_000, 10_000, () => room.activity(host.id));
+  assert.deepEqual([removed, notes.length, notes[3]!.text], [[], 4, 'INSIDE is back']);
+});
+
+test('a flapping connection does not keep an absent player in: drop and resume every 3 minutes, removed all the same', () => {
+  fake();
+  const { room, host, guest, removed, closed } = game();
+  let t = 0;
+  for (; t < 1_200_000 && !removed.length; t += 10_000) {
+    room.activity(host.id);
+    if (t > 0 && t % 180_000 === 0 && room.idOfToken(guest.token) !== null) {
+      room.drop(guest.id);
+      room.resume(guest.id);
+    }
+    pass(10_000);
+  }
+  assert.deepEqual(removed, [guest.id]);
+  assert.ok(t <= 360_000, `removed after ${t / 1000} s`);
+  assert.deepEqual([closed(), room.info().members.host!.id], [0, host.id]);
+});
+
+test('time spent disconnected is not idle time, and the clock goes on where it stood', () => {
+  fake();
+  const { room, host, guest, notes, removed } = game();
+  passWhile(100_000, 10_000, () => room.activity(host.id)); // B idle for 1:40
+  room.drop(guest.id);
+  passWhile(50_000, 10_000, () => room.activity(host.id)); // gone for 0:50 (inside the 60 s hold)
+  room.resume(guest.id);
+  passWhile(IDLE - 100_000 - 10_000, 10_000, () => room.activity(host.id)); // 2:10 more: 3:50 idle in all
+  assert.equal(notes.length, 0);
+  passWhile(10_000, 10_000, () => room.activity(host.id)); // 4:00 of being there and doing nothing
+  assert.deepEqual(notes.map((n) => n.text), ['INSIDE inactive, removed in 1:00']);
+  assert.deepEqual(removed, []);
+});
+
+test('a newcomer is not told about the removal of whoever had the place before (they would read it as about themself)', () => {
+  fake();
+  const { room, host, guest, texts } = lobby();
+  passWhile(IDLE + WARN, 10_000, () => room.activity(host.id));
+  assert.deepEqual(texts(), ['P2 inactive, removed in 1:00', 'P2 left due to inactivity']);
+  assert.equal(room.idOfToken(guest.token), null);
+  pass(13_000);
+  const next = room.join(); // the new P2
+  assert.deepEqual([next.role, next.chat], ['guest', []]);
+  // the host, who was there, still has the line, with the time it was written
+  const mine = room.resume(host.id).chat;
+  assert.deepEqual(mine.map((m) => [m.text, m.at, m.system!.now]), [['P2 left due to inactivity', START + IDLE + WARN, START + IDLE + WARN + 13_000]]);
+});
+
+test('a line names who the player WAS: a host transfer or the start of the game rewrites nothing', () => {
+  // the host (P1) is removed in the lobby: the survivor becomes P1, the old line still says P1 left
+  fake();
+  const l = lobby();
+  passWhile(IDLE + WARN, 10_000, () => l.room.activity(l.guest.id));
+  assert.deepEqual(l.removed, [l.host.id]);
+  assert.equal(l.room.info().members.host!.id, l.guest.id);
+  assert.deepEqual([l.notes[1]!.text, l.notes[1]!.system!.who, l.notes[1]!.system!.id], ['P1 left due to inactivity', 'P1', l.host.id]); // the id says it is not about the survivor
+  const again = l.room.join();
+  passWhile(IDLE, 10_000, () => l.room.activity(l.guest.id)); // the newcomer idles: a NEW line, about the new P2
+  assert.deepEqual(l.texts().slice(2), ['P2 inactive, removed in 1:00']);
+  assert.equal(l.notes[2]!.system!.id, again.id);
+  assert.deepEqual(l.room.resume(l.guest.id).chat.map((m) => m.text), ['P1 left due to inactivity', 'P2 inactive, removed in 1:00']);
+  mock.timers.reset();
+
+  // the countdown starts in the lobby (P2), the host starts the game meanwhile: still P2
+  fake();
+  const g = lobby();
+  g.room.setReady(g.guest.id, true);
+  passWhile(IDLE + 30_000, 10_000, () => g.room.activity(g.host.id));
+  g.room.start(g.host.id);
+  passWhile(30_000, 10_000, () => g.room.activity(g.host.id));
+  assert.deepEqual(g.texts(), ['P2 inactive, removed in 1:00', 'P2 left due to inactivity']);
+  assert.deepEqual(g.removed, [g.guest.id]);
+});
+
+test('INACTIVE_MS / INACTIVE_WARN_MS: unset or nonsense = the default, anything else is kept between 1 s and 24 h', () => {
+  assert.deepEqual(INACTIVITY_RANGE, { min: 1000, max: 86_400_000 });
+  for (const bad of [undefined, '', '  ', 'abc', '0', '-5', 'NaN', 'Infinity', null]) assert.equal(inactivityMs(bad, 240_000), 240_000, String(bad));
+  assert.equal(inactivityMs('10000', 240_000), 10_000);
+  assert.equal(inactivityMs('5000.4', 60_000), 5000);
+  assert.equal(inactivityMs('1', 240_000), 1000); // too short
+  assert.equal(inactivityMs('999999999999', 240_000), 86_400_000); // over 2^31 ms setTimeout would fire at once
+  assert.equal(inactivityMs(String(2 ** 31), 240_000), 86_400_000);
+
+  // and with the largest value a player is not removed the moment they sit down
+  fake();
+  INACTIVITY.idleMs = inactivityMs('1e300', 240_000);
+  INACTIVITY.warnMs = inactivityMs('1e300', 60_000);
+  const { notes, removed, closed } = game();
+  pass(3_600_000);
+  assert.deepEqual([notes.length, removed.length, closed()], [0, 0, 0]);
+});
+
+// ---------- solo, with the real AI partner ----------
+
+/** Fake clock for one test. `pass` moves it and lets promises settle (the AI thinks in promises). */
+function clock(t: TestContext) {
+  t.mock.timers.enable({ apis: ['setInterval', 'setTimeout', 'Date'], now: START });
+  return async (ms: number, slice = 200) => {
+    for (let at = 0; at < ms; at += slice) {
+      t.mock.timers.tick(Math.min(slice, ms - at));
+      await new Promise((r) => setImmediate(r));
+    }
+  };
+}
+
+/** A solo room as the server makes it: the human outside, the real AiPlayer (no advisor: its script, no API) inside. */
+function soloRoom() {
+  const rooms = new Rooms();
+  const room = rooms.create('ai');
+  const seat = room.sit('out');
+  const logs: string[] = [];
+  const ai = new AiPlayer(room, 'in', null, { log: (l) => logs.push(l) });
+  const stopped = () => logs.some((l) => l.includes('stopped'));
+  const aiDid = () => room.state.players.in.steps + room.chat.filter((m) => m.isAI).length;
+  return { rooms, room, seat, ai, stopped, aiDid, ...watch(room) };
+}
+
+test('solo with the real AI partner: what the AI says and does is never the human being active; the idle human is warned, then the room closes and the AI stops', async (t) => {
+  const pass = clock(t);
+  const { rooms, room, seat, stopped, aiDid, notes, removed, closed, texts } = soloRoom();
+  // the human asks for help once, then does nothing: the AI answers and plays on by itself
+  await pass(5000);
+  room.say('out', 'what do you see?');
+  const before = aiDid();
+  await pass(IDLE - 1000);
+  assert.ok(aiDid() > before, 'the AI partner did things meanwhile');
+  assert.deepEqual(texts(), []);
+  await pass(1000);
+  assert.deepEqual(texts(), ['OUTSIDE inactive, removed in 1:00']); // 4 minutes after the HUMAN's last act, whatever the AI did
+  assert.deepEqual([notes[0]!.system!.id, removed.length, closed(), stopped()], [seat.id, 0, 0, false]);
+  // the AI's context is room.chat: the system line is not in it, so it is in no prompt either
+  assert.ok(room.chat.length > 0 && room.chat.every((m) => !m.system && !/inactive/.test(m.text)));
+  await pass(WARN);
+  assert.deepEqual(removed, [seat.id]);
+  assert.deepEqual([closed(), rooms.size, stopped()], [1, 0, true]);
+  const after = aiDid();
+  await pass(30_000);
+  assert.equal(aiDid(), after); // it really stopped
+});
+
+test('solo with the real AI partner: the AI is never warned or removed, and the 60 s grace of a human who left is as before', async (t) => {
+  const pass = clock(t);
+  const { rooms, room, seat, stopped, notes, removed, closed } = soloRoom();
+  // an hour of the human at the keys: nothing about the AI, ever
+  for (let i = 0; i < 120; i++) {
+    room.activity(seat.id);
+    await pass(30_000, 5000);
+  }
+  assert.deepEqual([notes.length, removed.length, closed()], [0, 0, 0]);
+  assert.deepEqual(room.info().seats.in, { taken: true, connected: true, isAI: true });
+
+  // Leave during the countdown: the line ends, the seat is held 60 s (the solo grace), no removal
+  await pass(IDLE, 5000);
+  assert.equal(notes.length, 1);
+  room.leave(seat.id);
+  assert.deepEqual(notes.map((n) => n.text), ['OUTSIDE inactive, removed in 1:00', 'OUTSIDE left']);
+  await pass(LIMITS.seatHoldMs - 1000, 5000);
+  assert.deepEqual([removed.length, closed(), stopped()], [0, 0, false]);
+  const back = room.resume(room.idOfToken(seat.token)!); // CONTINUE: the same game
+  assert.deepEqual([back.id, back.side], [seat.id, 'out']);
+  room.leave(seat.id);
+  await pass(LIMITS.seatHoldMs + 1000, 5000);
+  assert.deepEqual([removed.length, closed(), rooms.size, stopped()], [0, 1, 0, true]); // closed by the hold, not by inactivity
 });
 
 test('a held seat is "gone", not "inactive": no countdown line for its owner, the hold alone decides', () => {
@@ -393,7 +626,8 @@ test('a player who joins or rejoins gets the countdown line with the time on the
   room.say('out', 'are you there?');
   const seat = room.resume(host.id);
   assert.deepEqual(seat.chat.map((m) => m.text), ['hello', 'INSIDE inactive, removed in 1:00', 'are you there?']);
-  assert.deepEqual(seat.chat[1]!.system, { kind: 'idle', who: 'INSIDE', until: START + IDLE + WARN, now: START + IDLE + 20_000 });
+  assert.deepEqual(seat.chat[1]!.system, { kind: 'idle', who: 'INSIDE', id: guest.id, until: START + IDLE + WARN, now: START + IDLE + 20_000 });
+  assert.equal(seat.chat[1]!.at, START + IDLE); // the line keeps the time it was written
   assert.equal(room.idOfToken(guest.token), guest.id);
 });
 
@@ -518,6 +752,36 @@ for (const where of ['lobby', 'game'] as const) {
     }
   });
 }
+
+test('sockets: the seat is opened in another tab (same token): the old tab is told why, the new one has the seat, the partner sees nothing', async () => {
+  const { app, a, b, code, client, close } = await online(true);
+  INACTIVITY.idleMs = 60_000; // no countdown in this one
+  try {
+    let dropped = '';
+    b.sock.on('disconnect', (reason) => (dropped = reason));
+    const tab = client();
+    const seat = await tab.rejoin(code, b.seat.token); // b's socket is still connected
+    assert.deepEqual([seat.id, seat.side, seat.token], [b.seat.id, 'in', b.seat.token]);
+    await until(() => b.removed.length === 1 && dropped !== '', 'the old tab to be told and disconnected');
+    assert.deepEqual([b.removed, dropped], [['replaced'], 'io server disconnect']);
+    // the token is the new tab's: still good, the seat still taken and connected
+    const room = app.rooms.get(code)!;
+    assert.equal(room.idOfToken(b.seat.token), b.seat.id);
+    assert.deepEqual(room.info().seats.in, { taken: true, connected: true, isAI: false });
+    // the old tab connects again (as the client does) WITHOUT its token: the new tab keeps the seat
+    b.sock.connect();
+    await until(() => b.sock.connected, 'the old tab back online');
+    await sleep(100);
+    assert.deepEqual([tab.removed, a.removed, room.info().seats.in.connected], [[], [], true]);
+    assert.deepEqual([a.chat.length, tab.chat.length], [0, 0]); // no system line for anyone
+    const heard = tab.states;
+    a.sock.emit('move', { dx: 0, dy: 1, seq: 1 });
+    await until(() => tab.states > heard, 'the new tab to hear the game');
+    await assert.rejects(b.join(code), /full/); // and the old tab is simply not in the room
+  } finally {
+    await close();
+  }
+});
 
 test('sockets: a chat message during the countdown cancels it for both', async () => {
   const { a, b, close } = await online(true);

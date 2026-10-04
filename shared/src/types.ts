@@ -162,6 +162,8 @@ export interface ChatMessage {
   at: number;
   /** Set on a line the server wrote itself (inactivity). Nobody said it: `from` means nothing. */
   system?: SystemNote;
+  /** An AI line said as the script wrote it: its line key (e.g. "laser-path.in.tile"). Tools match on it, never on the words. */
+  key?: string;
 }
 
 /**
@@ -175,11 +177,17 @@ export interface SystemNote {
    * room. gone: they disconnected or left during the countdown (the seat hold covers it).
    */
   kind: 'idle' | 'back' | 'removed' | 'gone';
-  /** The player it is about, as the chat names them: OUTSIDE / INSIDE in a game, P1 / P2 in the lobby. */
+  /**
+   * The player it is about, as the chat named them when the countdown began: OUTSIDE /
+   * INSIDE in a game, P1 / P2 in the lobby. It is who they WERE: it never changes after.
+   */
   who: string;
-  /** `idle` only: when they are removed, and the server's clock when this was sent (epoch ms). */
+  /** Their member id (compare with your own: a countdown about you is shown louder). */
+  id: number;
+  /** `idle` only: when they are removed (epoch ms, server clock). */
   until?: number;
-  now?: number;
+  /** The server's clock when this was sent: `at` and `until` are on that clock. */
+  now: number;
 }
 
 export const CHAT_MAX_LEN = 200;
@@ -234,6 +242,21 @@ export interface TtsClip {
   chatId: number;
   mime: string;
   data: ArrayBuffer;
+}
+
+/**
+ * A spoken AI RELAY line: an answer built from the pieces of shared/src/bot/vocab.ts. Play
+ * the clips one after the other, `gapMs` apart, through the voiceMix gain. The caption is
+ * relayText(pieces).
+ */
+export interface TtsChain {
+  chatId: number;
+  mime: string;
+  /** The vocabulary pieces, in order. */
+  pieces: string[];
+  /** One clip per piece, same order. */
+  clips: ArrayBuffer[];
+  gapMs: number;
 }
 
 /** Narrow what an interact does: only pick up, or only drop. Unset = whichever applies. */
@@ -300,8 +323,12 @@ export interface ServerToClient {
   room: (msg: RoomInfo) => void;
   /** A new line, or (same id as one you have) a system line that replaces its earlier form. */
   chat: (msg: ChatMessage) => void;
-  /** You were taken out of the room (inactivity). Your token is dead: back to the mode screen. */
-  removed: (msg: { reason: 'inactive' }) => void;
+  /**
+   * You are out of the room: back to the mode screen. `inactive`: removed for inactivity,
+   * your token is dead. `replaced`: this seat was opened in another tab with the same
+   * token, which still holds it (forget the seat, do not leave the room).
+   */
+  removed: (msg: { reason: 'inactive' | 'replaced' }) => void;
   quick: (msg: QuickChat) => void;
   /** The AI partner is thinking. */
   typing: (msg: { from: Side; on: boolean }) => void;
@@ -310,6 +337,8 @@ export interface ServerToClient {
   /** The partner (re)connected and is ready for a voice call. The outside player calls. */
   'voice:ready': () => void;
   tts: (msg: TtsClip) => void;
+  /** A relay line as a chain of banked clips, one per vocabulary piece. */
+  'tts:chain': (msg: TtsChain) => void;
   /** Say this AI line with the browser's own speechSynthesis (free, or ElevenLabs failed). */
   speak: (msg: { chatId: number; text: string }) => void;
 }

@@ -530,18 +530,25 @@ export const cubicUI: UIHost = {
         const away = next.partnerAway;
         const secs = away ? Math.max(0, Math.ceil((away.until - Date.now()) / 1000)) : 0;
         const left = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
+        // your own inactivity countdown: said to you, in the banner, on every layout
+        const idle = next.idleUntil ? Math.max(0, Math.ceil((next.idleUntil - Date.now()) / 1000)) : 0;
+        const idleNote = next.idleUntil && next.online ? `You are inactive. Press any key. Removed in ${Math.floor(idle / 60)}:${String(idle % 60).padStart(2, '0')}` : '';
         const banner = !inGame
-          ? (next.lobby && next.notice) || '' // the lobby has no chat: its system line is here
+          ? (next.lobby && (idleNote || next.notice)) || '' // the lobby has no chat: its system line is here
           : !next.online
             ? 'Connection lost. Reconnecting...'
-            : away
+            : idleNote
+              ? idleNote
+              : away
               ? away.kind === 'left'
                 ? `Partner left. Seat held ${left}`
                 : `Partner reconnecting... ${left}`
               : next.status === 'partner-away'
                 ? 'Partner disconnected. Holding their seat...'
                 : next.status === 'partner-left'
-                  ? 'Partner left. Anyone with the room code can join.'
+                  ? next.mode === 'ai'
+                    ? 'The AI partner stopped. Leave and start a new game.' // a solo room has no code to share
+                    : 'Partner left. Anyone with the room code can join.'
                   : '';
         $('cu-banner').hidden = !banner;
         $('cu-banner').firstElementChild!.textContent = banner;

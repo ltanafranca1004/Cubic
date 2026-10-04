@@ -226,6 +226,10 @@ export function createApp(opts: AppOptions = {}): App {
         const other = io.sockets.sockets.get(sid);
         if (other && other.id !== socket.id && other.data?.id === id) {
           other.data.replaced = true;
+          // Tell it why first: a socket the server disconnects does not come back by itself,
+          // and that tab would sit on "reconnecting" for ever. It forgets the seat (the
+          // token is now this tab's) and goes back to the mode screen.
+          other.emit('removed', { reason: 'replaced' });
           other.disconnect(true);
         }
       }

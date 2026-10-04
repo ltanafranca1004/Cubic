@@ -47,7 +47,8 @@ test('observe() never leaks what only the other side can see', () => {
   assert.ok(!/[T~]/.test(observe(s, 'in', env).grid.join('')), 'inside grid shows outside terrain');
   assert.ok(inside.includes('"plate"'));
 
-  const outside = JSON.stringify(observe(s, 'out', env));
+  // The names of the puzzles (ids, faces) are rules both players know: they are not a view of the other side.
+  const outside = JSON.stringify({ ...observe(s, 'out', env), puzzleId: null, puzzleList: [] });
   for (const hidden of ['plate', 'Keypad room']) assert.ok(!outside.includes(hidden), `outside sees ${hidden}`);
   assert.ok(outside.includes('"door"') && outside.includes('"crystal"'));
 

@@ -933,7 +933,6 @@
   "biomes": {
     "props": {
       "image": "sprites/biomes.png",
-      "veil": "sprites/biomes-veil.png",
       "cellWidth": 16,
       "cellHeight": 32,
       "columns": 16,

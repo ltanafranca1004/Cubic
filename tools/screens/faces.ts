@@ -16,13 +16,12 @@
 import { mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { chromium, type Page } from 'playwright';
-import { defaultEnv, findPath, objectsOn, stepPose, visibleObjects, type FaceId, type GameState, type Move, type Pose, type Side, type TileRef } from '../../shared/src/index';
+import { STEP_MS, defaultEnv, findPath, objectsOn, stepPose, visibleObjects, type FaceId, type GameState, type Move, type Pose, type Side, type TileRef } from '../../shared/src/index';
 import { readCode } from '../../shared/src/puzzles/hiddenCode';
 
 const BASE = process.env.BASE ?? 'http://localhost:5509';
 const OUT = resolve(process.env.OUT ?? join(new URL('../../', import.meta.url).pathname, 'docs/status/puzzles')) + '/';
 const SIZE = { width: 1280, height: 720 };
-const STEP_MS = 130;
 const FLIP_MS = 650;
 const LAVA: FaceId = 6;
 
@@ -107,7 +106,7 @@ async function click(page: Page, label: string): Promise<void> {
 
 // ---------- into a game: A outside (host), B inside (guest) ----------
 
-const browser = await chromium.launch();
+const browser = await chromium.launch({ args: ['--mute-audio'] });
 
 async function open(): Promise<Page> {
   const page = await (await browser.newContext({ viewport: SIZE })).newPage();

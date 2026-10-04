@@ -37,7 +37,7 @@ server and Vite on the client both consume `/shared` as TS source).
   src/puzzles/        PuzzleModule interface + one file per puzzle, lib/ (shared building
                       blocks), chain.ts (the items the chain hands from face to face)
   src/voice.ts        voiceMix(state): how loud the partner is, from cube distance
-  src/bot/            the AI's body: observe(), pathTo()
+  src/bot/            the AI partner: observe(), pathTo(), decide(), scripts/ (one per puzzle)
 /server   Node + Socket.io (tsx). Rooms, validation, chat, voice signaling, AI partner.
 /client   Phaser 4 + Vite.
   src/game/           the playable scene, rendering, input, sound (core)
@@ -122,6 +122,11 @@ Every owned folder has a README that says exactly what goes there.
   canvas texture, so it is the same in WebGL and Canvas. The server state is untouched.
 - Keys pressed during a transition are buffered and applied after it, paced to stay under
   the server's move budget (`LIMITS` in `server/src/rooms.ts`).
+- Pace: `WALK_PACE` in `shared/src/pace.ts` is the one knob for walking speed (0.75 = 25%
+  slower than the original 130 ms step). `STEP_MS` (the held-direction repeat for keyboard,
+  gamepad and touch d-pad: `HoldRepeat` in `client/src/game/keys.ts`), `WALK_HOLD_MS` (the
+  walk frame) and `AI_STEP_MS` derive from it. A tap always steps at once. Keep `STEP_MS`
+  over the server's refill (`LIMITS.moveRefillMs`): `server/test/pace.test.ts` checks it.
 - `client/src/audio/hearing.ts` decides who hears what: the partner's footsteps only when
   they are on the same face number as you, and never the partner's face-change ding.
 - Check and GIFs: `tools/screens/transitions.ts` (output in `docs/screens/transitions/`).
@@ -245,8 +250,16 @@ Tall props (two tiles high) may only stand on solid tiles with no puzzle object 
 neighbour; `client/test/biomes.test.ts` fails if a decor tile, a crown or a landmark ever
 covers a puzzle object, an item or the forest clearing. Sprites: `tools/art/biomes.ts`
 (cell order in `world/biomes/sheet.ts`). Sway follows one gust across the screen (250 ms
-steps, off with reduce motion). The ambience layer draws what goes OVER the player: the
-crown of a tree they stand behind (dithered), tall grass over their feet, drips, snow.
+steps, off with reduce motion). The ambience layer draws tall grass over the player's
+feet, drips and snow.
+Depth (`world/biomes/depth.ts`, pure, drawn by `GameScene`): sorted by SCREEN row, lower on
+the screen is in front. A tall prop (`TALL` in `sheet.ts`) stands on its base tile and
+reaches over the tile above (clipped at the face edge), so a turtle on that tile is behind
+it: the prop is taken out of the painted face, painted into a canvas layer over the turtle
+and the item on its head, and fades to 50% (`FADE_ALPHA`, 150 ms, instant with reduce
+motion); it comes back when the turtle leaves. An item lying on that tile is under the
+crown too and keeps the prop faded. In a face transition the fade is baked into the two
+painted faces. A turtle below or beside a prop is in front of it and nothing fades.
 When you move a map tile, run `npm test`: the biome test tells you what it now covers.
 
 ## Items (carryable)
@@ -285,24 +298,73 @@ speech (`tts`), goes through one Web Audio gain driven by `voiceMix`.
 
 ## AI partner
 
-`/shared/src/bot` is the body: `observe(state, side)` (only what that side can see, in its
-own screen orientation), `pathTo` / `findPath` (BFS across faces with the real blockers)
-and `planAction` (goto, go_face, step_on, move, pick_up, drop, wait). `/server/src/ai` is
-the brain: `AiPlayer` sits in the empty seat, sends Gemini the rules + observation + chat,
-validates the JSON reply `{ say, action }` and walks the action one step per 200 ms
-through the same `Room` methods a human's socket uses. Max one Gemini call per 6 s per
-room (no backlog), 12 s timeout; on errors it backs off and the scripted partner
-(`scripted.ts`, also `AI_FAKE=1`) plays that turn. Lines are capped at 80 characters.
-`AI_PERSONA` (default | tsundere) changes tone only. Speech: `TTS_MODE` browser |
-elevenlabs, disk cache + voice bank in `server/src/ai/tts.ts`. Token and TTS character
-usage are logged. New puzzle objects
-are visible to the AI automatically through `visible()`; describe new mechanics in
-`server/src/ai/prompt.ts` if the AI needs to know a rule.
+Solo play: PLAY WITH AI on the mode screen (`client/src/scenes/AiPopup.ts` picks the side,
+`ENABLE_AI` in `client/src/config.ts`). Always available: no key is needed.
 
-The AI has not been taught the six current puzzles yet: the puzzle block in `prompt.ts`
-is still a placeholder (between the `PUZZLES V2 PLACEHOLDER` markers). Its body also has
-no "use" action: `pick_up` and `drop` are refused without an item, so it cannot press E on
-a key, a button, a flip tile, REPLAY or RESET.
+- **The script drives** (`shared/src/bot`, pure). `observe(state, side)` is what that side
+  can see, in its own screen orientation. `decide(mind, observation, heard, now)` in
+  `partner.ts` is the core: greet, find the human by voice or "face N", stay on their
+  wall, "wait" / "go", and which tiles no walk may enter (hot lava on any face included:
+  `hazardAvoid` in `path.ts`). `talk.ts` is the
+  chat protocol (sign, direction, go, yes, no, wait, again, face N; quick chat counts).
+  `findPath` / `planAction` walk with the real blockers plus those tiles to avoid.
+- **The core knows no puzzle**: not how many, their ids or faces. Each puzzle is a
+  `PuzzleScript` in `shared/src/bot/scripts/<id>.ts`, registered in `scripts/index.ts`
+  (interface and how to add one: `shared/src/bot/scripts/README.md`). A puzzle with no
+  script: the bot says so, keeps off everything it sees on that face, follows the human.
+- **`server/src/ai/aiPlayer.ts`** runs it on a Room: one decision and one step per `AI_STEP_MS` (`shared/src/pace.ts`, 267 ms at the default pace)
+  through the same `Room` methods a human's socket uses. Its lines are a beat apart.
+- **Gemini is advisory** (`gemini.ts`, `prompt.ts`): it rewords small talk, answers
+  free-form chat, returns `heard` (the human's message in protocol words) and may suggest
+  a move on the current face, walked only if it avoids the script's unsafe tiles and the
+  body is not holding a place. Max one call per 6 s per room, no backlog, 3 s deadline; on
+  timeout, error or 429 the script's own line is said and calls back off (6 s doubling to
+  60 s). No `GEMINI_API_KEY` (or `AI_FAKE=1`) = script alone, silently.
+- **Words** of every line: `server/src/ai/scripted.ts` (core lines per persona, puzzle
+  lines by key). Lines are capped at 80 characters. `AI_PERSONA` (default | tsundere)
+  changes tone only.
+- **Voice** (`server/src/ai/tts.ts`): the committed bank `server/tts/bank` is looked up
+  first (by normalized text; built by `npm run tts:bank -w server`, incremental), then the
+  disk cache, then ElevenLabs for Gemini's lines only, at most `TTS_SESSION_LINES` (15)
+  per room, else the browser voice. `TTS_MODE` browser | elevenlabs. The script's own
+  lines are never bought at runtime. Every spoken line is also a caption
+  (`client/src/ui/captions.ts`). Token and TTS character usage are logged.
+
+The AI has not been taught the six current puzzles yet: `PUZZLE_SCRIPTS` is empty (it
+greets, follows, talks, stays off hot lava and says it does not know the puzzle) and the
+puzzle block in `prompt.ts` is still a placeholder (between the `PUZZLES V2 PLACEHOLDER`
+markers). Its body can press E (`use` action). The interfaces, exactly: `docs/ai-partner.md`.
+
+## Inactivity
+
+- Each connected human has their own clock in `Room` (`server/src/rooms.ts`, section
+  "inactivity"). Nothing one player does, or fails to do, ever removes the other.
+- Activity = a move, use, chat, quick chat, a lobby action, or the client's `activity`
+  message (any key or tap, or talking into the mic: `Net.activity()` in
+  `client/src/net/client.ts`, at most one per 3 s; the mic level is `Voice.talkingNow`, so
+  it also works through the relay). Tab focus alone is not activity.
+- Idle for `INACTIVE_MS` (default 240000): ONE system line in the chat, "[name] inactive,
+  removed in m:ss", sent once with a deadline; the client counts it down in place
+  (`chatText` in `client/src/ui/hooks.ts`). What ends it ("is back", "left due to
+  inactivity", "disconnected") comes with the same message id and replaces it. The idle
+  player also gets it in the banner ("You are inactive. Press any key."). The lobby has no
+  chat: there the line is in the banner. Names: OUTSIDE / INSIDE in a game, P1 / P2 in the
+  lobby, frozen when the countdown starts.
+- `INACTIVE_WARN_MS` later (default 60000) only that player is removed (`removed` socket
+  message, back to the mode screen with the reason). The other keeps the room, becomes the
+  host, and the seat opens. The room is deleted only when no human is left, present or held.
+- Not inactive: the AI; a player who is disconnected or pressed Leave (that is the seat
+  hold; the clock stands still and goes on where it was when they come back); a host
+  waiting alone in a lobby (the clocks start when the second player sits).
+- Both env vars are kept between 1 s and 24 h (`inactivityMs`). System lines live in
+  `Room.notes`, never in `Room.chat`, so the AI partner and Gemini never see them.
+- A seat opened in a second tab with the same token: the old tab gets `removed` with
+  reason `replaced` and goes to the mode screen; the token stays with the new tab.
+- Rooms live in memory only: a server restart or a redeploy (every merge to `main` on
+  Render, and the free tier's sleep) ends every room, and both players land on the mode
+  screen with "That room is gone."
+- Tests: `server/test/inactivity.test.ts`; in real browsers `tools/screens/inactivity.ts`
+  (logs and screenshots in `docs/status/inactivity/`).
 
 ## Git workflow
 

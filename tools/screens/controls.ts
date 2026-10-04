@@ -35,7 +35,7 @@ async function expect(what: string, cond: () => Promise<boolean>, ms = 3000): Pr
   console.log('   ok:', what);
 }
 
-const browser = await chromium.launch();
+const browser = await chromium.launch({ args: ['--mute-audio'] });
 const context = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
 const page = await context.newPage();
 page.on('pageerror', (e) => problems.push(`page error: ${e.message}`));

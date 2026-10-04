@@ -1,0 +1,34 @@
+1. two clients, a real game (outside = host), Canvas renderer, 1280x720
+PASS  start: the hint is visible  ("WASD/ArrowsmoveEinteractQdropEnterchatVtalk")
+PASS  start: it lies over the game view, along its bottom  (100% inside #cu-view, top edge 100px above the view's bottom)
+      start.png
+PASS  no input: it goes after 3000 ms  (up for 2978 ms, no key pressed)
+PASS  after 3 s: nothing of it is left  (opacity 0, hidden)
+      after-3s.png
+PASS  it stays away over steps and a face change  (face 1 -> 4)
+PASS  it stays away over a re-fit (window resized and back)
+PASS  it stays away after a reload / rejoin in the middle of the game  (same game true, sessionStorage cubic.onb.controls = 1791106512777)
+      after-reload.png
+PASS  the pause menu still lists the controls  (ControlsKeyMoveWASD / ArrowsPick up / useEDropQQuick chat1 2 3 4ChatEnterPush to talkVMute micMCube mapTabPauseEscGamepad: Stick move, A pick up / use, B drop, Start pause)
+      pause-controls.png
+2. ?mock=game (same onboarding layer, no server), Canvas renderer, 1280x720
+PASS  start (mock): the hint is visible over the view, as in the real game
+PASS  first move: the hint is off with the key press  (class "on" gone 459 ms after it came up, long before 3000 ms; fading over 0.32s, 0s)
+PASS  first move: nothing of it is left after the fade  (opacity 0, hidden)
+      after-first-move.png
+PASS  first move: it does not come back
+3. ?mock=game with "Reduce motion" on
+PASS  reduce motion: it is there at once, no fade in  (transition-duration 0s)
+PASS  reduce motion: gone in the same frame as the first move, no fade  (12 ms after the key: opacity 0, hidden, transition-duration 0s)
+      reduce-motion-after-move.png
+PASS  reduce motion: gone at 3 s without input, at once  (up for 3099 ms, then opacity 0, hidden)
+4. ?mock=game&touch, a phone held sideways (844x390 @3), compact layout
+      layout "compact", touch true, hint on=true opacity=0, other key hints over the view: []
+PASS  phone: compact touch layout
+PASS  phone, start: no key strip covers the map (the keyboard hint is never drawn for fingers)  (.cu-onb-keys opacity 0 (ui/mobile/css.ts), nothing else with key names over the view)
+      mobile-start.png
+PASS  phone, after 3 s: the same rule ran (the hint is off, the captions are no longer lifted for it)  (on=false, --subs-lift 0px)
+      mobile-after.png
+PASS  no console error and no page error
+
+all checks passed

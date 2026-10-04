@@ -78,8 +78,7 @@ assets/
   `props.image` is a sheet of cells one tile wide and two high (`cellWidth`, `cellHeight`,
   `columns`): the lower half sits on the prop's tile, the upper half hangs over the tile
   above. `props.frames` maps a prop name to its cells (several = animation frames).
-  `props.veil` is the same sheet with every other pixel left out, drawn over a player who
-  stands behind a tall prop. `water.image` has one 16x16 cell per face, frame and shore:
+  `water.image` has one 16x16 cell per face, frame and shore:
   row = `(face - 1) * frames + frame`, column = which screen neighbours are land (north 1,
   east 2, south 4, west 8). Which prop goes where is not in the manifest: it is
   `client/src/world/biomes/decor.ts`.
