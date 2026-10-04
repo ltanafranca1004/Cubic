@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { dpadDir, PAD_DEADZONE } from '../src/input/dpad';
-import { DESKTOP, TOUCH, compactLayout, hudScaleFor, isPortrait, layoutMode, snap, uiScaleFor, viewZoomFor, wholeDown, wideLayout, type Device } from '../src/style/fit';
+import { DESKTOP, TOUCH, compactLayout, fitsFull, hudScaleFor, isPortrait, layoutMode, snap, uiScaleFor, viewZoomFor, wholeDown, wideLayout, type Device } from '../src/style/fit';
 import { VIEW } from '../src/style/tokens';
 
 // The pure parts of the touch layer: which way the d-pad points, which layout and zoom a
@@ -51,15 +51,61 @@ test('portrait is taller than wide', () => {
 
 // ---------- which layout ----------
 
-test('layout: a desktop is a desktop at any size, a phone is compact, a tablet is wide', () => {
-  for (const [w, h] of [[390, 664], [844, 390], [1280, 720], [1920, 1080]] as const) assert.equal(layoutMode(w, h, DESKTOP), 'desktop');
+test('layout: full wherever the column fits beside the view, compact wherever it does not', () => {
+  for (const [w, h] of [[844, 390], [1280, 720], [1920, 1080], [3440, 1440], [424, 310]] as const) assert.equal(layoutMode(w, h, DESKTOP), 'desktop');
+  // a window too narrow or too short for the column: the column becomes a panel, with a mouse too
+  for (const [w, h] of [[390, 664], [800, 300], [1280, 250], [423, 800]] as const) assert.equal(layoutMode(w, h, DESKTOP), 'compact');
   assert.equal(layoutMode(750, 340, IPHONE), 'compact');
   assert.equal(layoutMode(844, 390, IPHONE), 'compact');
   assert.equal(layoutMode(863, 360, PIXEL), 'compact');
   assert.equal(layoutMode(932, 430, IPHONE), 'compact', 'the largest phone');
+  assert.equal(layoutMode(1136, 432, IPAD), 'compact', 'a folded foldable');
   assert.equal(layoutMode(1080, 810, IPAD), 'wide');
   assert.equal(layoutMode(1024, 768, IPAD), 'wide');
   assert.equal(layoutMode(1194, 834, IPAD), 'wide');
+  assert.equal(layoutMode(1180, 746, IPAD), 'wide', 'an iPad in Safari with its toolbars');
+  assert.equal(layoutMode(1040, 932, IPAD), 'wide', 'an unfolded foldable');
+  assert.equal(layoutMode(944, 656, { touch: true, dpr: 2.5 }), 'wide', 'a small tablet');
+});
+
+test('layout: whatever the size, the full layout is only chosen when it really fits', () => {
+  for (const d of [DESKTOP, IPAD, IPHONE, PIXEL, { touch: true, dpr: 4.5 }, { touch: true, dpr: 1 }]) {
+    for (let w = 200; w <= 3600; w += 97) {
+      for (let h = 150; h <= 1700; h += 61) {
+        assert.equal(layoutMode(w, h, d) !== 'compact', fitsFull(w, h, d));
+        if (layoutMode(w, h, d) === 'compact') continue;
+        const u = hudScaleFor(w, h, d);
+        const z = viewZoomFor(w, h, d);
+        assert.ok(VIEW.px * z + (VIEW.chromeX + VIEW.columnMin) * u <= w + 0.5, `${w}x${h}@${d.dpr}: the column fits beside the view`);
+        assert.ok(VIEW.hudHeight * u + (d.touch ? TOUCH.strip : 0) <= h + 0.5, `${w}x${h}@${d.dpr}: the column fits the height`);
+      }
+    }
+  }
+});
+
+test('touch: a screen too narrow for rails stacks the controls under the view', () => {
+  for (const [w, h, d] of [[322, 308, IPAD], [360, 298, IPAD], [472, 422, IPAD]] as const) {
+    const l = compactLayout(w, h, d);
+    assert.ok(l.stacked);
+    assert.equal(l.view.y, 0);
+    assert.ok(l.view.size + l.pad + TOUCH.margin <= h + 0.5, `${w}x${h}: the d-pad is under the view`);
+    assert.ok(l.view.size + 2 * TOUCH.buttonMin + TOUCH.gap + TOUCH.margin <= h + 0.5, `${w}x${h}: the buttons are under the view`);
+    assert.ok(l.pad + 3 * l.button + 2 * TOUCH.gap + 3 * TOUCH.margin <= w + 0.5, `${w}x${h}: the d-pad and the buttons are side by side`);
+  }
+  assert.equal(compactLayout(568, 320, IPAD).stacked, false);
+});
+
+test('touch: the controls never cover the view', () => {
+  for (const [w, h, d] of [[568, 320, IPAD], [667, 375, IPAD], [750, 340, IPHONE], [838, 390, IPHONE], [658, 320, { touch: true, dpr: 4.5 }], [788, 308, IPHONE], [1136, 432, IPAD]] as const) {
+    const l = compactLayout(w, h, d);
+    // the d-pad and the buttons are in the rails, which end where the view starts
+    assert.ok(l.pad + l.band + TOUCH.margin <= l.view.x + 0.5, `${w}x${h}: the d-pad is left of the view`);
+    assert.ok(3 * l.button + 2 * TOUCH.gap + l.band + TOUCH.margin <= w - l.view.x - l.view.size + 0.5, `${w}x${h}: the buttons are right of the view`);
+  }
+  for (const [w, h, d] of [[1180, 746, IPAD], [1024, 768, IPAD], [1366, 1024, IPAD], [1040, 932, IPAD], [960, 600, IPAD]] as const) {
+    const l = wideLayout(w, h, d);
+    assert.ok(l.mid + TOUCH.strip <= h + 0.5, `${w}x${h}: the strip is under the view`);
+  }
 });
 
 // ---------- the desktop is what it was ----------

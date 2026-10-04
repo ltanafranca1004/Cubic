@@ -2,8 +2,8 @@ import { QUICK_CHATS } from '@cubic/shared';
 import { isMapHeld } from '../../input/gate';
 import { CODEPAD_EVENT, bindDpad, bindKey, releaseAll, sendTouch, tapKey, type TouchAction } from '../../input/touch';
 import { ITEM_DEFAULT_FRAME, ITEM_FRAMES } from '../../style/assets';
-import { compactLayout, isPortrait, wideLayout } from '../../style/fit';
-import { device, layout, safeInsets, viewport } from '../../style/scale';
+import { compactLayout, TOUCH, wideLayout } from '../../style/fit';
+import { device, layout, onFit, refit, upright as heldUpright, viewport } from '../../style/scale';
 import { onSettings, settings } from '../../style/settings';
 import { showCaption } from '../captions';
 import type { UIActions, UIHandle, UIHost, UIState } from '../hooks';
@@ -66,7 +66,6 @@ interface Mobile {
 
 function mountMobile(cu: HTMLElement, actions: UIActions): Mobile {
   const html = document.documentElement;
-  html.dataset.touch = '';
   const style = document.createElement('style');
   style.textContent = MOBILE_CSS;
   document.head.appendChild(style);
@@ -85,13 +84,14 @@ function mountMobile(cu: HTMLElement, actions: UIActions): Mobile {
   };
 
   // ---------- the layout: where the view and the controls sit ----------
-  let laid = '';
   const rotate = $('rotate');
   function relayout(): void {
     const { width, height } = viewport();
     const mode = layout(width, height);
     const d = device();
-    cu.dataset.touch = mode;
+    // data-touch: fingers (the controls, the page rules). data-layout (set by the UI): compact or full.
+    html.toggleAttribute('data-touch', d.touch);
+    cu.toggleAttribute('data-touch', d.touch);
     const set = (name: string, px: number) => cu.style.setProperty(name, `${px}px`);
     if (mode === 'compact') {
       const l = compactLayout(width, height, d);
@@ -101,15 +101,23 @@ function mountMobile(cu: HTMLElement, actions: UIActions): Mobile {
       set('--m-band', l.band);
       set('--m-pad', l.pad);
       set('--m-btn', l.button);
+      // what to do next sits in the rail left of the view: only when there is a rail
+      cu.dataset.glance = l.rail - l.band - 2 * TOUCH.margin >= 96 ? 'on' : 'off';
+      cu.dataset.stack = l.stacked ? 'on' : 'off';
     } else {
       const l = wideLayout(width, height, d);
       set('--m-strip', l.strip);
       set('--m-pad', l.pad);
       set('--m-btn', l.button);
     }
+    if (mode !== 'compact') {
+      drawer(false);
+      delete cu.dataset.stack;
+    }
     // held upright: the card covers everything and the game takes no input (it is a
-    // .cu-modal, which is what input/gate.ts and input/overlay.ts look for)
-    const upright = isPortrait(window.innerWidth, window.innerHeight);
+    // .cu-modal, which is what input/gate.ts and input/overlay.ts look for). Only on a
+    // touch screen: a narrow desktop window is just a narrow window.
+    const upright = d.touch && heldUpright();
     if (upright !== rotate.classList.contains('on')) {
       rotate.classList.toggle('on', upright);
       if (upright) {
@@ -118,22 +126,8 @@ function mountMobile(cu: HTMLElement, actions: UIActions): Mobile {
       }
     }
     code.classList.remove('on'); // the menu is rebuilt on a resize, and its join popup with it
-    const inset = safeInsets();
-    laid = [window.innerWidth, window.innerHeight, inset.top, inset.left, inset.right].join();
   }
-  /**
-   * The window can change with no `resize` (the URL bar slides away, the notch changes
-   * side): tell everyone who lays out on `resize`. The on-screen keyboard is not a change
-   * (style/scale.ts viewport()).
-   */
-  function nudge(): void {
-    if (document.activeElement instanceof HTMLInputElement) return;
-    const inset = safeInsets();
-    if ([window.innerWidth, window.innerHeight, inset.top, inset.left, inset.right].join() !== laid) window.dispatchEvent(new Event('resize'));
-  }
-  on(window, 'resize', relayout);
-  on(window, 'orientationchange', () => setTimeout(nudge, 250));
-  if (window.visualViewport) on(window.visualViewport, 'resize', nudge);
+  offs.push(onFit(relayout));
 
   // ---------- the page: nothing but the game reacts to a finger ----------
   on(cu, 'contextmenu', (e) => e.preventDefault());
@@ -290,7 +284,7 @@ function mountMobile(cu: HTMLElement, actions: UIActions): Mobile {
     else if (lastLine && lastLine.id !== seenChat) {
       seenChat = lastLine.id;
       const theirs = lastLine.from !== s.side && !lastLine.isAI; // (the AI's lines are captioned already)
-      if (theirs && cu.dataset.touch === 'compact' && !drawerOpen()) {
+      if (theirs && cu.dataset.layout === 'compact' && !drawerOpen()) {
         showCaption(lastLine.text, { speaker: 'Partner' });
         $('info').classList.add('new');
       }
@@ -328,6 +322,8 @@ function mountMobile(cu: HTMLElement, actions: UIActions): Mobile {
       html.removeAttribute('data-dark');
       delete cu.dataset.touch;
       delete cu.dataset.drawer;
+      delete cu.dataset.glance;
+      delete cu.dataset.stack;
     },
   };
 }
@@ -341,16 +337,34 @@ export function withMobile(host: UIHost): UIHost {
     mount(root: HTMLElement, actions: UIActions): UIHandle {
       const handle = host.mount(root, actions);
       const cu = root.querySelector<HTMLElement>('.cu');
-      if (!cu || !device().touch) return handle;
-      const mobile = mountMobile(cu, actions);
-      window.dispatchEvent(new Event('resize')); // the UI lays out again now that the touch layout is known
+      if (!cu) return handle;
+      let mobile: Mobile | null = null;
+      let state: UIState | null = null;
+      // The layer is there whenever it has something to do: fingers, or a window too small
+      // for the HUD column. Both can change while the page is open.
+      const sync = () => {
+        const want = device().touch || layout() === 'compact';
+        if (want === !!mobile) return;
+        if (want) {
+          mobile = mountMobile(cu, actions);
+          if (state) mobile.update(state);
+        } else {
+          mobile?.destroy();
+          mobile = null;
+        }
+        refit(); // the UI lays out again now that the layout is known
+      };
+      const fitOff = onFit(sync);
+      sync();
       return {
-        update(state) {
-          handle.update(state);
-          mobile.update(state);
+        update(next) {
+          state = next;
+          handle.update(next);
+          mobile?.update(next);
         },
         destroy() {
-          mobile.destroy();
+          fitOff();
+          mobile?.destroy();
           handle.destroy();
         },
       };

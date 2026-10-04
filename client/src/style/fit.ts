@@ -9,7 +9,8 @@ import { SIZE, VIEW } from './tokens';
 //             with a strip under it for the touch controls.
 //   compact   a phone held sideways: the view in the middle at the largest zoom the height
 //             allows, a rail on each side for the touch controls, and the HUD column folded
-//             away into a panel.
+//             away into a panel. Also any window too small or too short for the column.
+// Which one is decided by what FITS (fitsFull), never by what kind of device it is.
 //
 // WHOLE PIXELS. On a desktop one art pixel is a whole number of CSS pixels, as it always
 // was. A phone has three or so device pixels per CSS pixel and very few CSS pixels, so
@@ -32,9 +33,8 @@ export type LayoutMode = 'desktop' | 'wide' | 'compact';
 export const TOUCH = {
   /** The menus' minimum logical height on a touch screen (SIZE.minHeight on a desktop). */
   minHeight: 250,
-  /** From this size up a touch screen gets the desktop layout plus a control strip. */
-  wideMinWidth: 960,
-  wideMinHeight: 600,
+  /** The smallest HUD scale a touch screen gets in the full layout (text a thumb's length away). */
+  fullScale: 1.5,
   /** wide: the least height of the strip under the view that holds the controls. */
   strip: 124,
   /** compact: the least width of the rail on each side of the view. */
@@ -72,9 +72,28 @@ export function isPortrait(width: number, height: number): boolean {
   return height > width;
 }
 
+/**
+ * Does the full layout fit: the view with the HUD column beside it, both at their smallest
+ * scale, and on a touch screen the strip of controls under them as well.
+ */
+export function fitsFull(width: number, height: number, d: Device): boolean {
+  const u = d.touch ? TOUCH.fullScale : 1;
+  const strip = d.touch ? TOUCH.strip : 0;
+  return width >= (VIEW.chromeX + VIEW.columnMin) * u + VIEW.px * u && height >= strip + VIEW.hudHeight * u;
+}
+
+/** The full layout whenever it fits; otherwise the view alone, with the column folded into a panel. */
 export function layoutMode(width: number, height: number, d: Device): LayoutMode {
-  if (!d.touch) return 'desktop';
-  return width >= TOUCH.wideMinWidth && height >= TOUCH.wideMinHeight ? 'wide' : 'compact';
+  if (!fitsFull(width, height, d)) return 'compact';
+  return d.touch ? 'wide' : 'desktop';
+}
+
+/**
+ * A touch screen too narrow for a rail on each side of the view (a folded flip phone's
+ * cover): the view goes to the top and the controls under it, so they never cover it.
+ */
+export function isStacked(width: number, d: Device): boolean {
+  return d.touch && width < 2 * TOUCH.rail + VIEW.px;
 }
 
 /** The scale of the menus: the largest that still leaves the design's minimum logical screen. */
@@ -106,7 +125,8 @@ export function viewZoomFor(width: number, height: number, d: Device): number {
     case 'wide':
       return Math.max(1, wholeDown(Math.min((height - TOUCH.strip - MID_CHROME * u) / VIEW.px, beside), d));
     case 'compact':
-      return Math.max(1, wholeDown(Math.min(height / VIEW.px, (width - 2 * TOUCH.rail) / VIEW.px), d));
+      if (isStacked(width, d)) return Math.max(1, wholeDown(Math.min((height - TOUCH.padMin - 2 * TOUCH.margin) / VIEW.px, width / VIEW.px), d));
+      return Math.max(1, wholeDown(Math.min(height / VIEW.px, (width - (d.touch ? 2 * TOUCH.rail : 0)) / VIEW.px), d)); // (the rails hold the touch controls)
   }
 }
 
@@ -125,6 +145,8 @@ export interface CompactLayout {
   pad: number;
   /** The width of one action button (three in a row). */
   button: number;
+  /** The view on top, the controls under it (isStacked). */
+  stacked: boolean;
 }
 
 /** A phone held sideways: where the view sits and how large the controls beside it are. */
@@ -132,9 +154,14 @@ export function compactLayout(width: number, height: number, d: Device): Compact
   const u = hudScaleFor(width, height, d);
   const z = viewZoomFor(width, height, d);
   const size = VIEW.px * z;
+  const stacked = isStacked(width, d);
   const x = snap((width - size) / 2, d);
-  const y = snap(Math.max(0, (height - size) / 2), d);
+  const y = stacked ? 0 : snap(Math.max(0, (height - size) / 2), d);
   const band = Math.ceil((VIEW.edge + 2) * u);
+  if (stacked) {
+    const pad = Math.max(72, Math.min(TOUCH.padMin, Math.floor(height - size - TOUCH.margin))); // (smaller than a thumb likes, on a screen smaller than a hand)
+    return { u, z, view: { x, y, size }, rail: x, band, pad, button: Math.floor(clamp((width - pad - 3 * TOUCH.margin - 2 * TOUCH.gap) / 3, TOUCH.buttonMin, TOUCH.buttonMax)), stacked };
+  }
   const room = x - band - 2 * TOUCH.margin;
   return {
     u,
@@ -144,6 +171,7 @@ export function compactLayout(width: number, height: number, d: Device): Compact
     band,
     pad: Math.floor(clamp(Math.min(room, height * 0.42), TOUCH.padMin, TOUCH.padMax)),
     button: Math.floor(clamp((room - 2 * TOUCH.gap) / 3, TOUCH.buttonMin, TOUCH.buttonMax)),
+    stacked,
   };
 }
 

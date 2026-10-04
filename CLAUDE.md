@@ -124,26 +124,46 @@ Every owned folder has a README that says exactly what goes there.
   they are on the same face number as you, and never the partner's face-change ding.
 - Check and GIFs: `tools/screens/transitions.ts` (output in `docs/screens/transitions/`).
 
-## Touch (phones and tablets, held sideways)
+## Fit and touch (any screen, any browser)
 
-- `client/src/style/scale.ts` `device()` decides once: touch = the main pointer is a finger
-  (`pointer: coarse`), or `?touch` to try it with a mouse. A desktop never loads the touch
-  layer and its scales are unchanged, however narrow the window.
+Nothing here looks at a device name or the user agent: only the visible size, the pixel
+density and the pointer.
+
+- **One size.** `client/src/style/scale.ts` `visibleSize()` is `visualViewport` (falling
+  back to the layout viewport, then the window); `viewport()` takes the safe area off it.
+  Every scale, the CSS (`--vw` / `--vh` on `.cu`, never `100vw` / `100vh`) and the rotate
+  card come from it.
+- **One re-fit.** `onFit(fn)` in the same file is the only resize subscription: it hears
+  resize, rotation, `visualViewport`, fold/unfold, toolbars and pointer changes, and runs
+  one pass when a number really changed. Do not add `window.addEventListener('resize')`.
+- **Canvas size.** Both Phaser canvases run `Scale.NONE`; `style/canvas.ts` `sizeCanvas`
+  sets backing size, zoom and the CSS size together. Do not call `scale.setZoom` /
+  `scale.resize` directly (Phaser leaves a stale CSS size: the iPad bug).
+- `device()`: touch = the main pointer is a finger (`pointer: coarse`), or `?touch`
+  (`?touch=0` forces a mouse). Re-read on every fit.
 - On touch the pixel grid is the DEVICE pixel (`style/fit.ts`, pure and tested): every
   scale is a whole number of device pixels per art pixel, e.g. x5 device pixels = 1.667 CSS
-  on an iPhone 14, so the view fills the height. Never a zoom that is not on that grid.
-- Layouts (`fit.ts` `layoutMode`): `compact` on a phone (view in the middle, d-pad rail
-  left, action rail right, the HUD column folded into a panel behind the HUD button,
-  objective and progress always shown top left) and `wide` on a tablet (the desktop layout
-  at the top, the controls in a strip under it). `.cu[data-touch]` carries the mode; all
-  touch CSS is in `client/src/ui/mobile/css.ts`, keyed on it.
+  on an iPhone 14, so the view fills the height. A desktop keeps whole CSS pixels.
+- Layouts (`fit.ts` `layoutMode`, by what FITS): the full layout whenever the view and the
+  HUD column fit (`desktop` with a mouse, `wide` on touch: the same with the controls in a
+  strip under it), else `compact` (view in the middle, the HUD column folded into a panel
+  behind the HUD button; on touch a d-pad rail left and an action rail right, or stacked
+  under the view when the screen is too narrow for rails). `.cu[data-layout]` is
+  `full` | `compact`; `.cu[data-touch]` is there only for fingers. The CSS for both is in
+  `client/src/ui/mobile/css.ts`.
 - Controls (`client/src/ui/mobile`, wrapped around the UI in `ui/index.ts`) send KEYS
   through `sendTouch` in `client/src/input/touch.ts`, like the gamepad: d-pad = arrows, USE
   = E, DROP = Q, TALK = V held, MAP = Tab (a switch), MENU = Esc. CHAT opens a field at the
   top of the screen with the four quick lines as buttons. The join popup gets letter keys.
-- Held upright: a rotate card that is a `.cu-modal`, so the input gates pause the game.
+  A mouse never gets them.
+- Held upright on touch: a rotate card that is a `.cu-modal`, so the input gates pause the
+  game. A narrow desktop window never shows it.
+- The page background is dark (`index.html` and `ui/css.ts`), never white.
 - Sound and the mic start from a tap; the mic is never opened on the title screen.
-- Check: `tools/screens/mobile.ts` (iPhone 14, Pixel 7, iPad; output in `docs/screens/mobile/`).
+- `?debug=fit` (also in production) prints the numbers the layout comes from.
+- Checks: `tools/screens/devices.ts` (53 sizes on WebKit, Chromium, Firefox, contact
+  sheets in `docs/status/screens-fix/`), `tools/screens/probe-fit.ts` (an iPad-shaped
+  WebKit window through rotate / toolbars / split view), `tools/screens/mobile.ts`.
 
 ## Map format
 

@@ -7,7 +7,7 @@ import { isMapHeld, setMapHeld } from '../input/gate';
 import { gameAction } from '../input/keymap';
 import { createStage, type Stage } from '../scenes/stage';
 import { ITEM_DEFAULT_FRAME, ITEM_FRAMES, asset } from '../style/assets';
-import { hudScale, uiScale, viewZoom } from '../style/scale';
+import { hudScale, layout, onFit, uiScale, viewport, viewZoom } from '../style/scale';
 import { bindSettings, onSettings, setSetting, settings } from '../style/settings';
 import { textScale } from './a11y';
 import { caption, onCaption, onPartnerSpeaking, partnerSpeaking, type Caption } from './captions';
@@ -107,6 +107,13 @@ export const cubicUI: UIHost = {
     const rescale = () => {
       const u = scaleNow();
       const s = settings();
+      // the size CSS lays out from is the one the scales come from (style/scale.ts), not
+      // the browser's own 100vw/100vh, which is a different size on a phone
+      const size = viewport();
+      el.style.setProperty('--vw', `${size.width}px`);
+      el.style.setProperty('--vh', `${size.height}px`);
+      // full: the view with the HUD column beside it. compact: the column is a panel (ui/mobile).
+      el.dataset.layout = layout() === 'compact' ? 'compact' : 'full';
       el.style.setProperty('--u', String(u));
       el.style.setProperty('--z', String(viewZoom()));
       // one cursor per UI scale (CSS cursors cannot be scaled): the arrow, and the hand
@@ -121,7 +128,7 @@ export const cubicUI: UIHost = {
       el.dataset.motion = s.reduceMotion ? 'reduce' : 'full';
     };
     rescale();
-    window.addEventListener('resize', rescale);
+    const fitOff = onFit(rescale);
     const lookOff = onSettings(rescale);
 
     // The game canvas lives inside the HUD's frame.
@@ -555,7 +562,7 @@ export const cubicUI: UIHost = {
         lookOff();
         releaseMap();
         pause.destroy();
-        window.removeEventListener('resize', rescale);
+        fitOff();
         window.clearTimeout(copiedTimer);
         gearOff();
         settingsOff();
