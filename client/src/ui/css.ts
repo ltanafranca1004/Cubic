@@ -91,7 +91,9 @@ ${ICONS.map((name, i) => `.cu-ico.${name} { background-position: -${i * 16}u 0; 
 .cu-banner span { display: block; margin-top: -1u; }
 
 /* ---------- in-game HUD ---------- */
-.cu-hud { position: absolute; inset: 28u 6u 6u 6u; display: none; grid-template-columns: minmax(118u, 150u) auto minmax(118u, 150u); justify-content: center; align-content: center; gap: 6u; align-items: stretch; }
+/* Sized for the smallest logical screen, 480x270, with a 192u game view (FACE_SIZE 12 x 16):
+   across 115 + 6 + 226 + 6 + 115 = 468u, down 13 + 196 + 13 + 13 = 235u of the 236u. */
+.cu-hud { position: absolute; inset: 28u 6u 6u 6u; display: none; grid-template-columns: minmax(115u, 150u) auto minmax(115u, 150u); justify-content: center; align-content: center; gap: 6u; align-items: stretch; }
 .cu[data-screen="game"] .cu-hud { display: grid; animation: cu-in 0.48s steps(4) both; }
 @keyframes cu-in { from { opacity: 0; } to { opacity: 1; } }
 .cu-col { display: flex; flex-direction: column; gap: 4u; min-width: 0; max-height: 236u; }
@@ -108,7 +110,7 @@ ${ICONS.map((name, i) => `.cu-ico.${name} { background-position: -${i * 16}u 0; 
 .cu-edge i { width: 5u; height: 5u; background: var(--c); outline: 1u solid ${ROLE.ink}; flex: none; }
 .cu-edge.done { color: ${ROLE.out.dark}; }
 .cu[data-side="in"] .cu-edge.done { color: ${ROLE.out.light}; }
-.cu-keys { grid-column: 1 / 4; grid-row: 4; color: ${ROLE.dimOnDark}; white-space: nowrap; }
+.cu-keys { grid-column: 1 / 4; grid-row: 4; color: ${ROLE.dimOnDark}; white-space: nowrap; word-spacing: -2u; }
 .cu[data-side="out"] .cu-keys { color: ${ROLE.ink}; }
 .cu[data-side="in"] .cu-view { background: ${C.slate}; }
 .cu[data-side="in"] .cu-room, .cu[data-side="in"] .cu-banner { border-image-source: ${url('ui/tag-light.png')}; }

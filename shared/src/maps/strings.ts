@@ -1,4 +1,4 @@
-import { GRID, type FaceId, type Side } from '../types';
+import { FACE_SIZE, type FaceId, type Side } from '../types';
 import type { FaceMap, MapObject, TileKind } from './types';
 
 /**
@@ -25,11 +25,11 @@ export const LEGEND: Readonly<Record<string, { tile: TileKind } | { object: stri
 /** Build a FaceMap from 10 strings of 10 legend characters. Throws on bad input. */
 export function parseStringMap(side: Side, face: FaceId, rows: readonly string[]): FaceMap {
   const where = `${side}-${face}`;
-  if (rows.length !== GRID) throw new Error(`map ${where}: expected ${GRID} rows, got ${rows.length}`);
+  if (rows.length !== FACE_SIZE) throw new Error(`map ${where}: expected ${FACE_SIZE} rows, got ${rows.length}`);
   const tiles: TileKind[][] = [];
   const objects: MapObject[] = [];
   rows.forEach((row, y) => {
-    if (row.length !== GRID) throw new Error(`map ${where}: row ${y} has ${row.length} chars, expected ${GRID}`);
+    if (row.length !== FACE_SIZE) throw new Error(`map ${where}: row ${y} has ${row.length} chars, expected ${FACE_SIZE}`);
     const line: TileKind[] = [];
     [...row].forEach((ch, x) => {
       const entry = LEGEND[ch];

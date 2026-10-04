@@ -13,7 +13,7 @@ actually read for this are linked; the rest is from knowing the games, and says 
   (320x180 or 640x360 are the usual ones) and scaled by integers so 720p, 1080p and 4K all
   stay crisp. We use a 480x270 minimum and let the logical screen grow up to the next
   integer step. (Read: a summary of pixel art UI base resolutions found through search;
-  the 480x270 choice is ours, it is the base that still fits a 160px game view with a
+  the 480x270 choice is ours, it is the base that still fits the 192px game view (12 tiles) with a
   panel on each side.)
 - **No mixels.** Mixing pixel sizes on one screen is the fastest way to look unfinished.
   The one place we show art larger than 1:1 is the side select diorama, and there the
@@ -195,7 +195,7 @@ is blurred. Double clicks: the scene sets a `leaving` flag before anything else.
 | +-----------+          [] 5 ROOFTOP           +-------------+  |
 | | OUTSIDE   |      +------------------+       | clock  x 0  |  |
 | | FACE 1    |  []  |                  |  []   +-------------+  |
-| | GRASS     |  4   |   160x160 game   |  2    | YOU      ... |  |
+| | GRASS     |  4   |   192x192 game   |  2    | YOU      ... |  |
 | | DRIFT 90  |  F   |   view, same     |  D    | PARTNER |||  |  |
 | |   [5]     |  O   |   pixel scale    |  E    | [MUTE][HOLD V]| |
 | |[4][1][2][3]| R   |                  |  S    +-------------+  |

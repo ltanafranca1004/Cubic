@@ -1,7 +1,8 @@
 import { FACE_NAMES, compassDrift, neighbours, objectiveFor, portalOpen, signalBars, voiceMix, type GameEvent, type GameState, type Side } from '@cubic/shared';
 import { audio, musicForScreen } from './audio/AudioManager';
+import { heardSfx } from './audio/hearing';
 import { createGameView, type GameHandle } from './game';
-import { playEvent } from './game/sfx';
+import { sfx } from './game/sfx';
 import { Net } from './net/client';
 import type { HudState, LobbyState, UIActions, UIHandle, UIHost, UIState } from './ui/hooks';
 import { Voice } from './voice/voice';
@@ -48,7 +49,8 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
     {
       onChange: () => render(),
       onEvents: (events: GameEvent[]) => {
-        events.forEach(playEvent);
+        // Sound follows the cube: the partner's steps only through the shared wall, never their ding.
+        if (net.side && net.state) for (const id of heardSfx(events, net.side, net.state, (key) => key in sfx)) audio.playSfx(id);
         if (events.some((e) => e.type === 'solve')) audio.playSfx('solved');
         game?.handle(events);
       },

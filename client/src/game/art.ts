@@ -12,6 +12,8 @@ export interface ArtProvider {
   object(side: Side, type: string, state: string | undefined, frame: number): string;
   item(kind: string): string;
   player(side: Side, step: number): string;
+  /** One frame of the side's character sheet by index (row * columns + column), or null if there is no sheet. */
+  playerFrame?(side: Side, index: number): string | null;
 }
 
 type G = CanvasRenderingContext2D;

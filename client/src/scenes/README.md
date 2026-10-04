@@ -51,5 +51,5 @@ this.game.events.on('cubic:event', (e: GameEvent) => { /* step, bump, flip, solv
 this.game.events.on('cubic:state', (s: GameState, me: Side) => { /* every state change */ });
 ```
 
-That canvas is 160x160 logical pixels (10 tiles of 16px), `pixelArt: true`, at the same
+That canvas is 192x192 logical pixels (`FACE_SIZE` = 12 tiles of 16px), `pixelArt: true`, at the same
 whole-number scale as the rest of the UI. No game rules here.

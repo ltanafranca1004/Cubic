@@ -12,6 +12,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { chromium, type Browser, type Page } from 'playwright';
 import { ENABLE_AI } from '../../client/src/config';
+import { SPAWN } from '../../shared/src/index';
 
 const BASE = process.env.BASE ?? 'http://localhost:5206';
 const OUT = new URL('../../docs/screens/', import.meta.url).pathname;
@@ -197,7 +198,7 @@ async function flow(browser: Browser): Promise<void> {
 
   // moving works for both, and a refresh in the game keeps the seat
   await press(a, 'w', 'w');
-  await expect('the outside player walked', async () => (await net(a, (c) => c.state?.players.out?.pose.y)) === 6);
+  await expect('the outside player walked', async () => (await net(a, (c) => c.state?.players.out?.pose.y)) === SPAWN.out.y - 2);
   await a.reload();
   await expect('the host is back in the game after a refresh', async () => (await screenOf(a).catch(() => '')) === 'game', 8000);
   await a.close();
@@ -217,7 +218,7 @@ async function faces(browser: Browser): Promise<void> {
         ({ side, face, up }) => {
           const c = window.__cubic;
           const pose = c.state!.players[side]!.pose;
-          Object.assign(pose, { face, up, x: 5, y: 6 });
+          Object.assign(pose, { face, up, x: 6, y: 7 });
           c.move(1, 0); // a real step, so the view and the HUD redraw from the game state
         },
         { side, face, up: UP[face]! },

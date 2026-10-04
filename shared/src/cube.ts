@@ -1,4 +1,4 @@
-import { GRID, type FaceId, type Pose, type Side, type Vec } from './types';
+import { FACE_SIZE, type FaceId, type Pose, type Side, type Vec } from './types';
 import { add, cross, dot, eq, neg, scale } from './vec';
 
 // Cube math. A player stands on a face with an "up" vector (the 3D direction that is
@@ -25,7 +25,7 @@ export const CANON_UP: Readonly<Record<FaceId, Vec>> = {
 };
 
 /** Centre of the tile grid in tile units. */
-const C = (GRID - 1) / 2;
+const C = (FACE_SIZE - 1) / 2;
 
 export function faceByNormal(v: Vec): FaceId {
   for (const f of [1, 2, 3, 4, 5, 6] as const) if (eq(NORMALS[f], v)) return f;
@@ -64,14 +64,14 @@ export function stepPose(pose: Pose, dx: number, dy: number): { pose: Pose; cros
   sx += dx;
   sy += dy;
   let crossed = false;
-  if (sx < 0 || sx >= GRID || sy < 0 || sy >= GRID) {
+  if (sx < 0 || sx >= FACE_SIZE || sy < 0 || sy >= FACE_SIZE) {
     const right = viewRight(side, face, up);
     const n = NORMALS[face];
     const heading = dx ? (dx > 0 ? right : neg(right)) : dy < 0 ? up : neg(up);
     face = faceByNormal(heading);
     nextUp = dy < 0 ? neg(n) : dy > 0 ? n : up;
-    sx = (sx + GRID) % GRID;
-    sy = (sy + GRID) % GRID;
+    sx = (sx + FACE_SIZE) % FACE_SIZE;
+    sy = (sy + FACE_SIZE) % FACE_SIZE;
     crossed = true;
   }
   const [x, y] = screenToCanon(side, face, nextUp, sx, sy);

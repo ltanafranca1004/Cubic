@@ -38,6 +38,17 @@ AI modes, every face on both sides and the win screen, asserting each step, and 
 pictures and the cloud dive GIF to `docs/screens`. `npm run screens -- flow` (or `faces`,
 `ai`, `gif`) runs one part.
 
+## `npx tsx screens/transitions.ts`: the face transitions, in both renderers
+
+Two real clients in one room, once in WebGL and once in Canvas: both players cross all
+four edges with the keyboard. It asserts that the transition plays, that keys pressed
+during it are applied afterwards (none dropped), that partner updates keep arriving, that
+client and server agree, and the sound rules (partner footsteps only on the same face
+number, never their face-change ding). Then it records the roll (outside), the hop
+(inside) and the reduce-motion fade as GIFs into `docs/screens/transitions/`.
+`npx tsx screens/transitions.ts live` (or `gifs`) runs one part. Needs a running server
+and client (see the top of the file) and ffmpeg for the GIFs.
+
 ## `npx tsx screens/check.ts`: the mouse check, in both renderers
 
 Clicks through Play, the mode menu, the join popup (wrong code, then a real one from a

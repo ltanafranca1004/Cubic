@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { CANON_UP, FACES, GRID, VOICE_ADJ, VOICE_OPP, VOICE_RAMP_MS, VOICE_SAME, createGame, signalBars, stepPose, upsOn, voiceGain, voiceMix, type FaceId, type Pose, type Side } from '../src/index';
+import { CANON_UP, FACES, FACE_SIZE, VOICE_ADJ, VOICE_OPP, VOICE_RAMP_MS, VOICE_SAME, createGame, signalBars, stepPose, upsOn, voiceGain, voiceMix, type FaceId, type Pose, type Side } from '../src/index';
 
 const at = (side: Side, face: FaceId, x = 4, y = 4): Pose => ({ side, face, up: CANON_UP[face], x, y, dir: 1 });
 
@@ -85,7 +85,7 @@ test('a lap around the cube away from the partner reads 1, 0.35, 0, 0.35, 1 and 
   ] as const) {
     let pose = at('out', 1);
     const seen: number[] = [voiceGain(pose, partner)];
-    for (let i = 0; i < GRID * 4; i++) {
+    for (let i = 0; i < FACE_SIZE * 4; i++) {
       const next = stepPose(pose, dx, dy).pose;
       const gain = voiceGain(next, partner);
       if (next.face === pose.face) assert.equal(gain, seen[seen.length - 1]); // flat inside a face

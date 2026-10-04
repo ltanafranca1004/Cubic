@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { io, type Socket } from 'socket.io-client';
-import { defaultEnv, pathTo, type ChatMessage, type ClientToServer, type GameEvent, type RoomInfo, type Seat, type ServerToClient, type Side, type StateUpdate, type TileRef } from '@cubic/shared';
+import { FACE_SIZE, defaultEnv, pathTo, type ChatMessage, type ClientToServer, type GameEvent, type RoomInfo, type Seat, type ServerToClient, type Side, type StateUpdate, type TileRef } from '@cubic/shared';
 import { createApp, type App } from '../src/app';
 import { LIMITS } from '../src/rooms';
 
@@ -202,9 +202,9 @@ test('two clients play a whole game online', async () => {
   await b.until(() => b.events.some((e) => e.type === 'solve' && e.face === 1), 'solve reaches both');
   assert.deepEqual(a.last.state.solved, [1]);
 
-  // --- walk around the cube: inside does a full lap through 4 faces (row 3 is clear)
-  await b.walkTo({ face: 1, x: 7, y: 3 });
-  for (let i = 0; i < 40; i++) await b.move(1, 0);
+  // --- walk around the cube: inside does a full lap through 4 faces (row 4 is clear)
+  await b.walkTo({ face: 1, x: 8, y: 4 });
+  for (let i = 0; i < FACE_SIZE * 4; i++) await b.move(1, 0);
   assert.equal(b.pose.face, 1);
   assert.equal(b.events.filter((e) => e.type === 'flip' && e.side === 'in').length, 4);
 

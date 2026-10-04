@@ -12,12 +12,10 @@ export type FaceId = 1 | 2 | 3 | 4 | 5 | 6;
 export const FACES: readonly FaceId[] = [1, 2, 3, 4, 5, 6];
 
 /** Tiles per face edge and pixels per tile. Read FACE_SIZE; never hardcode the number. */
-export const FACE_SIZE = 10;
-/** Old name for FACE_SIZE. */
-export const GRID = FACE_SIZE;
+export const FACE_SIZE = 12;
 export const TILE_PX = 16;
 
-/** A tile on one face, in that face's canonical coords (x right, y down, 0..GRID-1). */
+/** A tile on one face, in that face's canonical coords (x right, y down, 0..FACE_SIZE-1). */
 export interface TileRef {
   face: FaceId;
   x: number;

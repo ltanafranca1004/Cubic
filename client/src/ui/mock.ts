@@ -1,4 +1,4 @@
-import type { GameState } from '@cubic/shared';
+import { SPAWN, type GameState } from '@cubic/shared';
 import type { UIActions, UIState } from './hooks';
 
 // Mock data so the UI can be built with no server running: open the client with ?mock
@@ -6,8 +6,8 @@ import type { UIActions, UIState } from './hooks';
 
 export const mockGameState: GameState = {
   players: {
-    out: { side: 'out', pose: { side: 'out', face: 1, up: [0, 1, 0], x: 4, y: 8, dir: 1 }, connected: true, isAI: false, steps: 0, carrying: null },
-    in: { side: 'in', pose: { side: 'in', face: 1, up: [0, 1, 0], x: 2, y: 8, dir: 1 }, connected: true, isAI: false, steps: 0, carrying: null },
+    out: { side: 'out', pose: { side: 'out', face: 1, up: [0, 1, 0], ...SPAWN.out, dir: 1 }, connected: true, isAI: false, steps: 0, carrying: null },
+    in: { side: 'in', pose: { side: 'in', face: 1, up: [0, 1, 0], ...SPAWN.in, dir: 1 }, connected: true, isAI: false, steps: 0, carrying: null },
   },
   puzzles: { 'plate-door': { pressed: false, taken: false } },
   items: {},

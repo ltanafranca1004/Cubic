@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
+  FACE_SIZE,
+  SPAWN,
   applyInteract,
   applyMove,
   createGame,
@@ -49,9 +51,11 @@ test('walls block and report a bump; invalid moves are ignored', () => {
   assert.deepEqual(applyMove(s, 'out', 1, 1), []);
   assert.deepEqual(applyMove(s, 'out', 2, 0), []);
   assert.deepEqual(s.players.out.pose, before);
-  go(s, 'out', { face: 1, x: 2, y: 4 });
-  assert.deepEqual(applyMove(s, 'out', 1, 0), [{ type: 'bump', side: 'out' }]); // wall at 3,4
-  assert.equal(s.players.out.pose.x, 2);
+  // The crystal is walled in: the tile left of it is a wall.
+  const crystal = obj(defaultEnv, 'out', 1, 'crystal');
+  go(s, 'out', { face: 1, x: crystal.x - 2, y: crystal.y });
+  assert.deepEqual(applyMove(s, 'out', 1, 0), [{ type: 'bump', side: 'out' }]);
+  assert.equal(s.players.out.pose.x, crystal.x - 2);
 });
 
 test('example puzzle: the plate inside opens the door outside, and it can be solved', () => {
@@ -83,7 +87,7 @@ test('example puzzle: the plate inside opens the door outside, and it can be sol
 
   // Solved: the door stays open even with the plate released, nobody is sealed in.
   applyMove(s, 'in', 0, 1);
-  assert.ok(pathTo(s, 'out', { face: 1, x: 4, y: 8 }));
+  assert.ok(pathTo(s, 'out', { face: 1, ...SPAWN.out }));
 });
 
 test('per-side visibility: each side only sees its own half of the puzzle', () => {
@@ -130,10 +134,10 @@ test('portal win: needs every puzzle solved and both players on the portal', () 
 
 function itemEnv(): { env: GameEnv; log: string[] } {
   const world = loadWorld();
-  const blank = Array(10).fill('..........');
-  const row = (r: string[], y: number, s: string) => r.map((v, i) => (i === y ? s : v));
-  world.out[1] = parseStringMap('out', 1, row(row(blank, 5, '....I.....'), 2, '..I.......'));
-  world.out[6] = parseStringMap('out', 6, row(blank, 4, '....U.....'));
+  const blank: string[] = Array(FACE_SIZE).fill('.'.repeat(FACE_SIZE));
+  const row = (r: string[], y: number, s: string) => r.map((v, i) => (i === y ? s.padEnd(FACE_SIZE, '.') : v));
+  world.out[1] = parseStringMap('out', 1, row(row(blank, 5, '....I'), 2, '..I'));
+  world.out[6] = parseStringMap('out', 6, row(blank, 4, '....U'));
   world.in[1] = parseStringMap('in', 1, blank);
   const log: string[] = [];
   const carry: PuzzleModule<{ done: boolean }> = {

@@ -1,4 +1,4 @@
-import { FACES, GRID, SIDES, type FaceId, type Side } from '../types';
+import { FACES, FACE_SIZE, SIDES, type FaceId, type Side } from '../types';
 import { STRING_MAPS } from './default';
 import { TMJ_MAPS } from './generated';
 import { parseStringMap } from './strings';
@@ -22,7 +22,7 @@ export function loadWorld(): World {
   return world;
 }
 
-export const inBounds = (x: number, y: number) => x >= 0 && x < GRID && y >= 0 && y < GRID;
+export const inBounds = (x: number, y: number) => x >= 0 && x < FACE_SIZE && y >= 0 && y < FACE_SIZE;
 
 export function faceMap(world: World, side: Side, face: FaceId): FaceMap {
   return world[side][face];

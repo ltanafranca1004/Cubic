@@ -1,7 +1,6 @@
-import type { GameEvent } from '@cubic/shared';
-
 // Synthesized placeholder sound effects (Web Audio oscillators). Real audio listed in
-// assets/manifest.json can replace these per key later.
+// assets/manifest.json can replace these per key later. Which game event plays which key,
+// and who hears it, is decided in audio/hearing.ts; everything plays through audio.playSfx.
 
 let ctx: AudioContext | null = null;
 /** Where the effects play. The AudioManager points this at its SFX bus (volume sliders). */
@@ -51,11 +50,6 @@ export const sfx: Record<string, () => void> = {
   place: () => chime([392, 523, 659], 0.07),
   'door-open': () => tone(400, 0.1),
   'door-close': () => tone(200, 0.1),
+  /** A puzzle event with no sound of its own. */
+  puzzle: () => tone(350, 0.08),
 };
-
-export function playEvent(e: GameEvent): void {
-  // The solved sting is a sample: the AudioManager plays it (and falls back to `solve`).
-  if (e.type === 'solve') return;
-  const key = e.type === 'puzzle' ? e.name : e.type;
-  (sfx[key] ?? (e.type === 'puzzle' ? () => tone(350, 0.08) : undefined))?.();
-}

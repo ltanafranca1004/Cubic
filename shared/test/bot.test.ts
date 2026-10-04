@@ -3,6 +3,9 @@ import { test } from 'node:test';
 import {
   CANON_UP,
   FACES,
+  FACE_SIZE,
+  SPAWN,
+  defaultEnv,
   LEASH_ERROR,
   applyInteract,
   applyMove,
@@ -52,10 +55,12 @@ test('observe() is in the observer own orientation: inside is mirrored', () => {
   const s = createGame(0);
   const out = observe(s, 'out');
   const inn = observe(s, 'in');
-  assert.deepEqual(out.position, { col: 4, row: 8 });
-  assert.deepEqual(inn.position, { col: 7, row: 8 }); // canonical x=2, seen from behind
-  assert.deepEqual(inn.objects, [{ type: 'plate', state: 'off', col: 2, row: 2 }]); // canonical x=7
-  assert.equal(out.grid[8]![4], '@');
+  const mirror = (x: number) => FACE_SIZE - 1 - x; // the inside sees the wall from behind
+  const plate = defaultEnv.world.in[1].objects.find((o) => o.type === 'plate')!;
+  assert.deepEqual(out.position, { col: SPAWN.out.x, row: SPAWN.out.y });
+  assert.deepEqual(inn.position, { col: mirror(SPAWN.in.x), row: SPAWN.in.y });
+  assert.deepEqual(inn.objects, [{ type: 'plate', state: 'off', col: mirror(plate.x), row: plate.y }]);
+  assert.equal(out.grid[SPAWN.out.y]![SPAWN.out.x], '@');
   assert.equal(out.edges.right.face, 2);
   assert.equal(inn.edges.right.face, 4);
 });
@@ -79,7 +84,7 @@ function planActionSteps(state: GameState, side: Side, raw: unknown): BotStep[] 
 test('pathTo crosses face edges and every step is a legal move', () => {
   const s = createGame(0);
   const path = pathTo(s, 'out', { face: 3, x: 5, y: 5 })!; // the far side of the cube
-  assert.ok(path.length >= 10);
+  assert.ok(path.length >= FACE_SIZE);
   let pose = s.players.out.pose;
   const faces = new Set([pose.face]);
   for (const [dx, dy] of path) {
@@ -99,7 +104,8 @@ test('pathTo crosses face edges and every step is a legal move', () => {
 
 test('pathTo respects puzzle blockers: no path through a shut door', () => {
   const s = createGame(0);
-  assert.equal(pathTo(s, 'out', { face: 1, x: 4, y: 4 }), null);
+  const crystal = defaultEnv.world.out[1].objects.find((o) => o.type === 'crystal')!;
+  assert.equal(pathTo(s, 'out', { face: 1, x: crystal.x, y: crystal.y }), null);
   const blocked = planAction(s, 'out', { type: 'step_on', object: 'crystal' });
   assert.ok('error' in blocked);
 });
@@ -125,7 +131,7 @@ test('parseAction rejects junk and clamps what it accepts', () => {
     assert.equal(parseAction(bad), null, JSON.stringify(bad));
   }
   assert.deepEqual(parseAction({ type: 'goto', args: { col: '3', row: 4 } }), { type: 'goto', col: 3, row: 4 });
-  assert.deepEqual(parseAction({ type: 'move', dir: 'left', steps: 500 }), { type: 'move', dir: 'left', steps: 20 });
+  assert.deepEqual(parseAction({ type: 'move', dir: 'left', steps: 500 }), { type: 'move', dir: 'left', steps: FACE_SIZE * 2 });
   assert.deepEqual(parseAction({ type: 'wait', args: {} }), { type: 'wait' });
   assert.ok('error' in planAction(createGame(0), 'out', { type: 'drop' }));
 });
@@ -144,7 +150,7 @@ test('observe() tells nothing about the partner except how far their face is', (
     const s = createGame(0);
     const base = observe(s, side);
     // Anywhere on the same wall, facing any way: the observation is identical.
-    for (const [x, y] of [[0, 0], [9, 9], [6, 1], [1, 6]] as const) {
+    for (const [x, y] of [[0, 0], [FACE_SIZE - 1, FACE_SIZE - 1], [6, 1], [1, 6]] as const) {
       place(s, partner, 1, x, y);
       s.players[partner].pose.dir = -1;
       s.players[partner].steps += 7;

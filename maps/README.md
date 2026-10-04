@@ -1,7 +1,8 @@
 # /maps (owner: friend 3)
 
 The cube has 6 faces, and every face has two maps: the OUTSIDE surface and the INSIDE
-surface of the same wall. 12 maps total, each 10x10 tiles of 16px.
+surface of the same wall. 12 maps total, each 12x12 tiles of 16px (`FACE_SIZE` in
+`shared/src/types.ts`).
 
 | Face | Outside | Inside |
 | --- | --- | --- |
@@ -14,8 +15,8 @@ surface of the same wall. 12 maps total, each 10x10 tiles of 16px.
 
 ## Two ways to author a map
 
-**A. String maps (what the game uses now).** `shared/src/maps/default.ts`, 10 strings of
-10 characters per map:
+**A. String maps (what the game uses now).** `shared/src/maps/default.ts`, 12 strings of
+12 characters per map:
 
 | Char | Meaning | Kind |
 | --- | --- | --- |
@@ -28,6 +29,7 @@ surface of the same wall. 12 maps total, each 10x10 tiles of 16px.
 | `C` | crystal | object |
 | `O` | portal (face 6, both sides, same tiles) | object |
 | `I` | carryable item | object |
+| `R` | rose (a carryable item, id and kind `rose`) | object |
 | `U` | target an item can be dropped on | object |
 
 New characters are added in `shared/src/maps/strings.ts` (`LEGEND`).
@@ -38,7 +40,7 @@ New characters are added in `shared/src/maps/strings.ts` (`LEGEND`).
 Start from `template.tmj`.
 
 Tiled rules:
-- Orthogonal, 10x10 tiles, 16x16 px. Tile layer format: CSV (not compressed).
+- Orthogonal, 12x12 tiles, 16x16 px. Tile layer format: CSV (not compressed).
 - A tile layer named **`tiles`**. Terrain comes from the tile's custom property
   `kind` = `floor` | `wall` | `tree` | `water` (set it in the tileset editor). Tiles with
   no `kind` and empty cells are floor. Extra purely visual layers are ignored by the game
@@ -58,7 +60,7 @@ Tiled rules:
   directly behind outside tile (x, y). The inside player sees the map MIRRORED left-right
   (they look at the wall from behind), and both players see it rotated by their compass
   drift. That is intended; do not pre-mirror inside maps.
-- Players start on face 1: outside at (4, 8), inside at (2, 8). Keep those floor.
+- Players start on face 1: outside at (5, 9), inside at (3, 9). Keep those floor.
 - Face 6 needs `portal` objects on the same tiles on both sides.
 - Voice fades with distance on the cube, so spreading a puzzle across faces is a design
   tool: same face = loud, next face = quiet, opposite face = silent.

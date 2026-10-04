@@ -10,7 +10,7 @@ drawn with the placeholder art in code, so assets can still land one at a time.
 The full guide is [docs/style.md](../../../docs/style.md). In short:
 
 - **16x16 px tiles**, pixel art, no anti-aliasing, no sub-pixel detail. The game view is
-  160x160 and everything is scaled by whole numbers.
+  192x192 and everything is scaled by whole numbers.
 - **Palette: Resurrect 64** (lospec.com/palette-list/resurrect-64), named in
   `client/src/style/tokens.ts`. The generator refuses any other colour.
 - Sources: our own art, plus the **Ninja Adventure** pack and the **m5x7** font (both
