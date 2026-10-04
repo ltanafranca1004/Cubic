@@ -12,6 +12,11 @@ try {
   // no server/.env: use the real environment
 }
 
+// Last line of defence: one room's bug must not end the process and every other room with
+// it (Node exits on both of these by default). Log it and keep serving.
+process.on('unhandledRejection', (reason) => console.error('[server] unhandled rejection:', reason));
+process.on('uncaughtException', (e) => console.error('[server] uncaught exception:', e));
+
 const env = process.env;
 const model = env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL;
 const persona = parsePersona(env.AI_PERSONA);
@@ -41,10 +46,17 @@ const app = createApp({
       onSay: (msg) => {
         // Cached and banked clips are free, so they are used in either mode. Only
         // elevenlabs mode may call the API; any miss or failure falls back to the browser.
-        void tts.speak(msg.text, room.code, { cacheOnly: ttsMode === 'browser' }).then((clip) => {
-          if (clip) app.io.to(room.code).emit('tts', { chatId: msg.id, mime: 'audio/mpeg', data: clip.audio as unknown as ArrayBuffer });
-          else app.io.to(room.code).emit('speak', { chatId: msg.id, text: msg.text });
-        });
+        const speak = () => app.io.to(room.code).emit('speak', { chatId: msg.id, text: msg.text });
+        tts
+          .speak(msg.text, room.code, { cacheOnly: ttsMode === 'browser' })
+          .then((clip) => {
+            if (clip) app.io.to(room.code).emit('tts', { chatId: msg.id, mime: 'audio/mpeg', data: clip.audio as unknown as ArrayBuffer });
+            else speak();
+          })
+          .catch((e: unknown) => {
+            console.error(`[tts ${room.code}]`, e);
+            speak(); // the line is still said, by the browser
+          });
       },
     });
   },

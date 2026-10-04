@@ -54,6 +54,8 @@ const BACKOFF_MAX_MS = 60_000;
 const EVENTS_KEPT = 8;
 /** Human idle time before the AI suggests the next goal. */
 const IDLE_HINT_MS = 20_000;
+/** An AI whose own code has thrown this many times is stopped: it is broken, not unlucky. */
+const MAX_FAULTS = 3;
 
 export interface ParsedReply {
   say: string | null;
@@ -100,6 +102,8 @@ export class AiPlayer {
   private stale = true;
   private lastSeen = '';
   private stopped = false;
+  /** Times this AI's own code has thrown (see guard). */
+  private faults = 0;
   private stepTimer: NodeJS.Timeout;
   private thinkTimer: NodeJS.Timeout;
   private wakeTimer: NodeJS.Timeout | null = null;
@@ -131,24 +135,50 @@ export class AiPlayer {
     this.memoryOf = room.state;
     room.sit(side, true);
     this.unlisten = room.listen({
-      onChat: (msg) => {
-        if (msg.from === side) return;
-        this.humanActed();
-        this.wake();
-      },
-      onState: (u) => {
-        this.look(); // the voice signal changes as either of us walks
-        if (u.events.some((e) => 'side' in e && e.side !== side)) this.humanActed();
-        this.notice(u.events);
-      },
+      onChat: (msg) =>
+        this.guard('chat listener', () => {
+          if (msg.from === side) return;
+          this.humanActed();
+          this.wake();
+        }),
+      onState: (u) =>
+        this.guard('state listener', () => {
+          this.look(); // the voice signal changes as either of us walks
+          if (u.events.some((e) => 'side' in e && e.side !== side)) this.humanActed();
+          this.notice(u.events);
+        }),
       onClosed: () => this.stop(),
     });
-    this.stepTimer = setInterval(() => this.step(), opts.stepMs ?? 200);
-    this.thinkTimer = setInterval(() => this.maybeThink(), opts.idleMs ?? 8000);
+    this.stepTimer = setInterval(() => this.guard('step', () => this.step()), opts.stepMs ?? 200);
+    this.thinkTimer = setInterval(() => this.guard('think', () => this.maybeThink()), opts.idleMs ?? 8000);
     this.stepTimer.unref();
     this.thinkTimer.unref();
     this.humanActed();
     this.wake();
+  }
+
+  /**
+   * Everything the AI does on its own runs through here: its timers, and the room
+   * listeners (which run inside the human's own move). A throw in one of them would
+   * otherwise be an uncaught exception or an unhandled rejection, which ends the process
+   * and with it every room on the server. Here it costs this AI its current action, and
+   * an AI that keeps throwing is stopped.
+   */
+  private guard(what: string, fn: () => void | Promise<void>): void {
+    try {
+      const result = fn();
+      if (result) result.catch((e: unknown) => this.fault(what, e));
+    } catch (e) {
+      this.fault(what, e);
+    }
+  }
+
+  private fault(what: string, e: unknown): void {
+    this.log(`error in ${what}: ${(e instanceof Error ? (e.stack ?? e.message) : String(e)).slice(0, 600)}`);
+    this.queue = [];
+    this.doing = null;
+    if (what === 'think') this.thinking = false; // it threw before the call: nothing is in flight
+    if (++this.faults >= MAX_FAULTS) this.stop();
   }
 
   /** Look around: this side's observation, folded into what it remembers. */
@@ -169,10 +199,12 @@ export class AiPlayer {
     if (this.stopped) return;
     this.idleTimer = setTimeout(() => {
       this.idleTimer = null;
-      this.hintDue = true;
-      // Gemini is failing: do not make one line wait out the back-off.
-      if (this.failures > 0 && !this.thinking) this.takeHint();
-      else this.wake();
+      this.guard('idle hint', () => {
+        this.hintDue = true;
+        // Gemini is failing: do not make one line wait out the back-off.
+        if (this.failures > 0 && !this.thinking) this.takeHint();
+        else this.wake();
+      });
     }, this.opts.idleHintMs ?? IDLE_HINT_MS);
     this.idleTimer.unref();
   }
@@ -236,7 +268,7 @@ export class AiPlayer {
     const wait = Math.max(0, this.nextThinkAt - Date.now());
     this.wakeTimer = setTimeout(() => {
       this.wakeTimer = null;
-      void this.maybeThink();
+      this.guard('think', () => this.maybeThink());
     }, wait + 20);
     this.wakeTimer.unref();
   }
