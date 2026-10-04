@@ -239,6 +239,14 @@ portal and no exit to walk to. The win plays the ending (see "Ending").
   It LOOKS like lava the whole time: all 99 tiles are `f6-lava` objects in every state
   (`hot` flows, 4 frames, still with reduce motion; `cold` is lava under a dark crust), and
   the room is `bright`. Browser check: `tools/screens/lava.ts`.
+- **Face 5's symbols have names, one list:** `SYMBOL_NAMES` in `shared/src/symbols.ts` (sun,
+  moon, star, bolt, drop, leaf, eye). The puzzle's object states, the AI's words
+  (`VOCAB_SYMBOLS`, one banked clip per word) and the label all read it: never rename or
+  reorder. Standing on a symbol shows its name over YOUR OWN turtle (`symbolLabel` in
+  `shared/src/labels.ts`, by tile through `visibleObjects`; placed by
+  `client/src/ui/label.ts`, drawn as `.cu-label` in the DOM layer of the quick-chat
+  bubbles). Client only, never for the partner, none during a face transition. It names
+  the tile, never the order or a right press. Browser check: `tools/screens/face5-label.ts`.
 - Hooks beyond the basics: `onUse` (E on a tile with empty hands and no item to pick up:
   keys, buttons, flip tiles), `onPush` (a step into a tile on the same face: move a box and
   return true), `lines(side)` (beams drawn over the face), `bright` (the inside of the

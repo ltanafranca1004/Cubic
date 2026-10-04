@@ -7,9 +7,12 @@
 // and for the browser voice). A script must use ONLY these pieces in a relay line; add a
 // piece here (and bank it) before using a new one.
 
+import { SYMBOL_NAMES } from '../symbols';
+
 export const VOCAB_NUMBERS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve'] as const;
 export const VOCAB_COLOURS = ['red', 'blue', 'yellow', 'pink', 'white'] as const;
-export const VOCAB_SYMBOLS = ['sun', 'moon', 'star', 'bolt', 'drop', 'leaf', 'eye'] as const;
+/** The seven symbols of face 5: the one list in ../symbols.ts (the puzzle and the label over the turtle use it too). */
+export const VOCAB_SYMBOLS = SYMBOL_NAMES;
 export const VOCAB_DIRECTIONS = ['up', 'down', 'left', 'right'] as const;
 export const VOCAB_WORDS = ['row', 'column', 'flip', 'skip', 'then', 'next', 'pot', 'bushes', 'birds', 'rocks', 'press', 'step'] as const;
 export const VOCAB_PHRASES = ['the code is', 'the order is', 'the path is', 'the pot is', 'the flower is'] as const;
