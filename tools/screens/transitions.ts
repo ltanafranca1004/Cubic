@@ -268,9 +268,10 @@ async function gif(browser: Browser, name: string, url: string, clip: 'view' | '
   const video = `${dir}/${readdirSync(dir).find((f) => f.endsWith('.webm'))}`;
   const even = (n: number) => Math.round(n / 2) * 2;
   const [col, view] = [mid[0]!, mid[1]!];
-  const x = even(clip === 'hud' ? col[0]! : view[0]!);
+  // the view, or the view and the HUD column to its right
+  const x = even(view[0]!);
   const y = even(view[1]!);
-  const w = even(view[2]! - x);
+  const w = even((clip === 'hud' ? col[2]! : view[2]!) - x);
   const h = even(view[3]! - y);
   // native pixels and a palette made from the clip keep the art crisp
   const filter = `fps=20,crop=${w}:${h}:${x}:${y},split[a][b];[a]palettegen=max_colors=64[p];[b][p]paletteuse=dither=none`;

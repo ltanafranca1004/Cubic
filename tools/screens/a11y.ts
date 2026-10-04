@@ -115,7 +115,8 @@ async function menus(browser: Browser, renderer: 'webgl' | 'canvas'): Promise<vo
   await shot(a, `01-start-focus${tag}`);
 
   // the gear by keyboard: Tab, Enter. Then the panel: up/down rows, left/right values.
-  await press(a, 'Tab');
+  // (How to Play is the first button of the top bar, the gear the last)
+  for (let i = 0; i < 3 && (await domFocus(a)) !== 'Settings'; i++) await press(a, 'Tab');
   await expect('Tab reaches the settings gear', async () => (await domFocus(a)) === 'Settings');
   await shot(a, `02-gear-focus${tag}`);
   await press(a, 'Enter');
@@ -137,7 +138,8 @@ async function menus(browser: Browser, renderer: 'webgl' | 'canvas'): Promise<vo
   await shot(a, `04-settings-done-focus${tag}`);
   await press(a, 'Enter');
   await expect('Done closes the panel and the title is still there', async () => (await modal(a)) === null && (await has(a, 'PLAY')));
-  await press(a, 'Tab', 'Enter');
+  for (let i = 0; i < 3 && (await domFocus(a)) !== 'Settings'; i++) await press(a, 'Tab');
+  await press(a, 'Enter');
   await expect('the gear opens it again', async () => (await modal(a)) === 'cu-settings');
   await press(a, 'Escape');
   await expect('Esc closes it and does nothing else', async () => (await modal(a)) === null && (await has(a, 'PLAY')));

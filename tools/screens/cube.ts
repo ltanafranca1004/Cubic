@@ -284,7 +284,9 @@ async function gifs(browser: Browser): Promise<void> {
         const box = async (sel: string) => page.evaluate((s) => document.querySelector(s)!.getBoundingClientRect(), sel);
         const hud = await box('.cu-col');
         const view = await box('.cu-mid');
-        const crop = { x: Math.floor(hud.left) - 8, y: Math.floor(hud.top) - 8, width: Math.ceil(view.right - hud.left) + 16, height: Math.ceil(hud.bottom - hud.top) + 16 };
+        // the view is on the left and the HUD column on the right: both, with a small margin
+        const top = Math.max(0, Math.floor(Math.min(hud.top, view.top)) - 8);
+        const crop = { x: Math.max(0, Math.floor(view.left) - 8), y: top, width: Math.ceil(hud.right - view.left) + 16, height: Math.ceil(Math.max(hud.bottom, view.bottom)) - top };
         crop.width -= crop.width % 2;
         crop.height -= crop.height % 2;
         const from = Date.now();

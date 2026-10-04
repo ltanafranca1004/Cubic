@@ -131,6 +131,8 @@ ${ICONS.map((name, i) => `.cu-ico.${name} { background-position: -${i * 16}u 0; 
 /* in game the top bar (leave, room code, gear) is the head of the column */
 .cu[data-screen="game"] .cu-top { left: var(--col-x); right: auto; width: var(--col); }
 .cu[data-screen="game"] .cu-top-side { width: auto; flex: 1; }
+/* the column has no room for How to Play next to Leave: in game the controls are in the pause menu (Esc) */
+.cu[data-screen="game"] .cu-top-side:has(#cu-howtoplay) { display: none; }
 .cu[data-screen="game"] .cu-banner { left: var(--view-x); top: calc(var(--view-top) + 4u); }
 
 /* ----- the view ----- */
