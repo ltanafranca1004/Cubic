@@ -108,7 +108,7 @@ export const sequenceLaser: PuzzleModule<State> = {
 
   objective(s, _ctx, side) {
     if (s.done) return 'The laser fires down through the cube.';
-    if (side === 'out') return s.powered ? 'Tell your partner the order the symbols light up in. E on REPLAY shows it again.' : 'Seven dark symbols. The laser under this roof needs power first.';
-    return s.powered ? `Press E on the symbols in the order your partner sees. ${s.entered.length} of ${SYMBOLS.length}.` : 'The laser is dead. Put the battery in the emitter.';
+    if (side === 'out') return 'Seven symbols wait in the dark. Power awakens the light.';
+    return s.powered ? 'Press symbols to light them. Find the hidden sequence.' : 'The laser sleeps. Wake it with power.';
   },
 };

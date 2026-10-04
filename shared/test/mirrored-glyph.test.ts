@@ -58,8 +58,8 @@ test('mirrored-glyph: outside sees only the symbol, inside sees only tiles and C
   assert.deepEqual(visibleObjects(state, 'out', FACE), out);
   // each side is told its own job
   t.go('out', { face: FACE, x: 5, y: 5 });
-  assert.match(objectiveFor(state, 'out'), /mirrored/);
-  assert.match(objectiveFor(state, 'in'), /CLEAR/);
+  assert.match(objectiveFor(state, 'out'), /drawing/);
+  assert.match(objectiveFor(state, 'in'), /glow/);
 });
 
 test('mirrored-glyph: E flips the tile under the inside player, and flips it back', () => {

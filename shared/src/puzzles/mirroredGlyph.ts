@@ -77,6 +77,6 @@ export const mirroredGlyph: PuzzleModule<State> = {
 
   objective(s, _ctx, side) {
     if (s.done) return 'The symbol matches.';
-    return side === 'out' ? 'Describe the symbol to your partner. They see it mirrored.' : 'Flip tiles with E to copy the symbol. CLEAR in the corner resets.';
+    return side === 'out' ? 'There seems to be a drawing on the ground...' : 'Flipping the tile makes the tiles glow. Let\'s start a light show!';
   },
 };

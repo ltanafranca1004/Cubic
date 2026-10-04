@@ -110,5 +110,5 @@ export const hiddenCode: PuzzleModule<State> = {
     ];
   },
 
-  objective: (_s, _ctx, side) => (side === 'out' ? 'A number is laid out in the grass. Read it out when your view is upright.' : 'Type the 3 digits your partner reads out, then ENTER.'),
+  objective: (_s, _ctx, side) => (side === 'out' ? 'The grass shifts with your turn. Stand straight to see the truth.' : 'Keys glow when touched. Watch the lights dance.'),
 };
