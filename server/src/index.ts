@@ -1,5 +1,6 @@
 import { createApp } from './app';
 import { devCommandsEnabled } from './dev';
+import { INACTIVITY } from './rooms';
 import { AiPlayer } from './ai/aiPlayer';
 import { DEFAULT_GEMINI_MODEL, geminiBrain } from './ai/gemini';
 import { parsePersona } from './ai/prompt';
@@ -32,6 +33,11 @@ const ttsMode = wanted === 'elevenlabs' && !env.ELEVENLABS_API_KEY ? 'browser' :
 const turnUrls = (env.TURN_URLS ?? '').split(',').map((u) => u.trim()).filter(Boolean);
 const turn = turnUrls.length && env.TURN_USERNAME && env.TURN_CREDENTIAL ? { urls: turnUrls, username: env.TURN_USERNAME, credential: env.TURN_CREDENTIAL } : null;
 const tts = createTts({ apiKey: env.ELEVENLABS_API_KEY, voiceId: env.ELEVENLABS_VOICE_ID, modelId: ttsModel });
+
+// Inactivity timers in ms (defaults: 4 minutes, then a 60 second countdown).
+const ms = (v: string | undefined, fallback: number) => (Number(v) > 0 ? Number(v) : fallback);
+INACTIVITY.idleMs = ms(env.INACTIVE_MS, INACTIVITY.idleMs);
+INACTIVITY.warnMs = ms(env.INACTIVE_WARN_MS, INACTIVITY.warnMs);
 
 const app = createApp({
   origins: (env.CLIENT_ORIGIN ?? '').split(','),

@@ -17,6 +17,11 @@ services:
       # https://cubic.vercel.app,https://cubic-*.vercel.app,https://cubic.tech
       - key: CLIENT_ORIGIN
         sync: false
+      # --- Inactivity: ms without any activity before the countdown, and how long it runs
+      - key: INACTIVE_MS
+        value: "240000"
+      - key: INACTIVE_WARN_MS
+        value: "60000"
       # --- AI partner
       - key: GEMINI_API_KEY
         sync: false

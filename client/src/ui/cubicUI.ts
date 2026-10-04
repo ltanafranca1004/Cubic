@@ -14,7 +14,7 @@ import { caption, onCaption, onPartnerSpeaking, partnerSpeaking, type Caption } 
 import { CSS } from './css';
 import { copyText } from './copy';
 import { focusFirst, modalKey, topModal } from './focus';
-import type { EdgeLabel, HudState, UIActions, UIHandle, UIHost, UIState } from './hooks';
+import { chatText, type EdgeLabel, type HudState, type UIActions, type UIHandle, type UIHost, type UIState } from './hooks';
 import { dismissSideCard } from './onboarding';
 import { createPauseMenu } from './pauseMenu';
 import { createSettingsPanel } from './settingsPanel';
@@ -459,13 +459,21 @@ export const cubicUI: UIHost = {
     }
 
     function renderChat(s: UIState): void {
-      const sig = `${s.chat.length}:${s.chat[s.chat.length - 1]?.id ?? 0}:${s.partnerTyping}`;
+      // system lines change in place (a countdown runs, then ends), so their words are in the signature
+      const now = Date.now();
+      const sig = `${s.chat.length}:${s.chat[s.chat.length - 1]?.id ?? 0}:${s.partnerTyping}:${s.chat.filter((m) => m.system).map((m) => chatText(m, now)).join('|')}`;
       if (sig === chatSig) return;
       chatSig = sig;
       const log = $('cu-log');
       log.replaceChildren(
         ...s.chat.map((m) => {
           const row = document.createElement('div');
+          if (m.system) {
+            // nobody said it: no speaker, the line alone
+            row.className = 'sys';
+            row.textContent = chatText(m, now);
+            return row;
+          }
           row.className = m.isAI ? 'ai' : m.from;
           const who = document.createElement('b');
           who.textContent = m.isAI ? 'AI ' : m.from === s.side ? 'You ' : 'Partner ';
@@ -523,7 +531,7 @@ export const cubicUI: UIHost = {
         const secs = away ? Math.max(0, Math.ceil((away.until - Date.now()) / 1000)) : 0;
         const left = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
         const banner = !inGame
-          ? ''
+          ? (next.lobby && next.notice) || '' // the lobby has no chat: its system line is here
           : !next.online
             ? 'Connection lost. Reconnecting...'
             : away

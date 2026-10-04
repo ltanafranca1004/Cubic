@@ -66,6 +66,21 @@ function saved(key: string): Saved | null {
   }
 }
 
+/** At most one `activity` message per this long. */
+const ACTIVITY_EVERY_MS = 3000;
+
+/**
+ * A system line as the UI gets it: stamped with OUR clock. `at` is when it arrived, and a
+ * countdown's `until` is moved from the server's clock to ours (`until - Date.now()` is
+ * what is left).
+ */
+function localNote(msg: ChatMessage): ChatMessage {
+  const s = msg.system;
+  if (!s) return msg;
+  const now = Date.now();
+  return { ...msg, at: now, system: s.until !== undefined && s.now !== undefined ? { ...s, until: s.until - s.now + now, now } : s };
+}
+
 type Pending = { seq: number; kind: 'move'; dx: number; dy: number } | { seq: number; kind: 'interact'; only?: InteractOnly };
 
 export interface NetHandlers {
@@ -114,6 +129,7 @@ export class Net {
   private localId = 0;
   /** The server's clock minus ours, from the last room info that carried the server's time. */
   private skew = 0;
+  private activityAt = 0;
 
   constructor(
     private h: NetHandlers,
@@ -185,10 +201,17 @@ export class Net {
       const news = u.events.filter((e: GameEvent) => !('side' in e) || e.side !== me);
       if (news.length) this.h.onEvents(news, false);
     });
-    socket.on('chat', (msg) => {
-      this.chat = [...this.chat, msg];
+    socket.on('chat', (raw) => {
+      const msg = localNote(raw);
+      // a system line that has changed (the countdown ended) takes the place of its old form
+      this.chat = this.chat.some((m) => m.id === msg.id) ? this.chat.map((m) => (m.id === msg.id ? msg : m)) : [...this.chat, msg];
       this.h.onChat(msg);
       this.h.onChange();
+    });
+    socket.on('removed', () => {
+      // the server took us out of the room: say why on the mode screen
+      this.error = 'You were removed for inactivity.';
+      this.forget();
     });
     socket.on('quick', (q) => this.h.onQuick?.(q));
     socket.on('typing', (t) => this.h.onTyping(t.on));
@@ -248,7 +271,7 @@ export class Net {
     this.code = res.code;
     this.id = res.id;
     this.setRoom(res.room);
-    this.chat = res.chat;
+    this.chat = res.chat.map(localNote);
     this.server = res.state;
     // a new seat, or the same one after a reconnect: the server counts our moves from 0
     this.pending = [];
@@ -418,6 +441,17 @@ export class Net {
       if (!this.socket || !this.online) resolve({ ok: false, error: 'Not connected to a server.' });
       else this.socket.emit('dev', cmd, resolve);
     });
+  }
+
+  /**
+   * The player is here: a key, a tap, or talking. Most of those never reach the server by
+   * themselves, so this tells it, at most once every few seconds, while we are in a room.
+   */
+  activity(): void {
+    const now = Date.now();
+    if (!this.socket || !this.online || !this.code || now - this.activityAt < ACTIVITY_EVERY_MS) return;
+    this.activityAt = now;
+    this.socket.emit('activity');
   }
 
   sendChat(text: string): void {

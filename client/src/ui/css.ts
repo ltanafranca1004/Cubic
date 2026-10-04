@@ -267,7 +267,7 @@ ${ICONS.map((name, i) => `.cu-ico.${name} { background-position: -${i * 16}u 0; 
 .cu[data-side="in"] .cu-log .out b { color: ${ROLE.out.light}; }
 .cu[data-side="in"] .cu-log .in b { color: ${ROLE.in.base}; }
 .cu[data-side="in"] .cu-log .ai b { color: ${ROLE.portal}; }
-.cu-log .typing { color: var(--dim); }
+.cu-log .typing, .cu-log .sys { color: var(--dim); }
 
 /* ---------- modals: settings, pause, win ---------- */
 /* The veil takes every click that is not on the panel, so nothing under it (the gear,

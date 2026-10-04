@@ -25,7 +25,7 @@ import { createGameView, type GameHandle } from './game';
 import { sfx } from './game/sfx';
 import { Net } from './net/client';
 import { setPartnerLevel, showCaption } from './ui/captions';
-import type { HudState, LobbyState, UIActions, UIHandle, UIHost, UIState } from './ui/hooks';
+import { chatText, type HudState, type LobbyState, type UIActions, type UIHandle, type UIHost, type UIState } from './ui/hooks';
 import { mountOnboarding } from './ui/onboarding';
 import { Voice } from './voice/voice';
 
@@ -61,6 +61,9 @@ export function hudOf(state: GameState, me: Side, now: number): HudState {
  * redraw, and `viewSide` to draw the other player's side instead of our own (hot-seat).
  */
 export const devHooks: { net: Net | null; viewSide: Side | null; render(): void } = { net: null, viewSide: null, render: () => {} };
+
+/** How long the lobby shows "left due to inactivity". */
+const NOTICE_MS = 10_000;
 
 export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null = null): void {
   const gameEl = document.createElement('div');
@@ -167,6 +170,14 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
     };
   }
 
+  /** The lobby's system line: a running inactivity countdown, or who was just removed. */
+  function noticeOf(): string | null {
+    const last = net.chat.filter((m) => m.system).at(-1);
+    const now = Date.now();
+    if (last?.system?.kind === 'idle') return chatText(last, now);
+    return last?.system?.kind === 'removed' && now - last.at < NOTICE_MS ? last.text : null;
+  }
+
   function uiState(): UIState {
     const room = net.room;
     const partner = net.role ? room?.members[net.role === 'host' ? 'guest' : 'host'] : undefined;
@@ -189,6 +200,7 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
       chat: net.chat,
       partnerTyping,
       partnerAway: inGame ? net.partnerAway() : null,
+      notice: inGame ? null : noticeOf(),
       hud: inGame ? hudOf(net.state!, viewSide()!, Date.now()) : null,
       voice: voice.snapshot(signalBars(proximity())),
       signals: inGame ? signalsFor(net.state!, viewSide()!, quicks, Date.now()) : NO_SIGNALS,
@@ -234,6 +246,8 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
   // Dev only: lets tests and the console inspect the client state.
   if (import.meta.env.DEV) Object.assign(window, { __cubic: net, __cubicVoice: voice, __cubicAudio: audio });
   Object.assign(devHooks, { net, render });
+  // Inactivity: any key or tap says we are here (the server hears moves and chat by itself).
+  for (const type of ['keydown', 'pointerdown']) window.addEventListener(type, () => net.activity(), true);
   // iOS only lets sound start from a tap: every tap keeps the voice path allowed to play.
   window.addEventListener('touchend', () => voice.prime(), true);
   net.start();
@@ -242,5 +256,6 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
   setInterval(() => {
     audio.setVoiceLevel(voice.partnerLevelNow); // music ducks under the partner's voice
     setPartnerLevel(voice.partnerLevelNow); // and the "Partner speaking" tag follows it
+    if (voice.talkingNow) net.activity(); // talking is being here, also for a player who stands still
   }, 50);
 }

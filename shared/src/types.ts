@@ -160,6 +160,26 @@ export interface ChatMessage {
   text: string;
   /** Epoch ms. */
   at: number;
+  /** Set on a line the server wrote itself (inactivity). Nobody said it: `from` means nothing. */
+  system?: SystemNote;
+}
+
+/**
+ * A system line in the chat. One line per countdown: what follows (`back`, `removed`,
+ * `gone`) arrives with the SAME message id and replaces the `idle` line in place.
+ */
+export interface SystemNote {
+  /**
+   * idle: `who` has done nothing for a while and is removed at `until`. back: they did
+   * something, the countdown is off. removed: the countdown ran out, they are out of the
+   * room. gone: they disconnected or left during the countdown (the seat hold covers it).
+   */
+  kind: 'idle' | 'back' | 'removed' | 'gone';
+  /** The player it is about, as the chat names them: OUTSIDE / INSIDE in a game, P1 / P2 in the lobby. */
+  who: string;
+  /** `idle` only: when they are removed, and the server's clock when this was sent (epoch ms). */
+  until?: number;
+  now?: number;
 }
 
 export const CHAT_MAX_LEN = 200;
@@ -261,6 +281,11 @@ export interface ClientToServer {
   chat: (msg: { text: string }) => void;
   /** Say one of the fixed QUICK_CHATS lines (keys 1 to 4). Rate limited like chat. */
   quick: (msg: { index: number }) => void;
+  /**
+   * "I am here": a key, a tap or the player talking into the mic, none of which reach the
+   * server by themselves. The client sends at most one every few seconds.
+   */
+  activity: () => void;
   /** WebRTC signaling (offer/answer/ICE), relayed untouched to the partner. */
   'voice:signal': (msg: { data: unknown }) => void;
   /** Fallback audio relay when the direct connection fails. */
@@ -273,7 +298,10 @@ export interface ServerToClient {
   info: (msg: ServerInfo) => void;
   state: (msg: StateUpdate) => void;
   room: (msg: RoomInfo) => void;
+  /** A new line, or (same id as one you have) a system line that replaces its earlier form. */
   chat: (msg: ChatMessage) => void;
+  /** You were taken out of the room (inactivity). Your token is dead: back to the mode screen. */
+  removed: (msg: { reason: 'inactive' }) => void;
   quick: (msg: QuickChat) => void;
   /** The AI partner is thinking. */
   typing: (msg: { from: Side; on: boolean }) => void;

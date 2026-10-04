@@ -25,6 +25,7 @@ import {
   type SeatAway,
   type Side,
   type StateUpdate,
+  type SystemNote,
 } from '@cubic/shared';
 
 // Rooms: the server owns each room's GameState and is the only thing that changes it.
@@ -40,6 +41,13 @@ import {
 // on and nothing resets. Back in time (same token) = same seat. When the window passes the
 // place is given up: whoever is left becomes the host, the seat opens for anyone with the
 // code, and a room with no human left (present or held) is closed.
+//
+// Inactivity: a connected human who does nothing (no move, use, chat, lobby action, key,
+// tap or talking) for INACTIVITY.idleMs gets a countdown line in the chat; anything they
+// do cancels it. When it runs out only THEY are removed: the other player stays (and is
+// the host), the seat opens. Each player has their own clock: nothing one player does or
+// fails to do ever removes the other. An AI is never inactive, and a player who is not
+// connected is "gone" (the hold above), not inactive.
 
 const CODE_LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // no I or O: they read as 1 and 0
 const CODE_LEN = 4;
@@ -55,6 +63,17 @@ const CHAT_PER_WINDOW = 5;
  * window of a running game.
  */
 export const LIMITS = { moveBurst: 5, moveRefillMs: 90, lobbyHoldMs: 15_000, seatHoldMs: SEAT_HOLD_MS };
+/**
+ * Tunable (env INACTIVE_MS and INACTIVE_WARN_MS, see index.ts; tests use seconds).
+ * idleMs: how long a player may do nothing before the countdown starts. warnMs: how long
+ * the countdown runs before they are removed.
+ */
+export const INACTIVITY = { idleMs: 240_000, warnMs: 60_000 };
+/** m:ss, rounded up: what is left of a countdown. */
+const clock = (ms: number) => {
+  const s = Math.max(0, Math.ceil(ms / 1000));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+};
 /** How far past the last ack a move's seq may be (moves lost on the way leave small gaps). */
 const SEQ_JUMP_MAX = 1000;
 
@@ -75,6 +94,13 @@ interface Member {
   away: SeatAway['kind'] | null;
   until: number;
   dropTimer: NodeJS.Timeout | null;
+  /** When they last did something (this room's clock). */
+  activeAt: number;
+  /** The inactivity countdown is running: when they are removed. 0 = no countdown. */
+  idleUntil: number;
+  idleTimer: NodeJS.Timeout | null;
+  /** The countdown's line in the chat, replaced in place by what ends it. */
+  note: ChatMessage | null;
 }
 
 /** A member by id, or whoever holds a side. */
@@ -91,6 +117,10 @@ export interface RoomListener {
   onQuick?(quick: QuickChat): void;
   onRoom?(info: RoomInfo): void;
   onTyping?(side: Side, on: boolean): void;
+  /** A system line (inactivity). Same id as an earlier one = it replaces that line. */
+  onNote?(msg: ChatMessage): void;
+  /** Member `id` was taken out of the room. Fires before the room is told, or closed. */
+  onRemoved?(id: number, reason: 'inactive'): void;
   onClosed?(): void;
 }
 
@@ -100,6 +130,8 @@ const newSeed = (): number => randomBytes(4).readUInt32LE();
 export class Room {
   state: GameState;
   readonly chat: ChatMessage[] = [];
+  /** System lines. Kept apart from `chat`: nobody said them (the AI partner reads `chat`). */
+  private notes: ChatMessage[] = [];
   phase: RoomPhase;
   private members: Member[] = [];
   private listeners = new Set<RoomListener>();
@@ -202,10 +234,110 @@ export class Room {
       away: null,
       until: 0,
       dropTimer: null,
+      activeAt: this.now(),
+      idleUntil: 0,
+      idleTimer: null,
+      note: null,
     };
     this.members.push(m);
     this.seatPlayer(m);
+    this.watch(m);
     return m;
+  }
+
+  // ---------- inactivity ----------
+
+  /** How the chat names a member: the side in a game, P1 / P2 in the lobby. */
+  private label(m: Member): string {
+    if (this.phase === 'playing' && m.side) return m.side === 'out' ? 'OUTSIDE' : 'INSIDE';
+    return m.role === 'host' ? 'P1' : 'P2';
+  }
+
+  /** (Re)start `m`'s own inactivity timer. Only a connected human has one. */
+  private watch(m: Member): void {
+    if (m.idleTimer) clearTimeout(m.idleTimer);
+    m.idleTimer = null;
+    if (m.isAI || !m.connected || this.closed || !this.members.includes(m)) return;
+    const at = m.idleUntil || m.activeAt + INACTIVITY.idleMs;
+    m.idleTimer = setTimeout(() => this.idleCheck(m), Math.max(0, at - this.now()));
+    m.idleTimer.unref();
+  }
+
+  /** `m`'s timer fired: start the countdown, end it, or (they did something meanwhile) wait again. */
+  private idleCheck(m: Member): void {
+    m.idleTimer = null;
+    if (!this.members.includes(m) || !m.connected) return;
+    const now = this.now();
+    if (m.idleUntil) {
+      if (now >= m.idleUntil) return this.removeIdle(m);
+    } else if (now - m.activeAt >= INACTIVITY.idleMs) {
+      m.idleUntil = now + INACTIVITY.warnMs;
+      this.note(m, 'idle');
+    }
+    this.watch(m);
+  }
+
+  /** `m` did something: their clock starts again, and a running countdown is off. */
+  private touch(m: Member | undefined): void {
+    if (!m || m.isAI || !m.connected) return;
+    m.activeAt = this.now();
+    if (!m.idleUntil) return; // the timer finds the new time by itself when it fires
+    m.idleUntil = 0;
+    this.note(m, 'back');
+    this.watch(m);
+  }
+
+  /** Member `id` is at the keys (a key, a tap, talking): see the `activity` socket message. */
+  activity(id: number): void {
+    this.touch(this.find(id));
+  }
+
+  /**
+   * Write a system line about `m`. A countdown is ONE line: `idle` adds it, and whatever
+   * ends it (back, removed, gone) goes out with the same id and replaces it.
+   */
+  private note(m: Member, kind: SystemNote['kind']): void {
+    const now = this.now();
+    const who = this.label(m);
+    const text =
+      kind === 'idle'
+        ? `${who} inactive, removed in ${clock(m.idleUntil - now)}`
+        : kind === 'back'
+          ? `${who} is back`
+          : kind === 'removed'
+            ? `${who} left due to inactivity`
+            : `${who} ${m.away === 'left' ? 'left' : 'disconnected'}`;
+    const system: SystemNote = kind === 'idle' ? { kind, who, until: m.idleUntil, now } : { kind, who };
+    const msg: ChatMessage = { id: m.note?.id ?? ++this.chatId, from: m.side ?? 'out', isAI: false, text, at: now, system };
+    if (m.note) this.notes = this.notes.map((n) => (n.id === msg.id ? msg : n));
+    else this.notes.push(msg);
+    if (this.notes.length > CHAT_HISTORY) this.notes.shift();
+    m.note = kind === 'idle' ? msg : null;
+    for (const l of this.listeners) l.onNote?.(msg);
+  }
+
+  /** The countdown ran out: only `m` goes. Whoever is left keeps the room (giveUp). */
+  private removeIdle(m: Member): void {
+    m.idleUntil = 0;
+    for (const l of this.listeners) l.onRemoved?.(m.id, 'inactive'); // first: they do not hear the room after this
+    this.note(m, 'removed');
+    this.giveUp(m);
+  }
+
+  /** `m` is no longer here to be inactive (dropped, left): their timer and countdown end. */
+  private unwatch(m: Member, gone: boolean): void {
+    if (m.idleTimer) clearTimeout(m.idleTimer);
+    m.idleTimer = null;
+    if (!m.idleUntil) return;
+    m.idleUntil = 0;
+    if (gone) this.note(m, 'gone');
+  }
+
+  /** The chat as a newcomer gets it: what was said and the system lines, in order. */
+  private log(): ChatMessage[] {
+    const now = this.now();
+    const notes = this.notes.map((n) => (n.system?.kind === 'idle' ? { ...n, system: { ...n.system, now } } : n));
+    return [...this.chat, ...notes].sort((a, b) => a.id - b.id);
   }
 
   /** Copy a member's presence onto the player they control. */
@@ -252,6 +384,7 @@ export class Room {
   /** Lobby: take a side, or null to step back to the middle. Both players cannot hold the same side. */
   pick(id: number, side: Side | null): void {
     const m = this.inLobby(id);
+    this.touch(m);
     if (side !== null && side !== 'out' && side !== 'in') throw new Error('No such side.');
     if (m.side === side) return;
     if (side && this.find(side)) throw new Error('Your partner already picked that side.');
@@ -263,6 +396,7 @@ export class Room {
   /** Lobby: the guest readies up (needs a side) or takes it back. */
   setReady(id: number, ready: boolean): void {
     const m = this.inLobby(id);
+    this.touch(m);
     if (m.role !== 'guest') throw new Error('The host starts the game. Only the guest readies up.');
     if (ready && !m.side) throw new Error('Pick a side first.');
     if (m.ready === !!ready) return;
@@ -284,6 +418,7 @@ export class Room {
   /** Lobby: the host starts the game. The sides are locked from here on. */
   start(id: number): void {
     const m = this.inLobby(id);
+    this.touch(m);
     if (m.role !== 'host') throw new Error('Only the host can start the game.');
     const blocker = this.startBlocker();
     if (blocker) throw new Error(blocker);
@@ -304,6 +439,9 @@ export class Room {
     m.dropTimer = null;
     m.away = null;
     m.connected = true;
+    // back at the keys: the time they were gone was never "inactive", their clock starts now
+    m.activeAt = this.now();
+    this.watch(m);
     // The page that comes back numbers its moves from 1 again. Keeping the old ack would
     // make it throw away every prediction until its count passed the old one.
     m.ack = 0;
@@ -334,6 +472,8 @@ export class Room {
   /** Keep `m`'s place while they are not here. The window starts again with every call. */
   private hold(m: Member, kind: SeatAway['kind']): void {
     m.connected = false;
+    m.away = kind;
+    this.unwatch(m, true); // gone, not inactive: the hold (and its banner) takes over
     if (this.phase === 'lobby') {
       // Nobody can start a game with someone who is not there: their pick and ready go.
       m.ready = false;
@@ -358,6 +498,8 @@ export class Room {
     if (!this.members.includes(m)) return;
     if (m.dropTimer) clearTimeout(m.dropTimer);
     m.dropTimer = null;
+    if (m.connected) m.away = 'left'; // Leave in the lobby, for the wording of a countdown it ends
+    this.unwatch(m, true);
     this.members = this.members.filter((x) => x !== m);
     if (m.side) this.state.players[m.side].connected = false;
     if (!this.members.some((x) => !x.isAI)) {
@@ -377,7 +519,10 @@ export class Room {
     this.closed = true;
     if (this.ticker) clearInterval(this.ticker);
     this.ticker = null;
-    for (const m of this.members) if (m.dropTimer) clearTimeout(m.dropTimer);
+    for (const m of this.members) {
+      if (m.dropTimer) clearTimeout(m.dropTimer);
+      if (m.idleTimer) clearTimeout(m.idleTimer);
+    }
     this.members = [];
     for (const l of [...this.listeners]) l.onClosed?.();
     this.listeners.clear();
@@ -385,7 +530,7 @@ export class Room {
   }
 
   private seatView(m: Member): Seat {
-    return { code: this.code, id: m.id, role: m.role, side: m.side, token: m.token, room: this.info(), state: this.state, chat: this.chat };
+    return { code: this.code, id: m.id, role: m.role, side: m.side, token: m.token, room: this.info(), state: this.state, chat: this.log() };
   }
 
   /** Whoever holds `side`, once the game is running (nothing moves in the lobby). */
@@ -419,6 +564,7 @@ export class Room {
   private input(side: Side, seq: number, apply: () => GameEvent[]): GameEvent[] {
     const seat = this.playing(side);
     if (!seat) return [];
+    this.touch(seat); // also when the move is over budget: they are at the keys
     // a real client counts up by one: anything else (1e300, NaN) must not become the ack
     if (Number.isSafeInteger(seq) && seq > seat.ack && seq <= seat.ack + SEQ_JUMP_MAX) seat.ack = seq;
     if (!this.spend(seat)) {
@@ -435,6 +581,7 @@ export class Room {
   say(side: Side, text: string): ChatMessage | null {
     const seat = this.playing(side);
     if (!seat || typeof text !== 'string') return null;
+    this.touch(seat);
     const clean = text.replace(/\s+/g, ' ').trim().slice(0, CHAT_MAX_LEN);
     if (!clean) return null;
     const now = this.now();

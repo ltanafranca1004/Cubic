@@ -94,6 +94,14 @@ export class Voice {
     };
   }
 
+  /**
+   * We are speaking into a live mic right now: the level of the microphone itself, so it
+   * is the same whether the audio then travels directly or through the relay.
+   */
+  get talkingNow(): boolean {
+    return this.transmitting() && this.myLevel > TALK_LEVEL;
+  }
+
   /** How loud the partner is right now (0..1), for ducking the music. */
   get partnerLevelNow(): number {
     return this.partnerLevel;
