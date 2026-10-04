@@ -1,340 +1,339 @@
 # Cubic
 
-StormHacks 2026 project: two players, one cube. One's outside, one's trapped inside.
+<p align="center">
+  <img src="docs/readme/title.png" alt="The Cubic title screen: the word CUBIC over a floating pixel-art cube in the sky, with a PLAY button" width="720">
+</p>
 
-Each player sees only their own side of the same six walls. The cube's geometry is the
-game: corners are 270 degrees, walking a loop around one turns you 90 degrees, and the
-inside is mirrored. You solve it by talking through the wall.
+Cubic is a two-player co-op game where one player walks the outside of a cube and the other is trapped inside, and you solve puzzles together by talking each other through the walls.
 
-## Run
+**Play now:** [playcube.tech](https://playcube.tech) (main) or [cubic-tau.vercel.app](https://cubic-tau.vercel.app) (backup).
 
-Needs Node 22.12+.
+Built by team Turtles at StormHacks 2026.
 
-```
-npm install
-npm run dev        # server on :3001, client on http://localhost:5173
-```
+## Contents
 
-Other commands: `npm test`, `npm run typecheck`, `npm run lint`, `npm run build` (client),
-`npm run maps` (bundle Tiled maps from `/maps`).
+1. [How it works](#how-it-works)
+2. [Game modes](#game-modes)
+3. [The six faces](#the-six-faces)
+4. [Controls](#controls)
+5. [Features](#features)
+6. [How we built it](#how-we-built-it)
+7. [Tech stack](#tech-stack)
+8. [Run it locally](#run-it-locally)
+9. [Deploy](#deploy)
+10. [Tests](#tests)
+11. [Project structure](#project-structure)
+12. [Credits](#credits)
 
-Optional env files: copy `server/.env.example` to `server/.env` and
-`client/.env.example` to `client/.env.local`. Nothing is required for a local two-player
-game.
+## How it works
 
-## Test with two browser windows
+A cube has six faces. One player (OUTSIDE) walks on the outer side of those faces. The other (INSIDE) walks on the inner side of the same six walls. Walk off the edge of a face and you cross onto the next one.
 
-1. `npm run dev`, then open `http://localhost:5173` in two windows side by side (two
-   windows, not two tabs of one window: a hidden tab pauses its game loop).
-2. Window A: **Play**, then **Create Lobby**. You are the host (P1); the 4-letter room
-   code is at the top of the screen.
-3. Window B: **Play**, **Join Lobby**, type the code. You are the guest (P2). Each player
-   picks a side (A / D or click: outside is on top of the cube, inside is in it), the
-   guest presses **Ready**, the host presses **Start**. Both windows switch to the game.
-4. Move with WASD or the arrow keys (hold to keep walking). Walk off any edge to cross to
-   the next face; the labels around the view say which face is where, and the cube in the
-   HUD turns as your up turns (the compass drift).
-5. Example puzzle on face 1: the outside player reads the three digits laid out in the
-   grass, the inside player walks onto the keys of the floor keypad and presses **E** on
-   each, then on ENTER.
-6. Six puzzles, one per face (below). The game is won the moment the last one is solved.
-7. Chat: Enter to type, Esc to close. Refreshing a window puts you back in your seat.
+<p align="center">
+  <img src="docs/readme/side-select.png" alt="The side select screen: OUTSIDE on a grass top with a green turtle, INSIDE in a dark room with a blue turtle, and a room code at the top" width="720">
+</p>
 
-### Controls (the mouse is never needed)
+The two sides are not the same view:
 
-| Key | Gamepad | Does |
-| --- | --- | --- |
-| WASD / arrows | left stick / d-pad | move; in a menu, move the focus |
-| E | A | pick up / use (in a menu: Enter or Space select) |
-| Q | B | drop (in a menu: Esc is back) |
-| 1 2 3 4 | | quick chat: "Here!", "Wait", "Yes", "No" (a bubble over you, and in the chat log) |
-| Enter | | chat (Enter sends, Esc closes) |
-| V (hold) / M | | push to talk / mute the mic |
-| Tab (hold) | | the full cube map; the arrows turn it |
-| Esc | Start | pause: Resume, Settings, Leave and this list |
+- **You cannot see each other's screen.** Each player sees only their own side. Puzzles are split so that neither side can solve one alone. One side holds the clue and the other holds the controls.
+- **The inside is mirrored.** The inside player sees every wall from behind, so left and right are flipped compared with the outside.
+- **The cube bends your sense of direction.** Three faces meet at each corner, so three left turns around a corner bring you home. Walking a loop around a corner turns you by 90 degrees. The HUD shows a compass drift (how far your "up" has turned from the face's own up), and the little cube in the HUD turns with it.
+- **Proximity voice.** You talk through the wall with your microphone. If you are both on the same face, you hear each other clearly. On adjacent faces your partner is quieter. On opposite faces you hear nothing. There is also a text chat.
+- **Solo mode.** With no second player, an AI partner takes the other side.
 
-In the menus Tab reaches the settings gear. In the join popup you type the code, Backspace
-deletes, Enter joins and the arrows reach Cancel. Settings (the gear, or the pause menu):
-left / right change the focused row. Accessibility settings: text size S / M / L, high
-contrast, screen shake, and open mic or push-to-talk. Spoken lines are captioned.
-`cd tools && npx tsx screens/a11y.ts` plays all of it with the keyboard only.
+<table>
+  <tr>
+    <td align="center"><img src="docs/readme/game-outside.png" alt="The outside view of face 1: a grass field with bushes, rocks, ponds and orange tiles, the cube HUD, voice controls and chat on the right" width="400"></td>
+    <td align="center"><img src="docs/readme/game-inside.png" alt="The inside view of face 5, the laser room: a dark tile floor with symbols, a blue turtle, the cube HUD, voice controls and chat on the right" width="400"></td>
+  </tr>
+  <tr>
+    <td align="center">The outside player on the grass of face 1</td>
+    <td align="center">The inside player in the laser room of face 5</td>
+  </tr>
+</table>
 
-## Voice
+## Game modes
 
-Cubic is meant to be played by voice, no Discord. In the game press **Enable microphone**
-and allow it. Hold **V** to talk (or switch to open mic), **Mute** to cut your mic, and use
-the slider for your partner's volume. How well you hear each other depends on where you
-both stand on the cube: same wall is clear, the next face is faint (35%), the opposite
-face is silent. The bars show the signal (3, 1, 0), the dots show who is speaking.
+<p align="center">
+  <img src="docs/readme/mode.png" alt="The Select Mode screen with CREATE LOBBY, JOIN LOBBY and PLAY SOLO buttons beside a turning cube" width="640">
+</p>
 
-Audio is WebRTC, signaled through our own Socket.io server. The client asks the server
-for its ICE servers (`GET /ice`): public STUN, plus a TURN relay when one is configured
-(see [TURN relay](#turn-relay-optional)). If a direct connection still cannot be made it
-falls back to relaying audio through the game server; add `?relay` to the URL to force
-that path when testing. Voice reconnects by itself after a refresh. To test alone, use two
-windows and headphones.
+- **Create Lobby** makes a room and shows a 4-letter room code. You are the host. Pick a side, wait for your partner to be ready, then press Start.
+- **Join Lobby** asks for the room code from your friend.
+- **Play Solo** lets you pick a side. The AI partner takes the other one.
 
-The browser console shows how a call got through: `[voice] ice checking / connected`,
-then `[voice] connected via host` (same network), `srflx` (STUN) or `relay` (TURN).
+Refreshing the page puts you back in your seat if you come back soon (see [reconnect grace](#reconnects-and-inactivity)).
 
-## Audio
+## The six faces
 
-Music changes with where you are: a menu theme, a lobby theme, a bright adventurous loop
-for the outside player and a dark one for the inside player, crossfaded over 800 ms, plus
-a short sting when a puzzle is solved. It starts on your first click or key press
-(browsers block sound before that) and dips about 6 dB while your partner talks.
+There is one puzzle per face. Neither player can finish one alone.
 
-Everything goes through `client/src/audio/AudioManager.ts`:
-
-```ts
-import { audio, musicForScreen } from './audio/AudioManager';
-audio.setMaster(0.8); audio.setMusic(0.5); audio.setSfx(1); // 0..1, heard at once
-audio.playMusic(musicForScreen('start'));                   // 'menu' | 'lobby' | 'outside' | 'inside'
-audio.playMusic('lobby', { fade: 400 });                    // fade in ms, default 800
-audio.stopMusic({ fade: 800 });
-audio.playSfx('solved');                                    // or any synthesized effect, e.g. 'step'
-```
-
-The tracks are CC0, from the Ninja Adventure pack (see [CREDITS.md](CREDITS.md)), and
-live in `client/public/assets/audio`. Voice chat has its own volume slider and is not
-affected by these three volumes.
-
-Optional: `npm run music:gen -w server` generates alternative tracks with the ElevenLabs
-Music API into `client/public/assets/audio/gen`. It prints the estimated cost and asks
-before spending anything, and refuses above `MUSIC_MAX_CREDITS` (default 5000). The API
-key needs the `music_generation` permission and a paid plan. Model: `ELEVENLABS_MUSIC_MODEL`
-(default `music_v1`).
-
-## Items
-
-Press **E** to pick up the item you are standing on, and **Q** (or E again) to drop it. You carry one
-at a time and it comes with you across faces. Example: the inside player carries the
-battery from the safe on face 2 to the laser emitter on face 5. With empty hands and no
-item on your tile, **E** uses the tile: a key, a button, a flip tile.
-
-## The six puzzles
-
-Each player sees only their own half, so every one is solved by talking. Chain: 2, then 5,
-then 6, then 4. Faces 1 and 3 can be done at any time.
-
-| Face | Outside | Inside | Unlocks |
+| Face | Name | Outside player | Inside player |
 | --- | --- | --- | --- |
-| 1 Grass / Keypad room | reads the number in the grass (only right when their view is upright) | types the three digits, ENTER | |
-| 2 Desert / Vault | counts bushes, rocks and birds | types 3 x bushes x 2 x birds x rocks, ENTER | the battery |
-| 3 Snow / Tile room | describes the symbol in the snow | flips floor tiles to copy it, mirrored | |
-| 4 Forest / Greenhouse | plants the flower in the pot the partner names | sees which pot holds that colour | |
-| 5 Rooftop / Laser room | calls the order the symbols light up in | battery into the emitter, then the symbols in that order | the laser |
-| 6 Cave / Lava room | pushes mirrors until the beam burns the crate on the edge, then calls the beam's route | walks the tiles behind the beam over the lava to the button | the flower |
+| 1 | Grass / Keypad room | Reads the 3-digit number laid out in the grass. It only reads right when the view is upright (compass drift 0). | Types it on the floor keypad, then ENTER. |
+| 2 | Desert / Vault | Counts the bushes, rocks and birds. | Works out the vault code from the counts and types it. The safe opens. |
+| 3 | Snow / Tile room | Describes the symbol carved in the snow. | Flips floor tiles until they match it, mirrored. |
+| 4 | Forest / Greenhouse | Collects five flowers and plants each in the pot the partner names. | Sees which pot holds which colour. |
+| 5 | Rooftop / Laser room | Calls the order the seven symbols light up in. | Puts the battery in the emitter and presses the symbols in that order. |
+| 6 | Cave / Lava room | Pushes two mirrors so the laser beam burns the crate on the edge, then reads the beam's route out loud. | Follows that route over the lava to a button. A wrong step is a strike. |
 
-The lava of face 6 is deadly from the start of the game until its button is pressed. The
-safe way over it is the laser beam the outside player sees, once it has burnt the crate.
+The puzzles are linked by items that travel between faces:
 
-## Play with the AI
+- **Battery:** opening the safe on face 2 gives the inside player a battery for the emitter on face 5.
+- **Laser:** solving face 5 switches on the laser beam on face 6.
+- **Flower:** solving face 6 gives the outside player the fifth flower that face 4 needs.
 
-No second player? An AI partner takes the other side. It sees only its own side of the
-cube, like a human would, and you play by chatting with it.
+Faces 1 and 3 stand alone. Every game uses a new random seed, so codes, counts and orders change each time.
 
-1. `npm run dev`, open the app, press **Play**, then **Play with AI** and pick your side.
-   No key is needed: without one the scripted partner plays alone.
-2. Optional: a key from https://aistudio.google.com/apikey in `server/.env` as
-   `GEMINI_API_KEY=...` (optional `GEMINI_MODEL`, default `gemini-3.5-flash`) gives it
-   natural lines and lets it read free-form chat.
-3. Type to it (Enter). Short words work best: `go`, `wait`, `yes`, `no`, `face 3`, and
-   whatever its own lines ask for. Quick chat (keys 1 to 4) counts. It walks at human
-   speed. Its lines are 80 characters at most and show as captions.
+The game is won the moment all six puzzles are solved. The end screen shows your time and strikes next to the unfolded cube.
 
-How it is built:
+<p align="center">
+  <img src="docs/readme/ending.png" alt="The end screen: PASSED CUBE 1, with the time, the strike count, MAIN MENU and PLAY AGAIN buttons above the unfolded cube" width="640">
+</p>
 
-- **The script drives.** A rule-based partner (`shared/src/bot/partner.ts`) decides every
-  step from what its side can see and what you typed. It finds you by voice, stays on your
-  wall, keeps off tiles that are not safe, and walks into the portal at the end. Each
-  puzzle it can play is one small file in `shared/src/bot/scripts` (see the README
-  there); on a puzzle it has no script for it says so and keeps its hands off.
-- **Gemini advises.** It rewords small talk, answers free-form chat, turns it into the
-  words the script understands, and may suggest a move, which is only walked if the script
-  calls it safe. One call per 6 seconds per room, no backlog. A call that takes more than
-  3 seconds, fails or hits the rate limit is dropped and the script's own line is said:
-  the partner never waits for the API.
-- **Personality:** `AI_PERSONA=default` or `AI_PERSONA=tsundere` (annoyed on the surface,
-  secretly helpful). Tone only.
-- `AI_FAKE=1` switches Gemini off even if there is a key.
+## Controls
 
-Keys stay on the server and are never sent to the browser.
+The mouse is never required. These are the default keys, read from `client/src/input/bindings.ts`.
 
-### The AI's voice
+| Key | Gamepad | Action |
+| --- | --- | --- |
+| W A S D or arrow keys | d-pad or left stick | Move. In a menu, move the focus. |
+| E | A | Pick up or drop an item, or use the tile you stand on (keys, buttons, flip tiles). In a menu: select. |
+| Q | B | Drop the item you carry. In a menu: back. |
+| V (hold) | | Push to talk |
+| M | | Mute or unmute your mic |
+| Tab (hold) | | Show the full cube map |
+| 1 2 3 4 | | Quick chat: "Here!", "Wait", "Yes", "No" |
+| Enter | | Open the chat. Enter sends, Esc closes. |
+| Esc | Start | Pause menu |
 
-`TTS_MODE=browser` (default outside production) speaks the AI's lines with the browser's
-free `speechSynthesis`. `TTS_MODE=elevenlabs` (default in production) uses ElevenLabs
-(`ELEVENLABS_API_KEY`, optional `ELEVENLABS_VOICE_ID`, `ELEVENLABS_MODEL` default
-`eleven_flash_v2_5`). The game never waits for a clip.
+**Rebinding.** Open Settings (the gear, or the pause menu) and go to the CONTROLS tab. You can rebind move, interact, drop, push to talk, mute, cube map and the four quick chat keys, and reset them to the defaults. Esc, Enter and the arrow keys are fixed. The arrow keys always work as a second way to move.
 
-To keep ElevenLabs cheap:
-- **The voice bank is in the repo** (`server/tts/bank`, one MP3 per line, `index.json`
-  says which is which). It holds the script's puzzle-independent lines for both personas
-  and the generic lines in `server/tts/bank-lines.txt`. A line that matches a banked one,
-  ignoring case and punctuation, plays that clip in either mode, with no key and after
-  any redeploy. `npm run tts:bank -w server` adds what is missing and nothing else
-  (lines already banked are skipped; a clip in the local cache is copied, not bought).
-- The script's own lines are never bought at runtime: banked, or read by the browser.
-- Gemini's lines are generated on demand and cached in `server/.tts-cache` (not in git).
-  At most `TTS_SESSION_LINES` (default 15) per room; after that, and on any miss or
-  failure, the browser voice takes over.
-- Characters sent to ElevenLabs are logged per room and in total (`[tts ROOM] ...`), and
-  Gemini calls and tokens per room (`[ai ROOM] ...`).
+**Push to talk.** In Settings, the Mic row switches between Open and Push to talk. Hold the talk key (V by default) to speak in push-to-talk mode.
 
-## Test on two laptops
+**Gamepad.** Any standard gamepad works through the browser Gamepad API. The gamepad is not rebindable, and it keeps working whatever you bind on the keyboard.
 
-The microphone needs HTTPS, so share one HTTPS URL through a tunnel. Only laptop A runs
-anything.
+**Touch.** On phones and tablets the game shows on-screen controls: a d-pad, USE, DROP, TALK (hold), MAP, MENU and CHAT. They send the same keys as the keyboard.
 
+## Features
+
+### Accessibility
+
+Settings has three tabs: SOUND, ACCESS and CONTROLS.
+
+- **Text size:** S, M or L.
+- **High contrast** mode.
+- **Reduce motion:** swaps the face-crossing animations and the swaying scenery for quick fades and still frames.
+- **Screen shake** can be turned off.
+- **Hints** can be turned off.
+- **Captions:** everything the AI partner says out loud also appears as a caption, and a "Partner speaking" tag shows when a human partner talks on the mic.
+- **Keyboard-only play:** every menu, the lobby, the settings and the game can be used without a mouse.
+- Separate volume sliders for master, music, effects and voice chat, and a mute for your mic.
+
+### Phones and tablets
+
+The layout is chosen from the visible size, the pixel density and whether the main pointer is a finger. It does not look at the device name. Wide screens get the full layout, smaller ones fold the side column behind a HUD button, and a rotate card asks for landscape when a touch screen is held upright. Whole-number pixel scaling keeps the pixel art sharp.
+
+### Reconnects and inactivity
+
+- **Reconnect grace.** If a player drops or refreshes during a game, their seat is held for 60 seconds so they can rejoin. In the lobby the hold is 15 seconds.
+- **Inactivity.** Each human has their own idle clock. After 4 minutes with no key, tap, move, chat or talking, a countdown appears in the chat. 60 seconds later only that player is removed. The other player keeps the room. Both times can be changed with `INACTIVE_MS` and `INACTIVE_WARN_MS` on the server.
+- Rooms live in server memory. A server restart or a new deploy ends every room.
+
+### The cube HUD and map
+
+The HUD shows a small 3D cube that turns with your compass drift. The outside player sees a solid cube. The inside player sees a room from within. Hold Tab to open the full cube map. Labels around the play area name the neighbouring faces, and a progress bar shows how many of the six puzzles are solved.
+
+## How we built it
+
+```mermaid
+flowchart LR
+    A["Player A browser (Phaser client)"] <-->|"Socket.io: moves, chat, state"| S["Node server (rooms, rules, AI partner)"]
+    B["Player B browser (Phaser client)"] <-->|"Socket.io: moves, chat, state"| S
+    A <-->|"WebRTC voice, peer to peer"| B
+    S -->|"chat and personality (solo only)"| G["Google Gemini"]
+    S -->|"voice lines (solo only)"| E["ElevenLabs"]
 ```
-# laptop A, terminal 1
+
+### Monorepo and server-authoritative state
+
+The repo is an npm workspaces monorepo written in TypeScript:
+
+- `shared` holds all the game logic: the cube math, the rules, the six puzzles, the maps and the AI partner's script. It has no DOM and no networking, and it needs no build step. Both the server (through `tsx`) and the client (through Vite) read it as TypeScript source.
+- `server` is Node.js with Socket.io. It owns the game state, checks every move with the code in `shared`, and relays chat and voice signaling.
+- `client` is the Phaser 4 game and the HTML interface, built with Vite.
+
+The client draws and the server decides. A client predicts its own move with the same shared code, then accepts the server's state. The server also limits how fast moves and chat can arrive.
+
+### The cube math
+
+The cube has 6 faces, and each face is a 12 by 12 grid of tiles. Each face has its own "up" and its own screen direction, and the same tile coordinates are used on both sides, so inside `(x, y)` sits directly behind outside `(x, y)`. When you walk off a face edge, the shared code moves you to the neighbouring face and turns your "up" to match. Walking a loop around a corner leaves you rotated by 90 degrees. For the inside player, screen right is flipped, so every wall is seen from behind. Puzzles compare tiles, never screen directions, so they work the same from both sides.
+
+### The AI partner
+
+- **Scripted movement.** The partner is a rule-based bot in `shared/src/bot`. It sees only what its side can see, finds you by voice or by the face you name, walks with the real game rules and avoids tiles that are not safe, such as hot lava. Each puzzle has its own small script in `shared/src/bot/scripts`, and all six have one.
+- **Gemini for chat only.** If `GEMINI_API_KEY` is set, Gemini rewords small talk, answers free-form chat and turns it into words the script understands. It never has to be right for the game to work. It is called at most once every 6 seconds per room, with a 3 second deadline. The server also caps it at 8 calls a minute, 25 calls per game and `GEMINI_DAILY_CAP` calls per UTC day (default 200), and pauses all calls for 10 minutes after a rate-limit (429) answer. Whenever Gemini is off, late, over a cap or failing, the script's own line is said instead. With no key, or with `AI_FAKE=1`, the scripted partner plays alone.
+- **ElevenLabs voice bank.** The partner's fixed lines were generated once and committed as MP3 files in `server/tts/bank`, so they cost nothing at runtime. Answers that change every game (a code, an order, a path) are built from a small vocabulary of single-word clips (numbers, colours, symbols, directions and a few phrases, listed in `shared/src/bot/vocab.ts`) that the server chains together. Only Gemini's own free-form lines may be sent to ElevenLabs live, at most 20 per game and within a daily character cap. Anything else falls back to the browser's built-in voice.
+
+## Tech stack
+
+| Technology | What it does here |
+| --- | --- |
+| TypeScript | Every package is TypeScript, and shared logic is used as source by both server and client. |
+| Node.js | Runs the game server (version 22.12 or newer). |
+| Socket.io | Real-time connection between the browsers and the server: moves, state, chat, lobby, voice signaling. |
+| Phaser 4 | Renders the game, the menus and the animated cube. |
+| Vite | Dev server and production build for the client. |
+| WebRTC | Peer-to-peer proximity voice between the two players, with public STUN and an optional TURN relay. |
+| Web Audio | Sets the partner's volume from the face distance, and plays music and sound effects. |
+| Google Gemini | Gives the solo AI partner natural chat and personality. Optional. |
+| ElevenLabs | Speaks the AI partner's lines. Optional. |
+| Playwright | Drives real browsers for the screenshot and end-to-end check scripts in `tools/screens`. |
+| Vercel | Hosts the client. |
+| Render | Hosts the server (free web service). |
+
+## Run it locally
+
+**Prerequisites:** Node.js 22.12 or newer (`engines` in `package.json`).
+
+```bash
 npm install
 npm run dev
-
-# laptop A, terminal 2
-npx cloudflared tunnel --url http://localhost:5173
 ```
 
-cloudflared prints a URL like `https://random-words.trycloudflare.com`. Open it on both
-laptops: one creates a room, the other joins with the code. The dev client talks to its
-own origin and Vite proxies `/socket.io` (WebSocket included) to the local game server,
-so that single URL serves the whole game. Leave `VITE_SERVER_URL` unset for this.
+This starts the server on port 3001 and the client on port 5173. Open http://localhost:5173.
 
-Voice between two networks is peer-to-peer when it can be, goes through the TURN relay if
-one is set (see [TURN relay](#turn-relay-optional)), and falls back to relaying through
-the game server when neither works. Use headphones.
+To try a two-player game, open the app in two separate browser windows (not two tabs, because a hidden tab pauses its game loop). In one window press Play, then Create Lobby. In the other, press Play, then Join Lobby and type the room code. The microphone works on `localhost`. To test across two computers, use an HTTPS tunnel, since browsers only allow the microphone on secure pages.
 
-Teammates: read [CLAUDE.md](CLAUDE.md) first, then the README in your folder:
-[puzzles](shared/src/puzzles/README.md), [maps](maps/README.md),
-[assets](client/public/assets/README.md), [ui](client/src/ui/README.md),
-[scenes](client/src/scenes/README.md).
+Nothing is required to run. The game works without any API key: the AI partner then plays from its script, and its lines are read by the browser voice.
 
-No server needed for UI or art work: `http://localhost:5173/?mock=game` is a playable local
-game (`&side=in` for the inside view); `?mock=menu`, `?mock=lobby` and `?mock=hud` show
-static mock states. The look is specified in [docs/style.md](docs/style.md) and
-[docs/menu-design.md](docs/menu-design.md); art credits are in [CREDITS.md](CREDITS.md).
+### Environment variables
 
-## Dev tools
+Copy `server/.env.example` to `server/.env` and `client/.env.example` to `client/.env.local`. Never commit real values.
 
-Add `?dev` to the URL (`http://localhost:5173/?dev`). Without it none of this is loaded.
+| Variable | Where | What it is for |
+| --- | --- | --- |
+| `PORT` | server | Port the server listens on (3001 locally). Render sets it itself. |
+| `CLIENT_ORIGIN` | server | Allowed browser origins, comma-separated. A `*` matches inside a host name. Localhost is always allowed when `NODE_ENV` is not `production`. |
+| `INACTIVE_MS` | server, optional | Idle time before the countdown (default 240000). |
+| `INACTIVE_WARN_MS` | server, optional | How long the countdown runs (default 60000). |
+| `DEV_COMMANDS` | server, optional | Set to 1 to allow the `?dev` teleport and solve commands. Ignored in production. |
+| `GEMINI_API_KEY` | server, optional | Turns on Gemini chat for the AI partner. |
+| `GEMINI_MODEL` | server, optional | Gemini model (default `gemini-3.5-flash`). |
+| `GEMINI_ENABLED` | server, optional | Set to false to switch Gemini off. |
+| `GEMINI_DAILY_CAP` | server, optional | Gemini calls per UTC day over all solo rooms (default 200). |
+| `AI_FAKE` | server, optional | Set to 1 to never call Gemini. |
+| `AI_PERSONA` | server, optional | `default` or `tsundere`. Changes the partner's tone only. |
+| `TTS_MODE` | server, optional | `browser` or `elevenlabs`. |
+| `ELEVENLABS_API_KEY` | server, optional | Turns on live ElevenLabs speech. |
+| `ELEVENLABS_ENABLED` | server, optional | Set to false to switch ElevenLabs off. |
+| `ELEVENLABS_DAILY_CHARS` | server, optional | Characters per UTC day over all solo rooms (default 20000). |
+| `ELEVENLABS_VOICE_ID` | server, optional | The partner's voice. The committed bank only plays for the default voice. |
+| `ELEVENLABS_MODEL` | server, optional | Model for live lines (default `eleven_flash_v2_5`). |
+| `ELEVENLABS_BANK_MODEL` | server, optional | Model the committed bank was made with (default `eleven_v4`). |
+| `TURN_URLS`, `TURN_USERNAME`, `TURN_CREDENTIAL` | server, optional | A TURN relay for voice on strict networks. Set all three or none. |
+| `VITE_SERVER_URL` | client | URL of the game server. Leave unset locally (Vite proxies `/socket.io` to port 3001). Required for the Vercel build. |
 
-- **`` ` ``** shows or hides an overlay: face, pose (x, y, up vector, side), compass drift,
-  voice gain (`voiceMix`), held item, FPS and ping (round trip to the server).
-- **1 to 6** teleport your player to that face. **Shift + 1 to 6** teleport the INSIDE
-  player instead.
-- **Solve puzzle** marks the puzzle on your current face as solved.
-- **Hot-seat** lets one window play both players: a second socket from the same page takes
-  the other seat of a real room, so every move still goes through the server. WASD + E =
-  outside, arrow keys + `.` = inside. The overlay says which side is drawn; **Tab** or
-  **Switch view** shows the other one. A refresh keeps both seats.
+Other useful commands, all from the repo root: `npm test`, `npm run typecheck`, `npm run lint`, `npm run build` (builds the client) and `npm run maps` (bundles the Tiled maps in `maps/`).
 
-Teleport and solve are done by the server, and only when it runs with `DEV_COMMANDS=1` in
-`server/.env`. It is off by default and ignored when `NODE_ENV=production`, so it cannot be
-switched on for the deployed game. Hot-seat and the overlay need no flag. Solve only latches
-the face as solved: the puzzle's own state (an open door, say) is left as it was. With
-`?mock=game&dev` the same keys change the local mock game.
+Useful URLs while developing: `?mock=game` is a playable offline game with no server (add `&side=in` for the inside view), and `?dev` adds an overlay and teleport keys (the server needs `DEV_COMMANDS=1` for the server-side ones).
 
 ## Deploy
 
-Backend on Render, frontend on Vercel. Config is in `render.yaml` and `vercel.json`.
+The client is on Vercel and the server is on Render. The settings live in `vercel.json` and `render.yaml`.
 
-### 1. Backend: Render
+**Server on Render.** Create a Blueprint from this repo. `render.yaml` defines a free web service, `cubic-server`, with build `npm install`, start `npm start -w server` and health check `/health`. Set these variables in the Render dashboard (the ones marked `sync: false` in `render.yaml` are not stored in the file):
 
-1. render.com > New > Blueprint > connect this GitHub repo. Render reads `render.yaml`
-   and creates the free web service `cubic-server` (build `npm install`, start
-   `npm start -w server`, health check `/health`).
-2. Set the env vars it asks for (leave what you do not have yet empty):
-   - `CLIENT_ORIGIN`: the Vercel URL (step 3). A comma-separated list; `*` matches
-     inside a host name, e.g.
-     `https://cubic.vercel.app,https://cubic-*.vercel.app,https://cubic.tech`.
-   - `GEMINI_API_KEY`: for "Play with AI".
-   - `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`: for the AI partner's voice.
-   - `TURN_URLS`, `TURN_USERNAME`, `TURN_CREDENTIAL`: optional voice relay, see
-     [TURN relay](#turn-relay-optional).
-   The rest have defaults in `render.yaml`: `GEMINI_MODEL`, `AI_FAKE`, `AI_PERSONA`,
-   `TTS_MODE`, `ELEVENLABS_MODEL`, `ELEVENLABS_BANK_MODEL`. Render sets `PORT` itself. Every variable is
-   described in `server/.env.example`.
-3. Deploy and note the URL, e.g. `https://cubic-server.onrender.com`. Check
-   `https://<render-url>/health` returns `{"ok":true}`.
+- `CLIENT_ORIGIN`: both client domains, comma-separated: `https://playcube.tech,https://cubic-tau.vercel.app`
+- `GEMINI_API_KEY`, `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`: optional, for the AI partner.
+- `TURN_URLS`, `TURN_USERNAME`, `TURN_CREDENTIAL`: optional voice relay.
+- `render.yaml` already sets `NODE_VERSION`, `NODE_ENV`, the inactivity timers, `GEMINI_MODEL`, `AI_FAKE`, `AI_PERSONA`, `TTS_MODE`, `ELEVENLABS_MODEL` and `ELEVENLABS_BANK_MODEL`.
 
-The free tier **sleeps after 15 minutes idle** and a cold start takes about 50 seconds.
-The lobby pings `/health` the moment it loads to start waking the server, and shows
-"Waking the server..." until it answers. Open the app a few minutes before a demo or
-judging.
+**Client on Vercel.** Import the repo with the root directory unchanged. `vercel.json` sets the install command, `npm run build -w client`, the output folder `client/dist` and a fallback to `index.html`. Set `VITE_SERVER_URL` to the Render URL with no trailing slash. It is read at build time, so redeploy after changing it, and the build fails on purpose if it is missing. The main domain is `playcube.tech`, with `cubic-tau.vercel.app` as the backup.
 
-Render's disk is not kept between deploys, so the voice cache starts empty there: clips
-are generated on first use and reused until the next restart.
+**Checking it.** `GET /health` on the server returns JSON with `ok`, the number of rooms and whether the asking origin is allowed. `GET /ice` returns the STUN (and TURN, if set) servers for voice.
 
-### TURN relay (optional)
+**Free plan notes.**
 
-STUN alone fails on strict networks (symmetric NAT, campus and venue Wi-Fi, some mobile
-carriers). Without TURN those calls drop to the slower chunk relay through the game
-server. With TURN they stay real WebRTC, relayed by the TURN server.
+- The Render free service sleeps after 15 minutes idle, and a cold start takes about 50 seconds. The client pings `/health` as soon as the lobby loads to wake it. Open the game a few minutes before a demo.
+- Rooms are kept in memory only. Every restart or deploy (including each merge to `main`) ends all rooms, and players land on the mode screen with "That room is gone."
+- The server's disk is not kept between deploys, so the live voice cache starts empty. The committed voice bank is part of the repo and always available.
 
-Set all three on the server (Render dashboard, or `server/.env` locally). If any is
-missing the server hands out STUN only:
+## Tests
 
-| Variable | Value |
+From the repo root:
+
+```bash
+npm test          # unit tests in shared, server and client
+npm run typecheck
+npm run lint
+```
+
+The shared tests include a solution script for every puzzle that plays it with real moves, so a puzzle that can no longer be solved fails the build. See `docs/puzzle-tests.md`.
+
+The Playwright scripts live in `tools/screens`. They are not part of `npm test`. They are a separate package, so run `npm install` inside `tools/` first. Most need the dev server running, and each file starts with a comment that gives its exact setup.
+
+```bash
+cd tools
+npm install
+npx tsx screens/playtest.ts       # example: the full two-player regression pass
+```
+
+| Script | What it checks |
 | --- | --- |
-| `TURN_URLS` | The `turn:` / `turns:` URLs, comma-separated |
-| `TURN_USERNAME` | The credential's username |
-| `TURN_CREDENTIAL` | The credential's password |
+| `playtest.ts` | Two real players with real input: lobby, every face and edge on both sides, items, chat, settings, reconnects, all six puzzles and the win screen. |
+| `solo-game.ts` | A whole solo game against the AI partner, through all six puzzles to the win screen. |
+| `solo.ts` | The solo flow: mode screen, side popup, first frame from each side, Leave and Continue. |
+| `ai.ts` | The AI partner: greeting, captions, voice, in a real browser. |
+| `check.ts` | The menus with a real mouse in both Phaser renderers, with no console errors or dead buttons. |
+| `a11y.ts` | Keyboard-only play of the whole game, with no mouse. |
+| `controls.ts` | Key rebinding, swapping, reload persistence and gamepad. |
+| `overlays.ts` | The HUD, settings and pause menu at every text size and with high contrast. |
+| `mobile.ts` | The whole game with fingers only on emulated phones and a tablet. |
+| `devices.ts` | 53 screen sizes on WebKit, Chromium and Firefox: the page fits, controls show only for touch. |
+| `probe-fit.ts` | How the page fits an iPad-shaped window through rotation and toolbar changes. |
+| `inactivity.ts` | The idle countdown, removal and return, with short timers. |
+| `voice.ts` | The voice call: connect, hang up on leave, come back, survive a refresh (fake microphone). |
+| `transitions.ts` | Face-crossing animations, input buffering and agreement between client and server. |
+| `cube.ts`, `cubes.ts`, `hud.ts`, `hud-turn.ts` | The cube visuals and the HUD cube, in both renderers. |
+| `faces.ts`, `world.ts`, `props.ts`, `lava.ts` | Pictures of every face from both sides, the living scenery, tall props and walking pace, and the lava room. |
+| `side-select.ts`, `onboarding.ts`, `key-hint.ts` | The side select screen, every onboarding hint, and the controls hint strip. |
+| `shoot.ts`, `submission.ts`, `title.ts` | Screenshot sets for every screen, and the submission pictures. |
 
-One free provider that fits this static username + password model is **Metered**
-(checked against its docs on 2026-10-03):
+`puzzles.ts` is retired and points to `playtest.ts`. `probe.ts`, `play.ts` and `quiet.ts` are helpers.
 
-1. Sign up at [metered.ca](https://www.metered.ca/tools/openrelay/) (no credit card).
-2. Dashboard > **TURN Server > Credentials > Create Credential**. Label, region and
-   project are optional.
-3. Open the credential, **Get credential > Show ICE Servers Array**. Copy the `username`
-   and `credential` into `TURN_USERNAME` and `TURN_CREDENTIAL`, and the `turn:` / `turns:`
-   URLs into `TURN_URLS`. Use the hosts your dashboard shows; the docs' example is:
+## Project structure
 
-   ```
-   TURN_URLS=turn:global.relay.metered.ca:80,turn:global.relay.metered.ca:80?transport=tcp,turn:global.relay.metered.ca:443,turns:global.relay.metered.ca:443?transport=tcp
-   ```
+```
+shared/     All game logic, no DOM and no networking
+  src/cube.ts, game.ts     Cube math, moves, interaction, ticks
+  src/puzzles/             The six puzzles, one file each
+  src/maps/                Map format and loaders
+  src/bot/                 The AI partner: observe, decide, path, per-puzzle scripts
+  src/voice.ts             How loud the partner is, from face distance
+server/     Node + Socket.io
+  src/rooms.ts             Rooms, lobby, validation, seat hold, inactivity
+  src/app.ts               HTTP routes (/health, /ice) and origin checks
+  src/ai/                  AI runner, Gemini, caps, ElevenLabs voice
+  tts/bank/                The committed voice clips
+client/     Phaser 4 + Vite
+  src/game/                The playable scene, rendering, input
+  src/net/                 Socket client and prediction
+  src/voice/               WebRTC and Web Audio voice
+  src/input/               Key bindings, gamepad, touch
+  src/ui/                  HUD, settings, pause menu, captions, mobile controls
+  src/scenes/              Title, mode and lobby scenes
+  public/assets/           Art, fonts and audio
+maps/       Tiled maps
+tools/      Pixel art generator and Playwright scripts (its own package)
+docs/       Design notes, AI partner docs, puzzle test docs, README pictures
+```
 
-   Leave the `stun:` entry out: the server always adds public STUN itself.
-4. A new credential can take up to 2 minutes to work. Redeploy or restart the server, then
-   check `https://<render-url>/ice` lists the TURN entry.
+More detail: `CLAUDE.md` (architecture notes), `docs/ai-partner.md` (AI partner interfaces), `docs/puzzle-tests.md` (puzzle tests), `docs/style.md` (look and feel).
 
-Things to know:
+## Credits
 
-- **Free quota.** Metered's Open Relay page says 20 GB of TURN usage per month; its
-  pricing page lists the free plan as a "Free Trial" with 500 MB per month. Assume the
-  lower number. Voice is small (our estimate: 30 to 60 MB per hour of relayed call,
-  counting both directions), so either is enough for a demo, and only calls that cannot
-  connect directly use it.
-- **Credential lifetime.** A credential created in the dashboard is a plain username and
-  password with no expiry set, which is what the three env vars need. Metered can also
-  create expiring credentials, but only through its REST API (`expiryInSeconds`); Cubic
-  does not call that API. The docs do not state in so many words that dashboard
-  credentials never expire, so if TURN stops working, check the credential first.
-- **The credential is not secret from players.** `/ice` sends it to every browser on an
-  allowed origin, as any WebRTC app must. It only allows relaying through that TURN
-  account, so the risk is someone using up the quota. Rotate it in the dashboard if so.
-- Providers with short-lived, API-generated credentials only (for example Cloudflare
-  Realtime TURN) do not fit these env vars: `/ice` would have to call their API per
-  request.
-
-Docs: [Open Relay](https://www.metered.ca/tools/openrelay/),
-[creating TURN credentials](https://www.metered.ca/docs/turn-server-service/creating-turn-credentials/),
-[expiring credentials](https://www.metered.ca/docs/turnserver-guides/expiring-turn-credentials/),
-[pricing](https://www.metered.ca/stun-turn).
-
-### 2. Frontend: Vercel
-
-1. vercel.com > Add New > Project > import this repo. Keep the root directory at the repo
-   root; `vercel.json` sets install (`npm install`), build (`npm run build -w client`),
-   output (`client/dist`) and the SPA fallback.
-2. Add the env var `VITE_SERVER_URL` = the Render URL (no trailing slash). It is read at
-   build time, so redeploy after changing it. A Vercel build without it fails on purpose
-   (`client/vite.config.ts`).
-3. Settings > Build and Deployment > Node.js Version: 22.x, the same major as Render.
-4. Deploy and note the URL, e.g. `https://cubic.vercel.app`.
-
-### 3. Connect them
-
-On Render, set `CLIENT_ORIGIN` to the Vercel URL and redeploy the service. Without it the
-browser's requests are rejected by CORS.
+- Built by team Turtles at StormHacks 2026.
+- Music by Kevin MacLeod ([incompetech.com](https://incompetech.com)), licensed under [Creative Commons: By Attribution 4.0](https://creativecommons.org/licenses/by/4.0/). Tracks: "Morning", "Clear Air", "Windswept", "Immersed" and "Enchanted Journey". Full details and the changes we made are in [CREDITS.md](CREDITS.md).
+- AI partner voice by [ElevenLabs](https://elevenlabs.io).
+- Turtle sprites and the pixel art are by our team. The sound effects are synthesized in code.
