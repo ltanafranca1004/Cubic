@@ -21,7 +21,9 @@ import { around, at, type XY } from './util';
 // outside player sees it. The inside player walks it to the button and presses E: solved.
 // The lava is only hot (deadly) while the laser of face 5 is on and this face is unsolved:
 // before that nobody has a reason to be here and the pathfinding (bot, test scripts) walks
-// straight across; after the solve it cools again.
+// straight across; after the solve it cools again. It is LAVA TO LOOK AT the whole time:
+// all 99 tiles are in visible('in') in every state ("hot" flows and glows, "cold" is the
+// same lava under a dark crust), and the room is `bright`, so no darkness hides them.
 //
 // NEVER STUCK: E on the RESET tile (outside) puts both mirrors back where they started.
 // A mirror can cover a path tile on the outside player's screen: RESET uncovers it.
@@ -178,6 +180,9 @@ export const laserPath: PuzzleModule<State> = {
 
   isSolved: (s) => s.done,
 
+  // The lava lights the room: the inside player sees all of it, not only the tiles nearby.
+  bright: true,
+
   visible(s, ctx, side) {
     const out: VisibleObject[] = [];
     if (side === 'in') {
@@ -206,12 +211,12 @@ export const laserPath: PuzzleModule<State> = {
   },
 
   objective(s, ctx, side) {
-    if (s.done) return 'The lava has cooled.';
+    if (s.done) return 'The lava has crusted over again.';
     if (side === 'out') {
       if (s.burnt) return "The flower waits beside the cooled lava. Your partner's path glows beneath their feet.";
       return ctx.faceSolved(5) ? 'Mirrors stand ready. Beam seeks the crate. RESET returns them to rest.' : 'Mirrors await. Cold crate sits empty. Cave waits for light from above.';
     }
-    if (!ctx.faceSolved(5)) return 'Cold rock and a button in the middle. The laser above is still dead.';
+    if (!ctx.faceSolved(5)) return 'Lava under a dark crust, cold for now, and a button in the middle. The laser above is still dead.';
     return s.burnt ? 'A safe path glows through lethal heat. The button waits for touch.' : 'Laser light fills the cavern. Stone cools where fire once flowed.';
   },
 };

@@ -216,6 +216,10 @@ portal and no exit to walk to.
 - **Face 6's lava is deadly only while face 5 is solved and face 6 is not.** Before the
   laser is on, and after the button is pressed, it is cold and walkable (so the bot and
   the test scripts can cross it). While it is hot the inside player must stay on the ring.
+  It LOOKS like lava the whole time: all 99 tiles are `f6-lava` objects in every state
+  (`hot` flows, 4 frames, still with reduce motion; `cold` is lava under a dark crust), and
+  the room is `bright`. The path is never in the inside view. Browser check:
+  `tools/screens/lava.ts`.
 - Hooks beyond the basics: `onUse` (E on a tile with empty hands and no item to pick up:
   keys, buttons, flip tiles), `onPush` (a step into a tile on the same face: move a box and
   return true), `lines(side)` (beams drawn over the face), `bright` (the inside of the

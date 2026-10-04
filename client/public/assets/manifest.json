@@ -815,7 +815,12 @@
       "image": "sprites/objects.png",
       "frames": {
         "default": 120,
-        "hot": 120,
+        "hot": [
+          120,
+          124,
+          125,
+          126
+        ],
         "cold": 121
       }
     },

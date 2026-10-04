@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { FACE_SIZE, MOVES, SIDES, applyMove, createGame, isBlocked, linesOn, onRing, visibleObjects, type GameState, type Side } from '../src/index';
+import { FACE_SIZE, MOVES, SIDES, applyMove, brightFace, createGame, isBlocked, linesOn, onRing, visibleObjects, type GameState, type Side } from '../src/index';
 import { FLOWER_ID, flowerKind } from '../src/puzzles/chain';
 import { MIRROR_START, PATH_START, RESPAWN, traceBeam } from '../src/puzzles/laserPath';
 import type { Box } from '../src/puzzles/lib/push';
@@ -289,11 +289,37 @@ test('laser-path: solved only by the button at the end of the path; then the lav
   assert.equal(t.state.strikes, strikes);
 });
 
-test('laser-path: before the laser is on, the lava is cold rock (nobody is dropped back)', () => {
+test('laser-path: before the laser is on, the lava is cold (nobody is dropped back)', () => {
   const t = solver(createGame(1));
   assert.ok(see(t, 'in').filter((o) => o.type === 'f6-lava').every((o) => o.state === 'cold'));
   t.go('in', t.find('in', FACE, 'button'));
   t.interact('in');
   assert.equal(t.state.strikes, 0);
   assert.ok(!t.state.solved.includes(FACE), 'the button does nothing before the crate burns');
+});
+
+test('laser-path: the lava is there for the inside player in every state, and nothing hides it', () => {
+  // The room once looked empty: cold lava was drawn as dark rock, in a dark room. The data
+  // was always there; this pins it, and that the room is lit (the client draws no darkness).
+  assert.ok(brightFace(FACE), 'the lava room is bright: all of it is seen, not only the tiles nearby');
+  const lava = (t: Solver) => see(t, 'in').filter((o) => o.type === 'f6-lava');
+  const whole = (t: Solver, state: string, when: string) => {
+    const tiles = lava(t);
+    assert.equal(tiles.length, 99, `${when}: the whole 10x10 inside the ring, but the button`);
+    assert.ok(tiles.every((o) => o.state === state), `${when}: every tile is ${state}`);
+    const button = see(t, 'in').find((o) => o.type === 'button')!;
+    const seen = new Set([...tiles, button].map((o) => `${o.x},${o.y}`));
+    for (let y = 0; y < FACE_SIZE; y++) for (let x = 0; x < FACE_SIZE; x++) assert.equal(seen.has(`${x},${y}`), !onRing(x, y), `${when}: ${x},${y}`);
+    assert.equal(see(t, 'in').some((o) => o.type === 'f6-path'), false, `${when}: the path is never in the inside view`);
+  };
+  whole(solver(createGame(33)), 'cold', 'at the start');
+  const t = withPath(33);
+  whole(t, 'hot', 'laser on, crate burnt');
+  // the tiles of the path look like every other tile
+  const path = new Set(shownPath(t).map((p) => `${p.x},${p.y}`));
+  assert.ok(path.size > 2);
+  assert.deepEqual(new Set(lava(t).filter((o) => path.has(`${o.x},${o.y}`)).map((o) => o.state)), new Set(['hot']));
+  SOLUTIONS[ID]!(t);
+  assert.ok(t.state.solved.includes(FACE));
+  whole(t, 'cold', 'after the button');
 });

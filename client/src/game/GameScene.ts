@@ -442,7 +442,8 @@ export class GameScene extends Phaser.Scene {
     const objects = visibleObjects(state, me, face);
     for (const o of objects) {
       const [sx, sy] = canonToScreen(me, face, up, o.x, o.y);
-      put(this.art.object(me, o.type, o.state, this.frame), sx, sy);
+      // (objects that animate, like the hot lava, stand still with reduce motion)
+      put(this.art.object(me, o.type, o.state, settings().reduceMotion ? 0 : this.frame), sx, sy);
     }
     for (const it of items) if (!under.has(`${it.sx},${it.sy}`)) put(this.art.item(it.kind), it.sx, it.sy);
 

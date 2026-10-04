@@ -268,12 +268,14 @@ export function buildSprites(dir: string): SpriteManifest {
   // sheet and the in-code placeholder can never disagree: client/src/game/puzzleArt/.
   const first = objects.length;
   const puzzle: SpriteManifest['objects'] = {};
-  PUZZLE_SPRITES.forEach(({ type, state }, i) => {
+  PUZZLE_SPRITES.forEach(({ type, state, frame }, i) => {
     const g = new Img(T, T);
-    drawPuzzleObject((x, y, w, h, c) => g.rect(x, y, w, h, c), type, state);
+    drawPuzzleObject((x, y, w, h, c) => g.rect(x, y, w, h, c), type, state, frame ?? 0);
     objects.push(g);
     const entry = (puzzle[type] ??= { image: 'sprites/objects.png', frames: { default: first + i } });
-    entry.frames[state] = first + i;
+    // a later frame of a state that animates joins the state's first cell in a list
+    const had = entry.frames[state];
+    entry.frames[state] = frame && had !== undefined ? [...(typeof had === 'number' ? [had] : had), first + i] : first + i;
   });
   const COLS = 8;
   const sheet = new Img(T * COLS, T * Math.ceil(objects.length / COLS));
