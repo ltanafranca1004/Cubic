@@ -12,6 +12,15 @@ const CAP_HEIGHT = 7;
 
 export type Text = Phaser.GameObjects.BitmapText;
 
+/**
+ * THE CURSOR over anything that can be clicked: the pixel hand (the DOM uses the same one,
+ * ui/css.ts). Everything else keeps the pixel arrow the page already has. Pass it to every
+ * interactive object that does something: `setInteractive({ cursor: HAND })`. Never
+ * `useHandCursor` (that is the system's hand) and never on something that only blocks
+ * clicks (a veil). The variable is set per UI scale by ui/cubicUI.ts.
+ */
+export const HAND = 'var(--cursor-hand), pointer';
+
 // RENDERER-PROOF BY DESIGN. Phaser falls back to its Canvas renderer when the browser has
 // no WebGL (hardware acceleration off, some laptops and school machines). Canvas cannot
 // tint bitmap text, draw drop shadows or draw NineSlice objects: buttons lose their
@@ -222,7 +231,7 @@ export class Button {
     this.label = text(scene, 0, 0, opts.label, TEXT_ON[this.variant], opts.labelSize ?? 1);
     // a soft drop shadow lifts the button off whatever is behind it
     this.shadow = scene.add.rectangle(2, 3, this.width, this.height - 1, hex(ROLE.ink), 0.3).setOrigin(0, 0);
-    const zone = scene.add.zone(0, 0, this.width, this.height).setOrigin(0, 0).setInteractive({ useHandCursor: true });
+    const zone = scene.add.zone(0, 0, this.width, this.height).setOrigin(0, 0).setInteractive({ cursor: HAND });
     // Three plain bands (filled rectangles: the same in WebGL and Canvas), so the outline
     // reads on the white menu, the sky and the dark half alike. It is a shape, not a tint.
     this.ring = scene.add.graphics();
@@ -294,6 +303,8 @@ export class Button {
   setEnabled(enabled: boolean): this {
     if (this.enabled !== enabled) {
       this.enabled = enabled;
+      // a disabled button cannot be clicked: it keeps the arrow
+      if (this.zone.input) this.zone.input.cursor = enabled ? HAND : '';
       this.draw();
     }
     return this;
