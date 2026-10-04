@@ -3,6 +3,7 @@ import { ENABLE_AI } from '../config';
 import { menuAction, pasteCode, stepFocus, typeCode } from '../input/keymap';
 import { overlayOwnsInput } from '../input/overlay';
 import { EASE, ROLE, TIME, hex } from '../style/tokens';
+import { AiPopup } from './AiPopup';
 import { BLOCKED_TEXT, MenuScene, type SceneData } from './flow';
 import { Button, centre, paint, shake, slice, text, textCentred, type Text } from './kit';
 
@@ -22,7 +23,7 @@ export class ModeScene extends MenuScene {
   private statusX = 0;
   /** Index into [...buttons, back]; -1 until a key is pressed. */
   private focus = -1;
-  private popup: JoinPopup | null = null;
+  private popup: JoinPopup | AiPopup | null = null;
   /** The join request we are waiting on, to tell its error from an old one. */
   private joining = false;
   /**
@@ -54,11 +55,8 @@ export class ModeScene extends MenuScene {
       { label: 'CREATE LOBBY', onClick: () => actions.onCreateRoom() },
       { label: 'JOIN LOBBY', onClick: () => this.openJoin() },
     ];
-    // The AI partner is switched off in config.ts for now; nothing else changes.
-    if (ENABLE_AI) {
-      items.push({ label: 'PLAY OUTSIDE WITH AI', ai: true, onClick: () => actions.onPlayWithAI('out') });
-      items.push({ label: 'PLAY INSIDE WITH AI', ai: true, onClick: () => actions.onPlayWithAI('in') });
-    }
+    // Solo: the AI partner takes the other side (config.ts switches it off).
+    if (ENABLE_AI) items.push({ label: 'PLAY WITH AI', ai: true, onClick: () => this.openAi() });
     const menuH = items.length * bh + (items.length - 1) * gap;
     const top = cy - Math.round(menuH / 2) + 8;
     // a small title and one clear vertical menu, on a panel
@@ -145,6 +143,24 @@ export class ModeScene extends MenuScene {
         this.sync();
       },
       draft,
+    );
+    this.setFocus(-1);
+    this.sync();
+  }
+
+  /** PLAY WITH AI: choose your side, the AI takes the other one. */
+  private openAi(): void {
+    if (this.popup) return;
+    this.popup = new AiPopup(
+      this,
+      (side) => {
+        this.joining = true;
+        this.ctx.actions.onPlayWithAI(side);
+      },
+      () => {
+        this.popup = null;
+        this.sync();
+      },
     );
     this.setFocus(-1);
     this.sync();

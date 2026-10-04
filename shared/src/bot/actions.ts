@@ -77,13 +77,17 @@ export function planAction(
   action: BotAction,
   env: GameEnv = defaultEnv,
   leash?: (face: FaceId) => boolean,
+  /** Tiles of the CURRENT face (the walker's own screen coords) that no step may enter. */
+  avoidTiles: readonly { col: number; row: number }[] = [],
 ): { steps: BotStep[] } | { error: string } {
   const pose = state.players[side].pose;
+  const banned = new Set(avoidTiles.map((t) => screenToCanon(side, pose.face, pose.up, t.col, t.row).join(',')));
+  const avoid = banned.size ? (p: Pose) => p.face === pose.face && banned.has(`${p.x},${p.y}`) : undefined;
   /** Shortest walk inside the leash. If only the leash is in the way, say so. */
   const walk = (goal: (p: Pose) => boolean, error: string) => {
-    const path = findPath(state, side, goal, env, leash);
+    const path = findPath(state, side, goal, env, leash, avoid);
     if (path) return { steps: path };
-    return { error: leash && findPath(state, side, goal, env) ? LEASH_ERROR : error };
+    return { error: leash && findPath(state, side, goal, env, undefined, avoid) ? LEASH_ERROR : error };
   };
   switch (action.type) {
     case 'wait':
@@ -102,6 +106,7 @@ export function planAction(
       for (const [dx, dy] of steps) {
         const to = stepPose(at, dx, dy).pose;
         if (leash && to.face !== at.face && !leash(to.face)) return { error: LEASH_ERROR };
+        if (avoid?.(to)) return { error: 'that walk crosses a tile that is not safe right now' };
         at = to;
       }
       return { steps };

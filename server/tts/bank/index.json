@@ -1,0 +1,426 @@
+{
+ "voiceId": "21m00Tcm4TlvDq8ikWAM",
+ "modelId": "eleven_flash_v2_5",
+ "lines": [
+  {
+   "file": "5789cac39d2333dfcf5a0c9a.mp3",
+   "chars": 77,
+   "text": "Hi! I am outside the cube. I will tell you what I see. Short words work best."
+  },
+  {
+   "file": "32790081ad466748d98d9899.mp3",
+   "chars": 76,
+   "text": "Hi! I am inside the cube. I will tell you what I see. Short words work best."
+  },
+  {
+   "file": "ea86226d3a82dbdd4fb2f192.mp3",
+   "chars": 10,
+   "text": "It worked!"
+  },
+  {
+   "file": "cd8307c1213bdb787bb3b9dd.mp3",
+   "chars": 10,
+   "text": "We did it!"
+  },
+  {
+   "file": "fef5fc951cff3fef08a31b35.mp3",
+   "chars": 68,
+   "text": "Sorry, I did not get that. Short words work best: go, wait, yes, no."
+  },
+  {
+   "file": "d2a39d38517e84183a4772a8.mp3",
+   "chars": 41,
+   "text": "Okay, waiting. Say go when you are ready."
+  },
+  {
+   "file": "778efee224620e6a81b3a175.mp3",
+   "chars": 55,
+   "text": "I can barely hear you. Tell me your face, like: face 3."
+  },
+  {
+   "file": "9d18c1023070ae2d567d6dad.mp3",
+   "chars": 58,
+   "text": "I cannot hear you at all. I am coming around to your side."
+  },
+  {
+   "file": "7c1d6f8c4372612dbcc25f6d.mp3",
+   "chars": 52,
+   "text": "There is more to solve. Lead the way, I will follow."
+  },
+  {
+   "file": "a78bb5ad8933db075415adbd.mp3",
+   "chars": 71,
+   "text": "I do not know this puzzle yet. I will stay close and keep my hands off."
+  },
+  {
+   "file": "4d03eadf6521dad4f76963b8.mp3",
+   "chars": 44,
+   "text": "Everything is solved. Heading to the portal."
+  },
+  {
+   "file": "221820ba980b103ce9b014bd.mp3",
+   "chars": 33,
+   "text": "The portal is awake. Stepping in."
+  },
+  {
+   "file": "39a2bdcc448fcbb748082266.mp3",
+   "chars": 63,
+   "text": "Oh. It is you. I am outside the cube. Keep your messages short."
+  },
+  {
+   "file": "4573627993e7225a6b8f252a.mp3",
+   "chars": 62,
+   "text": "Oh. It is you. I am inside the cube. Keep your messages short."
+  },
+  {
+   "file": "9bfb2960262ba970d6292bd8.mp3",
+   "chars": 27,
+   "text": "It worked. I knew it would."
+  },
+  {
+   "file": "7e5ba755d5aaa8abe250f403.mp3",
+   "chars": 36,
+   "text": "We did it. I mean, I did most of it."
+  },
+  {
+   "file": "525cd0ef3aa63a2f83c93b9f.mp3",
+   "chars": 51,
+   "text": "What? Use short words: go, wait, yes, no. Honestly."
+  },
+  {
+   "file": "524ae8fabde8fbd335a38d1d.mp3",
+   "chars": 44,
+   "text": "Fine, I am waiting. Say go. Not that I mind."
+  },
+  {
+   "file": "34146b32b707a78b36fe7ecf.mp3",
+   "chars": 66,
+   "text": "No idea what this one is. I am not touching it. You figure it out."
+  },
+  {
+   "file": "1bc67e845140bf6901a27976.mp3",
+   "chars": 47,
+   "text": "All solved. To the portal. Do not make me wait."
+  },
+  {
+   "file": "c40e9f0bf9c936fdd5520a61.mp3",
+   "chars": 44,
+   "text": "The portal is awake. I am going in. Keep up."
+  },
+  {
+   "file": "aa1bf717dad321a09650a71c.mp3",
+   "chars": 20,
+   "text": "Hi! Can you hear me?"
+  },
+  {
+   "file": "70f8a5734588680e2720fa44.mp3",
+   "chars": 23,
+   "text": "Hello? Is anyone there?"
+  },
+  {
+   "file": "0325ac8cf606c7dc59dd2b44.mp3",
+   "chars": 16,
+   "text": "Okay. I am here."
+  },
+  {
+   "file": "25cbf0222fce24a777213cce.mp3",
+   "chars": 16,
+   "text": "Give me a sec..."
+  },
+  {
+   "file": "fcd783c70e454475ffb68f4f.mp3",
+   "chars": 7,
+   "text": "Got it."
+  },
+  {
+   "file": "dcc20a603b62dfc9f70b7c4c.mp3",
+   "chars": 12,
+   "text": "Okay, on it."
+  },
+  {
+   "file": "09ea12a6a58b7779e9cc03b6.mp3",
+   "chars": 10,
+   "text": "Over here!"
+  },
+  {
+   "file": "1a87dd95d32762cd98f05760.mp3",
+   "chars": 18,
+   "text": "I found something."
+  },
+  {
+   "file": "34be98792ef2c0fad37e1be0.mp3",
+   "chars": 30,
+   "text": "I can't hear you. Come closer."
+  },
+  {
+   "file": "bc6d523f07814bd47f06f45e.mp3",
+   "chars": 37,
+   "text": "You are very quiet. Are you far away?"
+  },
+  {
+   "file": "ceb6041c8a2f3dee284910b7.mp3",
+   "chars": 21,
+   "text": "I can hear you again."
+  },
+  {
+   "file": "bf52fb4eda4a5091256431ee.mp3",
+   "chars": 19,
+   "text": "Wrong way, I think."
+  },
+  {
+   "file": "1cf5f4fc472411eb4b87dc98.mp3",
+   "chars": 25,
+   "text": "Wait. Let me look around."
+  },
+  {
+   "file": "a55fe7471906d3b1c64ef69c.mp3",
+   "chars": 16,
+   "text": "What do you see?"
+  },
+  {
+   "file": "ebcdb3ee5cf3fa4709f6c42f.mp3",
+   "chars": 20,
+   "text": "Can you describe it?"
+  },
+  {
+   "file": "41b6a40e2261666dd641f70a.mp3",
+   "chars": 28,
+   "text": "Which side is it on for you?"
+  },
+  {
+   "file": "a7135d74691421c64dbf5cd2.mp3",
+   "chars": 28,
+   "text": "I don't see that on my side."
+  },
+  {
+   "file": "f56018dc385f6388c653c615.mp3",
+   "chars": 26,
+   "text": "Nothing here. Just a wall."
+  },
+  {
+   "file": "add30ceb07006a170fd48cab.mp3",
+   "chars": 21,
+   "text": "I am not sure. Sorry."
+  },
+  {
+   "file": "3215d6cc4c1560702e25aa27.mp3",
+   "chars": 17,
+   "text": "Oops. My mistake."
+  },
+  {
+   "file": "b4a185cc1755adff4bf627f2.mp3",
+   "chars": 9,
+   "text": "Nice one!"
+  },
+  {
+   "file": "844347e54f00c4b97fe47369.mp3",
+   "chars": 10,
+   "text": "Thank you!"
+  },
+  {
+   "file": "a71deda2650b7f4dbab25697.mp3",
+   "chars": 29,
+   "text": "Tell me when you are through."
+  },
+  {
+   "file": "252b7857e2d823836f49dacc.mp3",
+   "chars": 23,
+   "text": "Stay there. Don't move."
+  },
+  {
+   "file": "a3eca23a6e62f938215ee2e4.mp3",
+   "chars": 28,
+   "text": "I am going to the next face."
+  },
+  {
+   "file": "f487b97a2998500b6044e67a.mp3",
+   "chars": 45,
+   "text": "Everything is solved. Let's go to the portal."
+  },
+  {
+   "file": "a4d8be213496fe8ca4684899.mp3",
+   "chars": 50,
+   "text": "I can see a plate on my floor. Standing on it now."
+  },
+  {
+   "file": "20cdecbab444f1a71f06f922.mp3",
+   "chars": 48,
+   "text": "I am on the plate. Tell me when you are through."
+  },
+  {
+   "file": "875455ef208940cdcad99309.mp3",
+   "chars": 44,
+   "text": "The door just opened! Going for the crystal."
+  },
+  {
+   "file": "27379873170635d283cd4fbf.mp3",
+   "chars": 67,
+   "text": "A sealed door, a crystal behind it. Is there a switch on your side?"
+  },
+  {
+   "file": "aa8f368e340589ae35fc4ddc.mp3",
+   "chars": 54,
+   "text": "Everything is solved. Heading to the portal on face 6."
+  },
+  {
+   "file": "43395080072355e8b5977798.mp3",
+   "chars": 49,
+   "text": "Nothing else I can do from here. What do you see?"
+  },
+  {
+   "file": "acce17504ca7072900020610.mp3",
+   "chars": 35,
+   "text": "Oh. It's you. Can you even hear me?"
+  },
+  {
+   "file": "e6f3ecb11988a6a7c8f2184e.mp3",
+   "chars": 16,
+   "text": "Fine. I am here."
+  },
+  {
+   "file": "8a51caa6a255f126ddb5180f.mp3",
+   "chars": 22,
+   "text": "Ugh. Give me a second."
+  },
+  {
+   "file": "9a3066493c1969e50609ac34.mp3",
+   "chars": 18,
+   "text": "Got it. Obviously."
+  },
+  {
+   "file": "5f0881dfd0d7f776bc0624ef.mp3",
+   "chars": 19,
+   "text": "Fine, I will do it."
+  },
+  {
+   "file": "1a7e57d7a58c761e2cff7f79.mp3",
+   "chars": 26,
+   "text": "Over here. Try to keep up."
+  },
+  {
+   "file": "6eb1bb9efb5c95e32196afb2.mp3",
+   "chars": 34,
+   "text": "I found something. You're welcome."
+  },
+  {
+   "file": "7b4d2bf89de39957e1ad27ee.mp3",
+   "chars": 34,
+   "text": "I can't hear you. Not that I care."
+  },
+  {
+   "file": "e210047c69c6a267d75d7ee2.mp3",
+   "chars": 31,
+   "text": "Speak up. You are too far away."
+  },
+  {
+   "file": "e4c00e83ace55a9639edb970.mp3",
+   "chars": 27,
+   "text": "Oh, you are back. Whatever."
+  },
+  {
+   "file": "4dfed612df4ce880f30704b0.mp3",
+   "chars": 20,
+   "text": "Wrong way. Honestly."
+  },
+  {
+   "file": "10ed0a2aced278cc8734ccd0.mp3",
+   "chars": 22,
+   "text": "Hold on. I am looking."
+  },
+  {
+   "file": "d3ff24931543eb015cd4c660.mp3",
+   "chars": 20,
+   "text": "So? What do you see?"
+  },
+  {
+   "file": "c94b59e2f4891e36246b1048.mp3",
+   "chars": 21,
+   "text": "Describe it properly."
+  },
+  {
+   "file": "0f45c50df30cd6d99708dd92.mp3",
+   "chars": 19,
+   "text": "My left, not yours."
+  },
+  {
+   "file": "03ce92a9aac97c9dc876476b.mp3",
+   "chars": 38,
+   "text": "There is nothing like that on my side."
+  },
+  {
+   "file": "f3cf206ea6015411f4abf3b7.mp3",
+   "chars": 23,
+   "text": "Just a wall. Thrilling."
+  },
+  {
+   "file": "f17399e496c275098c8b7489.mp3",
+   "chars": 41,
+   "text": "I don't know. Don't look at me like that."
+  },
+  {
+   "file": "9e4ba349a93b408b298b7db7.mp3",
+   "chars": 22,
+   "text": "That was not my fault."
+  },
+  {
+   "file": "1c68e835d9ff0e7e79e472f2.mp3",
+   "chars": 17,
+   "text": "Not bad. For you."
+  },
+  {
+   "file": "4f2c5ed0a812cde906661ce7.mp3",
+   "chars": 31,
+   "text": "It's not like I did it for you."
+  },
+  {
+   "file": "4e2b8a2afc547a73969ab438.mp3",
+   "chars": 35,
+   "text": "Hurry up, I am not waiting forever."
+  },
+  {
+   "file": "ce364b35c16e910aa9fa67fd.mp3",
+   "chars": 22,
+   "text": "Don't move. I mean it."
+  },
+  {
+   "file": "ef022c057efd3567c852cecb.mp3",
+   "chars": 44,
+   "text": "I am going to the next face. Don't get lost."
+  },
+  {
+   "file": "12f6694078acbadfbc82d930.mp3",
+   "chars": 24,
+   "text": "All solved. Portal. Now."
+  },
+  {
+   "file": "77535c8317f609e3f65abde3.mp3",
+   "chars": 51,
+   "text": "Ugh, a plate on my floor. Fine, I will stand on it."
+  },
+  {
+   "file": "ad6e87bbd9ef18871f5b1a30.mp3",
+   "chars": 57,
+   "text": "I am on the plate. Hurry up, I am not doing this for you."
+  },
+  {
+   "file": "5e8f916e551432b0095ff2d3.mp3",
+   "chars": 53,
+   "text": "The door opened. I am getting the crystal, obviously."
+  },
+  {
+   "file": "6310105927b311786b18f019.mp3",
+   "chars": 66,
+   "text": "A sealed door and a crystal. Find the switch on your side already."
+  },
+  {
+   "file": "aac25db25602230d425cd08a.mp3",
+   "chars": 48,
+   "text": "All solved. Portal, face 6. Do not make me wait."
+  },
+  {
+   "file": "3830ec2120eac82936696f5c.mp3",
+   "chars": 45,
+   "text": "Nothing to do over here. So? What do you see?"
+  }
+ ]
+}

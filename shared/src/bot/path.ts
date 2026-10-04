@@ -21,8 +21,17 @@ const keyOf = (p: Pose) => `${p.face}|${p.up.join(',')}|${p.x},${p.y}`;
  * Shortest list of moves from `side`'s current pose to a pose accepted by `goal`,
  * or null if there is none. Blockers are evaluated against the current state.
  * `allow` fences the search: the path never crosses onto a face it rejects (the AI's leash).
+ * `avoid` marks poses the path may never enter, goal included (trap floor, a partner's
+ * sign stones): the walker's own rules on top of the real blockers.
  */
-export function findPath(state: GameState, side: Side, goal: (pose: Pose) => boolean, env: GameEnv = defaultEnv, allow?: (face: FaceId) => boolean): Move[] | null {
+export function findPath(
+  state: GameState,
+  side: Side,
+  goal: (pose: Pose) => boolean,
+  env: GameEnv = defaultEnv,
+  allow?: (face: FaceId) => boolean,
+  avoid?: (pose: Pose) => boolean,
+): Move[] | null {
   const start = state.players[side].pose;
   if (goal(start)) return [];
   const prev = new Map<string, { from: string; move: Move }>();
@@ -34,7 +43,7 @@ export function findPath(state: GameState, side: Side, goal: (pose: Pose) => boo
       for (const move of MOVES) {
         const { pose: to } = stepPose(pose, move[0], move[1]);
         const k = keyOf(to);
-        if (seen.has(k) || isBlocked(state, side, to, env)) continue;
+        if (seen.has(k) || isBlocked(state, side, to, env) || avoid?.(to)) continue;
         if (allow && to.face !== pose.face && !allow(to.face)) continue;
         seen.add(k);
         prev.set(k, { from: keyOf(pose), move });
