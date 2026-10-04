@@ -32,6 +32,7 @@ const clock = (ms: number) => {
 const HTML = `
 <div class="cu-stage" id="cu-stage"></div>
 <header class="cu-top">
+  <div class="cu-top-side"><button class="cu-btn light" id="cu-howtoplay"><span>How to Play</span></button></div>
   <div class="cu-top-side"><button class="cu-btn light" id="cu-leave" hidden><span>Leave</span></button></div>
   <div class="cu-room" id="cu-room" hidden><span class="k" id="cu-room-k">Room</span><span class="v" id="cu-room-v"></span></div>
   <div class="cu-top-side r"><button class="cu-gear" id="cu-gear" aria-label="Settings" title="Settings"></button></div>
@@ -155,6 +156,9 @@ export const cubicUI: UIHost = {
     $('cu-again').addEventListener('click', () => actions.onPlayAgain());
     $('cu-room').addEventListener('click', () => {
       if (state?.roomCode) void navigator.clipboard?.writeText(state.roomCode).catch(() => {});
+    });
+    $('cu-howtoplay').addEventListener('click', () => {
+      alert('How to Play\n\nOne player walks the OUTSIDE of a cube, the other is trapped INSIDE it. Each sees only their own side of the same six walls, and they solve puzzles by talking through the wall (proximity voice + chat).\n\nIf there is no second player, a Gemini-powered AI plays the other side.');
     });
 
     const chat = $<HTMLInputElement>('cu-chat');
