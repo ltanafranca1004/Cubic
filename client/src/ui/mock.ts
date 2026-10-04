@@ -69,7 +69,6 @@ export const mockGameUIState: UIState = {
     elapsedMs: 83_000,
     won: false,
     carrying: { id: 'rose', kind: 'rose' },
-    partnerFace: 4,
   },
   signals: {
     bubbles: [{ id: 3, sx: 6, sy: 5, mine: false, text: 'Here!' }],

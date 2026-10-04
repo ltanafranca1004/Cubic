@@ -4,7 +4,7 @@ import { FACES, FACE_SIZE, NORMALS, SIDES, compassDrift, neighbours, screenToCan
 import type { CubeMapDir } from '../src/cube/api';
 import { faceOps, startObjects, texelFor, type CubeManifest } from '../src/cube/layout';
 import { apply, det, mul, rotX, rotY, type Mat3 } from '../src/cube/mat';
-import { HUD_TILT, QUARTER, facing, partnerHint, poseView, turnAt, turnBetween, upFromDrift, whereIs } from '../src/cube/orient';
+import { HUD_TILT, QUARTER, facing, poseView, turnAt, turnBetween, upFromDrift } from '../src/cube/orient';
 import { clearTarget, createTarget, drawCube, project, shadeOf, visibleFaces, type CubeFaces, type FaceTex } from '../src/cube/raster';
 import { SPIN_FRAMES, bakeSpin, frameSize, spinView } from '../src/cube/spin';
 
@@ -212,28 +212,6 @@ test('orientation: the HUD tilt shows the face in front, the one above and the o
         assert.deepEqual([...seen].sort(), [face, n.up, n.right].sort());
         assert.equal(seen[seen.length - 1], face, 'your own face is the nearest');
       }
-});
-
-test('partner: marked on the cube when their face shows, an edge points the way when it does not', () => {
-  const up = [0, 1, 0] as const;
-  assert.deepEqual(partnerHint('out', 1, up, 1), { where: 'front', shown: true, edge: null });
-  assert.deepEqual(partnerHint('out', 1, up, 5), { where: 'up', shown: true, edge: 'up' });
-  assert.deepEqual(partnerHint('out', 1, up, 2), { where: 'right', shown: true, edge: 'right' });
-  assert.deepEqual(partnerHint('out', 1, up, 4), { where: 'left', shown: false, edge: 'left' });
-  assert.deepEqual(partnerHint('out', 1, up, 6), { where: 'down', shown: false, edge: 'down' });
-  assert.deepEqual(partnerHint('out', 1, up, 3), { where: 'back', shown: false, edge: 'left' });
-  // the inside player's left and right are the other way round
-  assert.equal(whereIs('in', 1, up, 2), 'left');
-  assert.equal(whereIs('in', 1, up, 4), 'right');
-  // and it follows your up: turned a quarter, the face that was above is now to one side
-  assert.equal(whereIs('out', 1, [1, 0, 0], 5), 'left');
-  for (const side of SIDES)
-    for (const face of FACES)
-      for (const u of upsOn(face))
-        for (const other of FACES) {
-          const hint = partnerHint(side, face, u, other);
-          if (hint.where !== 'front' && hint.where !== 'back') assert.equal(neighbours({ side, face, up: u })[hint.where], other);
-        }
 });
 
 test('faces: every tile of the real map is drawn, then its objects, then the turtle at the start', () => {

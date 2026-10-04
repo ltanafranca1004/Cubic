@@ -449,7 +449,7 @@ export const cubicUI: UIHost = {
           carry.querySelector('b')!.textContent = dropKey;
         }
       }
-      cube.update({ side: s.side ?? 'out', face: hud.face, drift: hud.drift, partnerFace: hud.partnerFace ?? null, solved: hud.solved, portalOpen: hud.portalOpen, puzzleFaces: hud.puzzleFaces });
+      cube.update({ side: s.side ?? 'out', face: hud.face, drift: hud.drift, solved: hud.solved, portalOpen: hud.portalOpen, puzzleFaces: hud.puzzleFaces });
       $('cu-clock').textContent = clock(hud.elapsedMs);
       // no puzzle hands out strikes yet: they show only once there is one
       $('cu-strikebox').hidden = hud.strikes <= 0;
