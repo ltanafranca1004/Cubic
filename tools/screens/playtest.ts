@@ -43,6 +43,7 @@ import {
   isBlocked,
   neighbours,
   objectsOn,
+  visibleObjects,
   type FaceId,
   type GameState,
   type Move,
@@ -55,7 +56,18 @@ import {
 // ---------- the puzzle table ----------
 
 /** Where a player should go: a map object, an item lying somewhere, or a plain tile. */
-type Target = { object: [side: Side, face: FaceId, type: string] } | { item: string } | { tile: TileRef };
+type Target =
+  /** `name` picks one of several (pane a / b); dx, dy move off it (the dry tile next to a bridge). */
+  | { object: [side: Side, face: FaceId, type: string]; name?: string; dx?: number; dy?: number }
+  | { item: string }
+  | { tile: TileRef };
+
+/** What one player SEES on a face: the objects of `type` as drawn for `by` (visibleObjects). */
+interface Sight {
+  by: Side;
+  face: FaceId;
+  type: string;
+}
 
 /** One thing a player does, with real keys. */
 type PuzzleStep =
@@ -63,6 +75,14 @@ type PuzzleStep =
   | { who: Side; goto: Target }
   /** Press these keys, space separated, e.g. 'e' or 'w w a'. */
   | { who: Side; keys: string }
+  /**
+   * Read the state of what `read` shows on that player's own screen (the sign on the
+   * tablet), then walk onto the object in `onto` that shows the same state. The puzzle
+   * must move on. For codes that differ per game: nothing is read from the puzzle state.
+   */
+  | { who: Side; read: Sight; onto: Sight }
+  /** Walk onto every tile `follow` shows on that player's screen, in the order listed. */
+  | { who: Side; follow: Sight }
   | { wait: number }
   /** Something that must be true by now (it is waited for, up to 4 s). */
   | { expect: string; check: (state: GameState) => boolean };
@@ -78,6 +98,8 @@ interface PuzzleScript {
  * instead of hardcoding tiles, so a map edit does not break the script. After the last
  * step the puzzle's face must be latched in `state.solved`.
  */
+const SIGN: PuzzleStep = { who: 'out', read: { by: 'in', face: 3, type: 'tablet' }, onto: { by: 'out', face: 3, type: 'glyph' } };
+
 const PUZZLE_SCRIPTS: PuzzleScript[] = [
   // Face 1. Inside holds the plate down, outside walks through the door to the crystal.
   {
@@ -87,6 +109,44 @@ const PUZZLE_SCRIPTS: PuzzleScript[] = [
       { expect: 'the plate is pressed', check: (s) => (s.puzzles['plate-door'] as { pressed: boolean }).pressed },
       { who: 'out', goto: { object: ['out', 1, 'door'] } },
       { who: 'out', goto: { object: ['out', 1, 'crystal'] } },
+    ],
+  },
+  // Face 3. Inside stands on the plate and reads the tablet; outside steps on the stone
+  // with that sign. Four times; the code is different every game.
+  {
+    id: 'glyph-code',
+    steps: [
+      { who: 'in', goto: { object: ['in', 3, 'plate'] } },
+      { expect: 'the tablet shows a sign to the inside player', check: (s) => !!visibleObjects(s, 'in', 3).find((o) => o.type === 'tablet')?.state },
+      SIGN,
+      SIGN,
+      { expect: 'two signs in, not solved yet', check: (s) => !s.solved.includes(3) },
+      SIGN,
+      SIGN,
+    ],
+  },
+  // Face 4. Outside sees the pale stepping stones; inside walks exactly those tiles from
+  // the doorway to the crystal. The line is different every game and moves on a fall.
+  {
+    id: 'mirror-maze',
+    steps: [
+      { who: 'out', goto: { tile: { face: 4, x: 5, y: 10 } } },
+      { who: 'in', goto: { object: ['in', 4, 'entry'] } },
+      { who: 'in', follow: { by: 'out', face: 4, type: 'trail' } },
+    ],
+  },
+  // Face 5. Outside stands on pane a, inside crosses bridge a to the dry ring; outside
+  // moves to pane b, inside crosses bridge b to the crystal.
+  {
+    id: 'skylight',
+    steps: [
+      { who: 'in', goto: { object: ['in', 5, 'bridge'], name: 'a', dx: -1 } },
+      { who: 'out', goto: { object: ['out', 5, 'skylight'], name: 'a' } },
+      { expect: 'bridge a is lit', check: (s) => visibleObjects(s, 'in', 5).some((o) => o.type === 'bridge' && o.state === 'lit') },
+      { who: 'in', goto: { object: ['in', 5, 'bridge'], name: 'b', dx: 1 } },
+      { who: 'out', goto: { object: ['out', 5, 'skylight'], name: 'b' } },
+      { expect: 'not solved while the inside player waits on the ring', check: (s) => !s.solved.includes(5) },
+      { who: 'in', goto: { object: ['in', 5, 'crystal'] } },
     ],
   },
   // Face 6. Outside carries the rose from face 1 to the pot on the far side of the cube.
@@ -457,7 +517,8 @@ async function goTo(page: Page, side: Side, what: string, goal: (p: Pose) => boo
     walked.push(...path);
     await settle(page);
     const got = (await stateOf(page)).players[side].pose;
-    if (!same({ ...got, dir: 0 }, { ...want.players[side].pose, dir: 0 })) lost.push(`${side} walking to ${what}: pressed ${path.map(keyOf).join('')}, expected ${at(want.players[side].pose)}, got ${at(got)}`);
+    const struck = (await stateOf(page)).strikes !== state.strikes; // a fall puts you back: the puzzle's doing, not a lost key
+    if (!struck && !same({ ...got, dir: 0 }, { ...want.players[side].pose, dir: 0 })) lost.push(`${side} walking to ${what}: pressed ${path.map(keyOf).join('')}, expected ${at(want.players[side].pose)}, got ${at(got)}`);
   }
   throw new Error(`${side}: did not reach ${what} in 4 tries (at ${at(await poseOf(page, side))})`);
 }
@@ -1121,9 +1182,9 @@ function resolveTarget(target: Target, state: GameState): TileRef {
   if ('tile' in target) return target.tile;
   if ('object' in target) {
     const [side, face, type] = target.object;
-    const o = objectsOn(defaultEnv.world, side, face, type)[0];
-    if (!o) throw new Error(`no "${type}" object on ${side} face ${face}`);
-    return { face, x: o.x, y: o.y };
+    const o = objectsOn(defaultEnv.world, side, face, type).find((x) => target.name === undefined || x.name === target.name);
+    if (!o) throw new Error(`no "${type}"${target.name ? ` named "${target.name}"` : ''} object on ${side} face ${face}`);
+    return { face, x: o.x + (target.dx ?? 0), y: o.y + (target.dy ?? 0) };
   }
   const it = Object.values(state.items).find((i) => i.id === target.item || i.kind === target.item);
   if (!it) throw new Error(`no item "${target.item}"`);
@@ -1131,8 +1192,16 @@ function resolveTarget(target: Target, state: GameState): TileRef {
   return { face: it.face, x: it.x, y: it.y };
 }
 
+const sees = (state: GameState, sight: Sight) => visibleObjects(state, sight.by, sight.face).filter((o) => o.type === sight.type);
+
 const describe = (s: PuzzleStep) =>
-  'goto' in s ? `${s.who} walks to ${JSON.stringify(s.goto)}` : 'keys' in s ? `${s.who} presses ${s.keys}` : 'wait' in s ? `wait ${s.wait} ms` : `expect ${s.expect}`;
+  'goto' in s
+    ? `${s.who} walks to ${JSON.stringify(s.goto)}`
+    : 'read' in s
+      ? `${s.who} walks onto the ${s.onto.type} that matches the ${s.read.type} the ${s.read.by} player sees`
+      : 'follow' in s
+        ? `${s.who} walks the ${s.follow.type} tiles the ${s.follow.by} player sees`
+        : 'keys' in s ? `${s.who} presses ${s.keys}` : 'wait' in s ? `wait ${s.wait} ms` : `expect ${s.expect}`;
 
 /** Every puzzle of the table solved with real keys, then the portal and the win screen. */
 async function puzzles(run: Run): Promise<void> {
@@ -1162,7 +1231,21 @@ async function puzzles(run: Run): Promise<void> {
       for (const [i, s] of script.steps.entries()) {
         try {
           if ('goto' in s) await goToTile(page(s.who), s.who, resolveTarget(s.goto, await stateOf(page(s.who))));
-          else if ('keys' in s) await press(page(s.who), ...s.keys.split(' '));
+          else if ('read' in s) {
+            // each sight is read from the screen state of the player who sees it
+            const shown = sees(await stateOf(page(s.read.by)), s.read)[0]?.state;
+            const match = sees(await stateOf(page(s.onto.by)), s.onto).find((o) => o.state === shown);
+            if (!shown || !match) throw new Error(`${s.read.by} sees "${shown}", but ${s.onto.by} sees no ${s.onto.type} like that`);
+            const before = JSON.stringify((await stateOf(a)).puzzles[script.id]);
+            await goToTile(page(s.who), s.who, { face: s.onto.face, x: match.x, y: match.y });
+            await until(`the puzzle moved on after "${shown}"`, async () => JSON.stringify((await stateOf(a)).puzzles[script.id]) !== before && JSON.stringify((await stateOf(b)).puzzles[script.id]) !== before);
+          } else if ('follow' in s) {
+            const line = sees(await stateOf(page(s.follow.by)), s.follow);
+            if (!line.length) throw new Error(`${s.follow.by} sees no ${s.follow.type} on face ${s.follow.face}`);
+            const strikes = (await stateOf(a)).strikes;
+            for (const o of line) await goToTile(page(s.who), s.who, { face: s.follow.face, x: o.x, y: o.y });
+            check((await stateOf(a)).strikes === strikes, `following ${line.length} tiles cost ${(await stateOf(a)).strikes - strikes} strike(s)`);
+          } else if ('keys' in s) await press(page(s.who), ...s.keys.split(' '));
           else if ('wait' in s) await sleep(s.wait);
           else await until(s.expect, async () => s.check((await snap(a)).server!) && s.check((await snap(b)).server!));
         } catch (e) {
