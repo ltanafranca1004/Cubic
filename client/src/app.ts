@@ -9,6 +9,7 @@ import {
   objectiveFor,
   portalFace,
   portalOpen,
+  relayText,
   sameWall,
   signalBars,
   signalsFor,
@@ -104,6 +105,17 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
         const line = net.chat.find((m) => m.id === clip.chatId);
         if (line) showCaption(line.text, { speaker: 'AI' });
         void voice.playClip(clip);
+      },
+      onTtsChain: (chain) => {
+        // a relay line: the caption is its pieces, the sound is their clips in a row
+        let text: string;
+        try {
+          text = relayText(chain.pieces);
+        } catch {
+          text = net.chat.find((m) => m.id === chain.chatId)?.text ?? chain.pieces.join(' ');
+        }
+        showCaption(text, { speaker: 'AI' });
+        void voice.playChain(chain, () => voice.speakText(text));
       },
       onSpeak: (text) => {
         showCaption(text, { speaker: 'AI' });

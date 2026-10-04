@@ -1,19 +1,22 @@
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { bankedScriptLines } from './scripted';
+import { VOCAB } from '@cubic/shared';
+import type { Budget } from './budget';
+import { fixedLines } from './scripted';
 
 // The AI partner's voice: ElevenLabs text-to-speech, kept cheap.
-//  1. THE VOICE BANK (server/tts/bank, committed): one clip per banked line, generated
-//     once with `npm run tts:bank -w server`. A line that matches a banked line, ignoring
-//     case and punctuation, plays that clip. It is part of the repo, so it is there after
-//     every deploy and every spin-down: the scripted partner never costs a character.
-//  2. Other lines (Gemini's) are generated on demand and cached on disk (server/.tts-cache,
-//     keyed by voice + model + text; lost when the host's disk is wiped).
-//  3. At most TTS_SESSION_LINES (15) generated lines per room. After that, and on any
-//     miss or failure, speak() gives null and the caller uses the browser voice.
-//  4. Characters actually sent to ElevenLabs are logged per session and in total.
+//  1. THE VOICE BANK (server/tts/bank, committed): one clip per fixed line and per relay
+//     vocabulary piece, bought once with `npm run tts:bank -w server -- --buy`. It is part
+//     of the repo, so it is there after every deploy and every spin-down: the scripted
+//     partner never costs a character at run time. A clip is named by voice + model + exact
+//     text; the clips bought before that are named by their normalized text and still play.
+//  2. Other lines (Gemini's) are bought on demand and cached on disk (server/.tts-cache,
+//     keyed by voice + model + text): the same text is never bought twice.
+//  3. Buying asks the budget first (budget.ts): 5 lines per game and a daily number of
+//     characters for the whole server, and the ELEVENLABS_ENABLED kill switch. A refusal,
+//     a miss or a failure gives null and the caller uses the browser voice.
 // Nothing here blocks the game: the caller does not wait for a clip before moving.
 // API: POST /v1/text-to-speech/{voice_id}
 // (https://elevenlabs.io/docs/api-reference/text-to-speech/convert)
@@ -27,8 +30,6 @@ export const TTS_CACHE_DIR = fileURLToPath(new URL('../../.tts-cache', import.me
 export const TTS_BANK_FILE = fileURLToPath(new URL('../../tts/bank-lines.txt', import.meta.url));
 /** The committed clips. */
 export const TTS_BANK_DIR = fileURLToPath(new URL('../../tts/bank', import.meta.url));
-/** Generated (non-bank) lines one room may buy before it falls back to the browser voice. */
-export const DEFAULT_SESSION_LINES = 15;
 const OUTPUT_FORMAT = 'mp3_44100_64';
 const TIMEOUT_MS = 10_000;
 
@@ -65,19 +66,20 @@ export function loadBank(file: string = TTS_BANK_FILE): string[] {
   return existsSync(file) ? parseBank(readFileSync(file, 'utf8')) : [];
 }
 
-/** Every line the bank should hold: the scripted partner's banked lines first, then the generic file. */
+/**
+ * Every clip the bank should hold, read when it is called (never a hand-kept copy): the
+ * partner's fixed lines (scripted.ts: core, event and puzzle lines), the generic file, and
+ * every piece of the relay vocabulary (shared/src/bot/vocab.ts).
+ */
 export function bankLines(file: string = TTS_BANK_FILE): string[] {
-  return parseBank([...bankedScriptLines(), ...loadBank(file)].join('\n'));
+  return parseBank([...fixedLines(), ...loadBank(file), ...VOCAB].join('\n'));
 }
 
-/** File name of a banked line: from its normalized text only, so any spelling of it finds the clip. */
+/** The first clips were named by their normalized text only. They are never renamed: this still finds them. */
 export const bankFileName = (text: string) => `${createHash('sha256').update(normalizeLine(text)).digest('hex').slice(0, 24)}.mp3`;
 
-/** Env TTS_SESSION_LINES: a whole number from 0 up, else the default. */
-export function parseSessionLines(value: string | undefined): number {
-  const n = Number(value);
-  return value !== undefined && value.trim() !== '' && Number.isInteger(n) && n >= 0 ? n : DEFAULT_SESSION_LINES;
-}
+/** File name of a clip bought from now on: voice + model + the exact text. */
+export const clipFileName = (voiceId: string, modelId: string, text: string) => `${createHash('sha256').update(`${voiceId}\n${modelId}\n${text}`).digest('hex').slice(0, 24)}.mp3`;
 
 export interface TtsOptions {
   /** Without a key only cached clips can be served. */
@@ -87,8 +89,8 @@ export interface TtsOptions {
   cacheDir?: string;
   /** Where the committed clips are. */
   bankDir?: string;
-  /** Generated lines allowed per session (bank and cache hits are free and do not count). */
-  sessionLines?: number;
+  /** Asked before every bought line (bank and cache hits are free and never ask). Without it nothing is capped. */
+  budget?: Budget;
   fetchFn?: typeof fetch;
   log?: (line: string) => void;
 }
@@ -110,6 +112,12 @@ export interface Tts {
    * 'copied' = taken from the local cache for free, 'new' = bought from the API.
    */
   bank(text: string): Promise<'banked' | 'copied' | 'new' | null>;
+  /** The banked clip of this exact line or vocabulary piece, or null. Never calls anything. */
+  banked(text: string): Buffer | null;
+  /** Where a line's clip is already: the bank (its file name), the local cache, or nowhere (null = it would be bought). */
+  where(text: string): { source: 'bank' | 'cache'; file: string } | null;
+  /** The file name a newly banked line gets. */
+  fileName(text: string): string;
   /** Characters sent to ElevenLabs since the server started. */
   readonly totalChars: number;
   /** Clips in the bank directory. */
@@ -121,23 +129,20 @@ export function createTts(opts: TtsOptions = {}): Tts {
   const modelId = opts.modelId || DEFAULT_TTS_MODEL;
   const dir = opts.cacheDir ?? TTS_CACHE_DIR;
   const bankDir = opts.bankDir ?? TTS_BANK_DIR;
-  const cap = opts.sessionLines ?? DEFAULT_SESSION_LINES;
   const fetchFn = opts.fetchFn ?? fetch;
   const log = opts.log ?? ((line: string) => console.info(line));
   const inFlight = new Map<string, Promise<Buffer | null>>();
-  const sessionChars = new Map<string, number>();
-  const sessionLines = new Map<string, number>();
   let totalChars = 0;
 
   const fileFor = (text: string) => join(dir, `${createHash('sha256').update(`${voiceId}\n${modelId}\n${text}`).digest('hex')}.mp3`);
-  const bankFor = (text: string) => join(bankDir, bankFileName(text));
+  const bankNew = (text: string) => join(bankDir, clipFileName(voiceId, modelId, text));
+  /** Where this line's clip is in the bank: under its own name, or the old one. null = not banked. */
+  const bankFor = (text: string): string | null => [bankNew(text), join(bankDir, bankFileName(text))].find((f) => existsSync(f)) ?? null;
 
   async function generate(text: string, file: string, session: string): Promise<Buffer | null> {
     try {
-      const used = (sessionChars.get(session) ?? 0) + text.length;
-      sessionChars.set(session, used);
       totalChars += text.length;
-      log(`[tts ${session}] ${text.length} chars to ElevenLabs (${modelId}); session ${used}, total since start ${totalChars}`);
+      if (!opts.budget) log(`[eleven] room=${session} chars=${text.length} total=${totalChars}`);
       const res = await fetchFn(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=${OUTPUT_FORMAT}`, {
         method: 'POST',
         headers: { 'xi-api-key': opts.apiKey!, 'content-type': 'application/json', accept: 'audio/mpeg' },
@@ -168,28 +173,33 @@ export function createTts(opts: TtsOptions = {}): Tts {
     async speak(text, session, { cacheOnly = false } = {}) {
       // The committed bank first: it is always there, whatever the voice settings are now.
       const banked = bankFor(text);
-      if (existsSync(banked)) return { audio: readFileSync(banked), source: 'bank' };
+      if (banked) return { audio: readFileSync(banked), source: 'bank' };
       const file = fileFor(text);
       if (existsSync(file)) return { audio: readFileSync(file), source: 'cache' };
       if (cacheOnly || !opts.apiKey) return null;
       let job = inFlight.get(file);
       if (!job) {
-        const bought = sessionLines.get(session) ?? 0;
-        if (bought >= cap) {
-          if (bought === cap) log(`[tts ${session}] ${cap} generated lines used: the browser voice takes over for this session`);
-          sessionLines.set(session, bought + 1);
-          return null;
-        }
-        sessionLines.set(session, bought + 1);
+        // The caps and the kill switch: a refusal is logged there, and the browser reads the line.
+        if (opts.budget && opts.budget.eleven(session, text.length) !== null) return null;
         job = generate(text, file, session).finally(() => inFlight.delete(file));
         inFlight.set(file, job);
       }
       const audio = await job;
       return audio ? { audio, source: 'api' } : null;
     },
-    async bank(text) {
+    banked(text) {
       const file = bankFor(text);
-      if (existsSync(file)) return 'banked';
+      return file ? readFileSync(file) : null;
+    },
+    where(text) {
+      const file = bankFor(text);
+      if (file) return { source: 'bank', file: basename(file) };
+      return existsSync(fileFor(text)) ? { source: 'cache', file: basename(fileFor(text)) } : null;
+    },
+    fileName: (text) => clipFileName(voiceId, modelId, text),
+    async bank(text) {
+      if (bankFor(text)) return 'banked';
+      const file = bankNew(text);
       mkdirSync(bankDir, { recursive: true });
       const cached = fileFor(text);
       if (existsSync(cached)) {

@@ -154,5 +154,8 @@ cube.html
 # is committed on purpose: production serves it from the repo.
 server/.tts-cache/
 
+# Daily usage counters of the AI partner's two APIs (server/src/ai/budget.ts)
+server/.data/
+
 # Output of tools/screens/check.ts (regenerated on every run)
 docs/screens/check/
