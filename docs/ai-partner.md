@@ -155,9 +155,13 @@ export interface Heard {
   "4 7 2" is plain: it arrives with no tokens and `text: '4 7 2'`.
 - Anything else: to Gemini if it is free. Its answer's `heard` (protocol words) becomes the
   tokens; the script still gets the line as typed in `text`.
-- Gemini busy, absent or failing: the line is passed on as it is. A line with no token
-  that is not plain also gets the `huh` line (at most every 8 s), or, with a working
-  Gemini, waits for the next free call (only the latest waits).
+- Gemini busy, absent, refused or failing: the line is passed on as it is, the log says
+  why (`[ai CODE] chat: gemini did not answer (why=...)`, see the budget section), and the
+  human is never met with silence: a line with no token gets the `huh` line, and so does a
+  line whose only tokens the body does not act on (again, yes, no, a sign) when the script
+  said nothing to it. `huh` is said at most every 8 s. Nothing waits for a later call.
+- A reply to the human's chat line (Gemini's, or `huh`) is never dropped as stale small
+  talk: it is said however long it waits behind the script's lines.
 
 So every human line reaches `ctx.heard` with its raw `text`, with or without Gemini: a
 script reads its own words (digits, colours) from `heard[i].text`. CAUTION: a word that is
@@ -462,6 +466,17 @@ sockets with both API clients replaced by throwing spies).
   period, and the time the human is disconnected does not count). The greeting is scripted.
 - Refused = the scripted line, at once. No queue (the old "pending" message is gone), no retry.
   Fallback lines for `strike` / `stuck` are `eventLine()` in `scripted.ts` (banked).
+- Deadline: 3 s (`TIMEOUT_MS`), and 6 s for a `chat` call (`CHAT_TIMEOUT_MS`): the human is
+  waiting on that one, the typing dots show, and live calls were seen to take up to 3 s.
+- A free-form chat line Gemini does not answer gets the preset `huh` line (banked), and one
+  log line with the reason (`ChatMiss` in `aiPlayer.ts`): `off` (no key, or `AI_FAKE=1`;
+  logged once per room), `busy` (a call of this room is still out), `throttled` (under 6 s
+  since this room's last call), `backoff` (after a failed call), a budget refusal
+  (`disabled`, `paused_429`, `minute_cap`, `day_cap`, `game_cap`), `timeout`, `429`, `error`,
+  `unusable` (not the JSON asked for), `no_say` (no line in the reply), `fault`.
+- One real call, to check a key, the model and the quota by hand:
+  `npm run gemini:once -w server` (`server/scripts/geminiOnce.ts`: exactly one Gemini call,
+  the same request as a `chat` event, prints the reply and the time, never the key).
 - Caps: 8 calls a minute and `GEMINI_DAILY_CAP` a day over all rooms, 25 per game (a restart
   in the same room is a new game), one at a time and one per 6 s per room. A 429 stops every
   room's calls for 10 minutes.
@@ -507,6 +522,7 @@ every restart and spin-down, so there the daily caps hold per process, not per d
 [gemini] room=ABCD reason=stuck in=0 out=0 day=18/200 min=4/8 game=5/25 error=timeout
 [gemini] 429 room=ABCD: no Gemini calls for 10 minutes, on the whole server
 [gemini] fallback room=ABCD reason=chat why=day_cap more=12
+[ai ABCD] chat: gemini did not answer (why=day_cap), the script's preset line is the reply
 [eleven] room=ABCD chars=64 day=380/20000 game=2/20
 [eleven] fallback room=ABCD chars=64 why=game_cap
 [usage] day=2026-10-04 gemini_calls=17/200 tokens_in=5300 tokens_out=700 eleven_calls=6 eleven_chars=380/20000
@@ -550,6 +566,23 @@ Removed: `TTS_SESSION_LINES`.
   20000) a day. The Gemini caps are unchanged.
 - Gemini's turn also carries `partnerSays`: what the script expects the human to say on
   this puzzle (`humanSays(puzzleId, side)` in `scripted.ts`, at most 100 characters).
+
+### Voice picker (later than "One voice" above; where they disagree this is right)
+
+- Settings > SOUND > "Partner voice": Jessica (default) or Wizard, with a Play button (one
+  banked greeting). The list is `AI_VOICES` in `shared/src/aiVoices.ts` (key, label, id).
+- The client sends the KEY: `ai:voice { voice }` on every connect and on every change;
+  `ai:preview { voice }` for the Play button. `app.ts` checks it with `parseAiVoice` (an id
+  or anything else is ignored), keeps it per socket and hands it to a solo room
+  (`onAiVoice` -> `AiPartner.setVoice`). `wire.ts` reads the room's voice when a line is
+  said, so a change counts from the next line. A two-player room never hears of it.
+- One bank folder per voice: `server/tts/bank` (Jessica, unchanged) and
+  `server/tts/bank-<key>` (`bankDirFor`). A voice's clips are read from disk when first
+  asked for (`Tts.loaded(voice)`); a missing clip or folder falls through: cache, live
+  (Gemini's lines, the same caps), browser voice.
+- `ELEVENLABS_VOICE_ID` is the id behind the default voice only.
+- Build: `npm run tts:bank -w server -- --voice wizard` (dry run: clips, characters,
+  estimated credits), then the same with `--buy`. Details: `server/tts/README.md`.
 
 <!-- BUDGET SECTION: END -->
 <!-- ---- faces 4-6 (scripts-b) ---- -->

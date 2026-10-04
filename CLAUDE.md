@@ -146,6 +146,17 @@ density and the pointer.
 - **Canvas size.** Both Phaser canvases run `Scale.NONE`; `style/canvas.ts` `sizeCanvas`
   sets backing size, zoom and the CSS size together. Do not call `scale.setZoom` /
   `scale.resize` directly (Phaser leaves a stale CSS size: the iPad bug).
+  `sizeCanvas` also re-measures the canvas box for Phaser (`syncBounds`, and again at every
+  press): Phaser measured it before the CSS size was written and, at zoom 1, never again,
+  so after a turn or a sliding toolbar every tap missed (PLAY dead until a reload).
+- A menu scene rebuilds only when its canvas really changed (`sizeKey` in `fit.ts`):
+  Phaser says "resize" for every resize event, and a restart drops the press under a finger.
+- No zoom: `input/zoom.ts` (rules in `zoomRules.ts`) cancels the second finger, Safari's
+  gesture events and the second tap of a double tap (its click is given back), on top of
+  `touch-action`. iOS Safari ignores `user-scalable=no`, so the meta holds nothing. If the
+  page is zoomed anyway (`zoomed()` in `scale.ts`, part of every fit), `html[data-zoomed]`
+  and the guards let go so two fingers can zoom back out, and the layout keeps its x1 size
+  (`visibleFrom`). Check: `tools/screens/first-tap.ts`.
 - `device()`: touch = the main pointer is a finger (`pointer: coarse`), or `?touch`
   (`?touch=0` forces a mouse). Re-read on every fit.
 - On touch the pixel grid is the DEVICE pixel (`style/fit.ts`, pure and tested): every
@@ -239,6 +250,14 @@ portal and no exit to walk to. The win plays the ending (see "Ending").
   It LOOKS like lava the whole time: all 99 tiles are `f6-lava` objects in every state
   (`hot` flows, 4 frames, still with reduce motion; `cold` is lava under a dark crust), and
   the room is `bright`. Browser check: `tools/screens/lava.ts`.
+- **Face 5's symbols have names, one list:** `SYMBOL_NAMES` in `shared/src/symbols.ts` (sun,
+  moon, star, bolt, drop, leaf, eye). The puzzle's object states, the AI's words
+  (`VOCAB_SYMBOLS`, one banked clip per word) and the label all read it: never rename or
+  reorder. Standing on a symbol shows its name over YOUR OWN turtle (`symbolLabel` in
+  `shared/src/labels.ts`, by tile through `visibleObjects`; placed by
+  `client/src/ui/label.ts`, drawn as `.cu-label` in the DOM layer of the quick-chat
+  bubbles). Client only, never for the partner, none during a face transition. It names
+  the tile, never the order or a right press. Browser check: `tools/screens/face5-label.ts`.
 - Hooks beyond the basics: `onUse` (E on a tile with empty hands and no item to pick up:
   keys, buttons, flip tiles), `onPush` (a step into a tile on the same face: move a box and
   return true), `lines(side)` (beams drawn over the face), `bright` (the inside of the
@@ -390,9 +409,13 @@ Solo play: PLAY WITH AI on the mode screen (`client/src/scenes/AiPopup.ts` picks
 - **Gemini is advisory** (`gemini.ts`, `prompt.ts`): it rewords small talk, answers
   free-form chat, returns `heard` (the human's message in protocol words) and may suggest
   a move on the current face, walked only if it avoids the script's unsafe tiles and the
-  body is not holding a place. Max one call per 6 s per room, no backlog, 3 s deadline; on
-  timeout, error or 429 the script's own line is said and calls back off (6 s doubling to
-  60 s). No `GEMINI_API_KEY` (or `AI_FAKE=1`) = script alone, silently.
+  body is not holding a place. Max one call per 6 s per room, no backlog, 3 s deadline (6 s
+  for a chat line, `CHAT_TIMEOUT_MS`); on timeout, error or 429 the script's own line is
+  said and calls back off (6 s doubling to 60 s). No `GEMINI_API_KEY` (or `AI_FAKE=1`) =
+  script alone, silently. A free-form chat line Gemini does not answer always gets the
+  preset `huh` line, and the log says why (`[ai CODE] chat: gemini did not answer
+  (why=...)`, `ChatMiss` in `aiPlayer.ts`). One real call to check a key:
+  `npm run gemini:once -w server`.
 - **Words** of every line: `server/src/ai/scripted.ts` (core lines per persona, puzzle
   lines by key). Lines are capped at 80 characters. `AI_PERSONA` (default | tsundere)
   changes tone only.
@@ -444,6 +467,23 @@ markers). Its body can press E (`use` action). The interfaces, exactly: `docs/ai
   screen with "That room is gone."
 - Tests: `server/test/inactivity.test.ts`; in real browsers `tools/screens/inactivity.ts`
   (logs and screenshots in `docs/status/inactivity/`).
+
+## Connection and timeouts
+
+- **Waking the server** (`client/src/net/wake.ts`, pure, `client/test/wake.test.ts`): the
+  socket retries for ever by itself (20 s per attempt, pauses of 1 to 5 s). Not in a room,
+  the menus show "WAKING THE SERVER... n%" with a bar (90% at 60 s, creeping to 99%), and
+  after `WAKE.giveUpMs` (120 s) with no answer the socket stops and the mode screen shows
+  "CANNOT REACH THE SERVER." with a RETRY button (`UIState.wake`, `onRetryConnect`). In a
+  room there is no give-up. A page that becomes visible again, or whose network comes
+  back, tries at once.
+- **Heartbeat** (`SOCKET_TIMING` in `server/src/app.ts`): ping every 15 s, 30 s to answer.
+  A stalled page keeps its socket for 30 s; a dead one is noticed within 45 s, both ways.
+  Only then do the room's clocks start (seat hold 60 s, lobby hold 15 s).
+- The server logs one `[socket] room=... closed: <reason>` line when a seated player's
+  socket closes ("ping timeout", "transport close", ...).
+- Every deploy ends every room (see Inactivity). Put `[skip render]` in the merge commit
+  when nothing under `server/` or `shared/` changed, and do not merge during a demo.
 
 ## Git workflow
 

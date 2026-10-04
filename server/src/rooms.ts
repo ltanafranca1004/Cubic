@@ -533,7 +533,10 @@ export class Room {
       m.ready = false;
       m.side = null;
     } else this.seatPlayer(m);
-    const ms = this.phase === 'lobby' ? LIMITS.lobbyHoldMs : LIMITS.seatHoldMs;
+    // A host alone in the lobby blocks nobody, and on a phone they leave the page to send
+    // the code: they get the long hold. With a second player there, the short one.
+    const alone = !this.members.some((x) => x !== m && !x.isAI);
+    const ms = this.phase === 'lobby' && !alone ? LIMITS.lobbyHoldMs : LIMITS.seatHoldMs;
     m.away = kind;
     m.until = this.now() + ms;
     if (m.dropTimer) clearTimeout(m.dropTimer);

@@ -23,11 +23,13 @@ import {
 import { audio, musicForScreen } from './audio/AudioManager';
 import { heardSfx } from './audio/hearing';
 import { createGameView, type GameHandle } from './game';
+import { transitionKind, transitionMs } from './game/transition';
 import { sfx } from './game/sfx';
 import { Net } from './net/client';
 import { ending } from './scenes/ending/run';
-import { settings } from './style/settings';
+import { onSettings, settings } from './style/settings';
 import { setPartnerLevel, showCaption } from './ui/captions';
+import { tileLabel } from './ui/label';
 import { chatText, type HudState, type LobbyState, type UIActions, type UIHandle, type UIHost, type UIState } from './ui/hooks';
 import { mountOnboarding } from './ui/onboarding';
 import { Voice } from './voice/voice';
@@ -79,6 +81,8 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
   const onMyWall = (face: FaceId) => !!net.state && !!net.side && sameWall(face, net.state.players[net.side].pose.face);
   let handle: UIHandle | null = null;
   let game: GameHandle | null = null;
+  /** A face transition of the side we draw plays until then (performance.now): no symbol label meanwhile. */
+  let crossingUntil = 0;
 
   const net = new Net(
     {
@@ -88,6 +92,12 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
         if (net.side && net.state) for (const id of heardSfx(events, net.side, net.state, (key) => key in sfx)) audio.playSfx(id);
         if (events.some((e) => e.type === 'solve')) audio.playSfx('solved');
         game?.handle(events);
+        const shown = viewSide();
+        if (shown && events.some((e) => e.type === 'flip' && e.side === shown)) {
+          const ms = transitionMs(transitionKind(shown, settings().reduceMotion));
+          crossingUntil = performance.now() + ms;
+          setTimeout(render, ms + 20);
+        }
         // The one win event (online it comes from the server, to both players at once): the ending starts here.
         if (events.some((e) => e.type === 'win')) ending.won(settings().reduceMotion);
       },
@@ -155,6 +165,7 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
     onJoinRoom: (code) => net.joinRoom(code),
     onPlayWithAI: (side) => net.playWithAI(side),
     onResumeSolo: () => net.resumeSolo(),
+    onRetryConnect: () => net.retry(),
     onPickSide: (side) => net.pickSide(side),
     onSetReady: (ready) => net.setReady(ready),
     onStartGame: () => net.startGame(),
@@ -167,6 +178,7 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
     onPlayAgain: () => net.restart(),
     onDrop: () => playing() && net.interact('drop'),
     onQuickChat: (index) => playing() && net.quick(index),
+    onPreviewVoice: (v) => void voice.playPreview(net.previewVoice(v)),
   };
 
   /** The side we draw: our own, unless the dev tools show the other one. */
@@ -206,6 +218,7 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
       screen: inGame ? 'game' : 'lobby',
       online: net.online,
       blocked: net.blocked,
+      wake: net.wake,
       status,
       error: net.error,
       roomCode: net.code,
@@ -222,6 +235,8 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
       hud: inGame ? hudOf(net.state!, viewSide()!, Date.now()) : null,
       voice: voice.snapshot(signalBars(proximity())),
       signals: inGame ? signalsFor(net.state!, viewSide()!, quicks, Date.now()) : NO_SIGNALS,
+      // the name of the symbol under our own turtle: made here, for this player only
+      label: inGame && performance.now() >= crossingUntil ? tileLabel(net.state!, viewSide()!) : null,
     };
   }
 
@@ -268,6 +283,10 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
   for (const type of ['keydown', 'pointerdown']) window.addEventListener(type, () => net.activity(), true);
   // iOS only lets sound start from a tap: every tap keeps the voice path allowed to play.
   window.addEventListener('touchend', () => voice.prime(), true);
+  // The AI partner's voice (Settings): the server is told the key now, on every reconnect
+  // and whenever it changes, and uses it from the AI's next line.
+  net.setAiVoice(settings().aiVoice);
+  onSettings((s) => net.setAiVoice(s.aiVoice));
   net.start();
   render();
   setInterval(render, 500); // keeps the clock ticking

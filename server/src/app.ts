@@ -1,7 +1,7 @@
 import { createServer, type Server as HttpServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { Server, type Socket } from 'socket.io';
-import type { Ack, ClientToServer, Seat, ServerInfo, ServerToClient, Side } from '@cubic/shared';
+import { DEFAULT_AI_VOICE, parseAiVoice, type Ack, type AiVoice, type ClientToServer, type Seat, type ServerInfo, type ServerToClient, type Side, type VoicePreview } from '@cubic/shared';
 import { devCommandsEnabled, runDev } from './dev';
 import { Rooms, type Room } from './rooms';
 
@@ -14,6 +14,8 @@ type Sock = Socket<ClientToServer, ServerToClient>;
  * starts. Relay chunks are 200 ms of Opus each, so five a second.
  */
 export const VOICE_LIMITS = { signalMaxBytes: 16 * 1024, signalBurst: 60, signalPerSec: 20, chunkMaxBytes: 64 * 1024, chunkBurst: 20, chunkPerSec: 10 };
+/** The AI voice picker, per socket: a preview is one banked clip (about 60 KB), a choice is one word. */
+export const AI_VOICE_LIMITS = { previewBurst: 4, previewPerSec: 0.5, pickBurst: 10, pickPerSec: 2 };
 /** The one format the client records for the relay (RELAY_MIME in client/src/voice/voice.ts). */
 const VOICE_MIMES = ['audio/webm;codecs=opus'];
 
@@ -46,6 +48,25 @@ export function validSignal(data: unknown): boolean {
   if ('relay' in data && data.relay !== true) return false;
   return JSON.stringify(data).length <= VOICE_LIMITS.signalMaxBytes;
 }
+/**
+ * The socket's heartbeat (engine.io): the server pings every `pingInterval` and closes a
+ * connection that has not answered within `pingTimeout`.
+ *
+ * pingTimeout is how long a page may be stalled and keep its socket: a phone switching
+ * between Wi-Fi and mobile data, a tab the browser froze for a moment, a slow network.
+ * The library default is 20 s; 30 s covers those without changing how long a truly dead
+ * connection goes unnoticed, because the pings come more often instead (15 s, default 25):
+ *   - the server notices a dead client after 30 to 45 s (before: 20 to 45 s);
+ *   - the client notices a dead server after pingInterval + pingTimeout = 45 s (as before).
+ * Only then does the seat hold start (rooms.ts: 60 s in a game, 15 s in a lobby), so a
+ * locked phone has 90 to 105 s in a game before its seat opens.
+ *
+ * connectTimeout: how long a new connection may take to finish the handshake (default).
+ * connectionStateRecovery stays off: a seat is taken back with its token (`room:rejoin`),
+ * which also works after the server restarted the socket from nothing.
+ */
+export const SOCKET_TIMING = { pingInterval: 15_000, pingTimeout: 30_000, connectTimeout: 45_000 };
+
 /** Public STUN, always offered. The client keeps the same list as its fallback. */
 export const STUN_URLS = ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'];
 
@@ -77,11 +98,24 @@ export interface AppOptions {
   allowLocalhost?: boolean;
   /** Hook for the AI partner: called when a room is created for an AI game. */
   onAiRoom?: (room: Room, humanSide: Side) => void;
+  /**
+   * Hook for the AI partner: the voice the human of a solo room wants it to speak with.
+   * Only ever called with a key of AI_VOICES, and only for an AI room.
+   */
+  onAiVoice?: (room: Room, voice: AiVoice) => void;
+  /** Hook for the AI partner: one banked greeting in a voice (the settings panel's preview). */
+  voicePreview?: (voice: AiVoice) => VoicePreview;
   /** TURN relay handed to clients by GET /ice. Unset = STUN only. */
   turn?: TurnConfig | null;
   info?: () => ServerInfo;
   /** Obey the `dev` socket message (DEV_COMMANDS=1). Ignored when NODE_ENV=production. */
   devCommands?: boolean;
+  /**
+   * One line when a player's socket closes while they sit in a room, with engine.io's
+   * reason ("ping timeout", "transport close", "client namespace disconnect", ...): the
+   * only way to tell afterwards why somebody dropped. Unset = silent (tests).
+   */
+  log?: (line: string) => void;
 }
 
 export interface App {
@@ -140,6 +174,7 @@ export function createApp(opts: AppOptions = {}): App {
     // CORS does not cover WebSocket upgrades: refuse other origins outright.
     allowRequest: (req, cb) => cb(null, originAllowed(req.headers.origin)),
     maxHttpBufferSize: 256 * 1024,
+    ...SOCKET_TIMING,
   });
   const rooms = new Rooms();
   /** Rooms already wired to broadcast to their socket.io room. */
@@ -182,6 +217,11 @@ export function createApp(opts: AppOptions = {}): App {
     /** Our member id in `room`. The side comes from the room: it is picked in the lobby. */
     let me: number | null = null;
     const side = (): Side | null => (room && me !== null ? room.sideOf(me) : null);
+    /** The AI voice this player picked in Settings. It only matters in a solo room. */
+    let aiVoice: AiVoice = DEFAULT_AI_VOICE;
+    const useAiVoice = () => {
+      if (room?.mode === 'ai') opts.onAiVoice?.(room, aiVoice);
+    };
 
     socket.emit('info', info());
 
@@ -195,6 +235,7 @@ export function createApp(opts: AppOptions = {}): App {
       me = seat.id;
       // evict: the room removed us (inactivity), this socket is in no room any more
       socket.data = { code: r.code, id: seat.id, evict: () => ((room = null), (me = null)) };
+      useAiVoice(); // a solo room speaks in this player's voice from its first line (and again after a rejoin)
       return seat;
     };
     const detach = (forGood: boolean) => {
@@ -361,11 +402,31 @@ export function createApp(opts: AppOptions = {}): App {
       partner()?.emit('voice:chunk', { seq: msg.seq, mime: msg.mime, data: data as unknown as ArrayBuffer });
     });
 
+    // The AI partner's voice (Settings). Only a key of the known list is ever taken: a
+    // client cannot hand the server a voice id. In a two-player room it changes nothing.
+    const pickOk = bucket(() => AI_VOICE_LIMITS.pickBurst, () => AI_VOICE_LIMITS.pickPerSec);
+    const previewOk = bucket(() => AI_VOICE_LIMITS.previewBurst, () => AI_VOICE_LIMITS.previewPerSec);
+    socket.on('ai:voice', (msg) => {
+      const voice = parseAiVoice(msg?.voice);
+      if (!voice || !pickOk()) return;
+      aiVoice = voice;
+      useAiVoice();
+    });
+    socket.on('ai:preview', (msg, ack) => {
+      if (typeof ack !== 'function') return;
+      const voice = parseAiVoice(msg?.voice);
+      if (!voice) ack({ ok: false, error: 'Unknown voice.' });
+      else if (!opts.voicePreview || !info().aiAvailable) ack({ ok: false, error: 'The AI partner is not available on this server.' });
+      else if (!previewOk()) ack({ ok: false, error: 'Too many previews. Wait a moment.' });
+      else ack({ ok: true, ...opts.voicePreview(voice) });
+    });
+
     socket.on('dev', (cmd, ack) => {
       if (typeof ack === 'function') ack(runDev(devOn, room, cmd));
     });
 
-    socket.on('disconnect', () => {
+    socket.on('disconnect', (reason) => {
+      if (room && me !== null) opts.log?.(`[socket] room=${room.code} member=${me} side=${side() ?? '-'} phase=${room.phase} closed: ${socket.data?.replaced ? 'replaced by a newer tab' : reason}`);
       // Only drop the seat if this socket still owns it (a rejoin may have replaced it).
       if (socket.data?.replaced) return;
       detach(false);

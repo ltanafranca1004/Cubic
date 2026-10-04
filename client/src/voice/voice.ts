@@ -1,4 +1,4 @@
-import { VOICE_RAMP_MS, type TtsChain, type TtsClip, type VoiceChunk } from '@cubic/shared';
+import { VOICE_RAMP_MS, type TtsChain, type TtsClip, type VoiceChunk, type VoicePreview } from '@cubic/shared';
 import { audioContext } from '../game/sfx';
 import type { VoiceState } from '../ui/hooks';
 import { STUN_ONLY, hasTurn, iceConfig } from './ice';
@@ -7,7 +7,9 @@ import { STUN_ONLY, hasTurn, iceConfig } from './ice';
 // Socket.io server. ICE servers come from the server's GET /ice (public STUN, plus a TURN
 // relay when one is configured; see ice.ts). Every remote sound goes through one Web Audio graph:
 //
-//   remote stream / relay / AI speech  ->  bus  ->  gain (voiceMix x volume)  ->  speakers
+//   remote stream / relay  ->  bus    ->  gain (voiceMix x volume)     ->  speakers
+//   AI speech              ->  aiBus  ->  gain (voiceMix x AI volume)  ->  speakers
+// The AI's gain is its own: "Voice chat" off silences the partner's mic, never the AI.
 //
 // If the direct connection cannot be made, both sides fall back to relaying short Opus
 // (webm) chunks through the server.
@@ -41,10 +43,13 @@ export class Voice {
   private link: VoiceState['link'] = 'none';
   private keyDown = false;
   private volume = 1;
+  /** The AI partner's lines: the same slider, but not switched off with "Voice chat". */
+  private aiVolume = 1;
   private partnerLevel = 0;
   private myLevel = 0;
   /** Gain the output is ramping to (proximity x volume). */
   private target = -1;
+  private aiTarget = -1;
 
   private micStream: MediaStream | null = null;
   /** The microphone was on when the last call ended for good: the next call turns it back on. */
@@ -57,6 +62,8 @@ export class Voice {
 
   private bus: GainNode | null = null;
   private out: GainNode | null = null;
+  private aiBus: GainNode | null = null;
+  private aiOut: GainNode | null = null;
   private meter: AnalyserNode | null = null;
   private micMeter: AnalyserNode | null = null;
   private remoteSrc: MediaStreamAudioSourceNode | null = null;
@@ -109,18 +116,31 @@ export class Voice {
 
   // ---------- audio graph ----------
 
-  private graph(): { bus: GainNode; out: GainNode } {
-    if (!this.bus || !this.out) {
+  private graph(): { bus: GainNode; out: GainNode; aiBus: GainNode } {
+    if (!this.bus || !this.out || !this.aiBus || !this.aiOut) {
       const ac = audioContext();
       this.bus = ac.createGain();
       this.out = ac.createGain();
       this.out.gain.value = 0;
+      this.aiBus = ac.createGain();
+      this.aiOut = ac.createGain();
+      this.aiOut.gain.value = 0;
       this.meter = ac.createAnalyser();
       this.meter.fftSize = 512;
       this.bus.connect(this.meter);
       this.bus.connect(this.out).connect(ac.destination);
+      this.aiBus.connect(this.meter);
+      this.aiBus.connect(this.aiOut).connect(ac.destination);
     }
-    return { bus: this.bus, out: this.out };
+    return { bus: this.bus, out: this.out, aiBus: this.aiBus };
+  }
+
+  /** Short linear ramp so crossing an edge (or moving the slider) does not pop. */
+  private static ramp(param: AudioParam, target: number): void {
+    const now = audioContext().currentTime;
+    param.cancelScheduledValues(now);
+    param.setValueAtTime(param.value, now);
+    param.linearRampToValueAtTime(target, now + VOICE_RAMP_MS / 1000);
   }
 
   private static level(a: AnalyserNode | null): number {
@@ -136,13 +156,13 @@ export class Voice {
     const gain = this.deps.proximity();
     const target = gain * this.volume;
     if (this.out && target !== this.target) {
-      // Short linear ramp so crossing an edge (or moving the slider) does not pop.
       this.target = target;
-      const now = audioContext().currentTime;
-      const param = this.out.gain;
-      param.cancelScheduledValues(now);
-      param.setValueAtTime(param.value, now);
-      param.linearRampToValueAtTime(target, now + VOICE_RAMP_MS / 1000);
+      Voice.ramp(this.out.gain, target);
+    }
+    const aiTarget = gain * this.aiVolume;
+    if (this.aiOut && aiTarget !== this.aiTarget) {
+      this.aiTarget = aiTarget;
+      Voice.ramp(this.aiOut.gain, aiTarget);
     }
     // What you would actually hear: their level scaled by distance.
     this.partnerLevel = Math.round(Voice.level(this.meter) * Math.min(1, gain * 2) * 20) / 20;
@@ -249,6 +269,11 @@ export class Voice {
   setVolume(v: number): void {
     this.volume = Math.min(1, Math.max(0, v));
     this.deps.onChange();
+  }
+
+  /** How loud the AI partner's lines are. Not 0 when "Voice chat" is off: that is the partner's mic only. */
+  setAiVolume(v: number): void {
+    this.aiVolume = Math.min(1, Math.max(0, v));
   }
 
   // ---------- direct connection (WebRTC) ----------
@@ -556,10 +581,10 @@ export class Voice {
 
   // ---------- AI partner speech ----------
 
-  /** Play a spoken AI line through the same proximity gain. */
+  /** Play a spoken AI line through the AI's proximity gain. */
   async playClip(clip: TtsClip): Promise<void> {
     try {
-      const { bus } = this.graph();
+      const { aiBus: bus } = this.graph();
       const ac = audioContext();
       const buffer = await ac.decodeAudioData(clip.data.slice(0));
       const src = ac.createBufferSource();
@@ -579,7 +604,7 @@ export class Voice {
    */
   async playChain(chain: TtsChain, fallback?: () => void): Promise<void> {
     try {
-      const { bus } = this.graph();
+      const { aiBus: bus } = this.graph();
       const ac = audioContext();
       const buffers = await Promise.all(chain.clips.map((data) => ac.decodeAudioData(data.slice(0))));
       const at = ac.currentTime + 0.02;
@@ -595,6 +620,36 @@ export class Voice {
     }
   }
 
+  private previewSrc: AudioBufferSourceNode | null = null;
+  /**
+   * The settings panel's preview of an AI voice: one greeting, at full volume and not
+   * through the proximity gain (there is no partner on a menu). Call it from the click, so
+   * the audio may start. A new preview stops the one that is playing. No clip for that voice
+   * (its bank is not there): the browser voice reads the line.
+   */
+  async playPreview(pending: Promise<VoicePreview | null>): Promise<void> {
+    try {
+      const ac = audioContext(); // resumes it, inside the gesture
+      const preview = await pending;
+      if (!preview) return;
+      this.previewSrc?.stop();
+      this.previewSrc = null;
+      if (!preview.data) {
+        if (typeof speechSynthesis === 'undefined') return;
+        speechSynthesis.cancel();
+        speechSynthesis.speak(new SpeechSynthesisUtterance(preview.text));
+        return;
+      }
+      const src = ac.createBufferSource();
+      src.buffer = await ac.decodeAudioData(preview.data.slice(0));
+      src.connect(ac.destination);
+      src.start();
+      this.previewSrc = src;
+    } catch (e) {
+      console.warn('[voice] could not play the voice preview', e);
+    }
+  }
+
   /**
    * Say an AI line with the browser's free speechSynthesis (TTS_MODE=browser, or the
    * ElevenLabs call failed). It cannot be routed through Web Audio, so the proximity gain
@@ -602,7 +657,7 @@ export class Voice {
    */
   speakText(text: string): void {
     if (typeof speechSynthesis === 'undefined') return;
-    const volume = Math.min(1, Math.max(0, this.deps.proximity() * this.volume));
+    const volume = Math.min(1, Math.max(0, this.deps.proximity() * this.aiVolume));
     if (volume <= 0) return; // out of earshot
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.volume = volume;

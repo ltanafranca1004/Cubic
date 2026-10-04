@@ -9,6 +9,7 @@
     "test": "tsx --test test/*.test.ts",
     "typecheck": "tsc --noEmit -p .",
     "tts:bank": "tsx scripts/ttsBank.ts",
+    "gemini:once": "tsx scripts/geminiOnce.ts",
     "music:gen": "tsx scripts/musicGen.ts"
   },
   "dependencies": {

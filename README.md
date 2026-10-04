@@ -41,7 +41,7 @@ A cube has six faces. The OUTSIDE player walks on the outer side of them. The IN
 
 - **Create Lobby** makes a room and shows a room code to share.
 - **Join Lobby** asks for the room code from your friend.
-- **Play Solo** lets you pick a side. An AI partner takes the other one, and it talks to you with a real voice.
+- **Play Solo** lets you pick a side. An AI partner takes the other one. She chats back and has two voices to choose from in Settings: Jessica and Wizard.
 
 ## The six faces
 

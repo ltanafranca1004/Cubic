@@ -2,7 +2,8 @@ import { execFileSync } from 'node:child_process';
 import { renameSync, rmSync } from 'node:fs';
 import { runBank, trimCommand } from '../src/ai/bank';
 import { parsePersona } from '../src/ai/prompt';
-import { DEFAULT_VOICE_ID, TTS_BANK_DIR, bankLines, createTts, ttsModels } from '../src/ai/tts';
+import { AI_VOICES, DEFAULT_AI_VOICE, parseAiVoice, type AiVoice } from '@cubic/shared';
+import { DEFAULT_VOICE_ID, bankDirFor, bankLines, createTts, ttsModels } from '../src/ai/tts';
 
 // The voice bank: one clip per fixed line of the partner in the active persona
 // (server/src/ai/scripted.ts) and per relay vocabulary piece
@@ -18,7 +19,16 @@ import { DEFAULT_VOICE_ID, TTS_BANK_DIR, bankLines, createTts, ttsModels } from 
 //                                         With ffmpeg on PATH each bought clip then has the
 //                                         silence cut off both ends (without it: skipped).
 //
-// Voice: ELEVENLABS_VOICE_ID. Model: ELEVENLABS_BANK_MODEL (default eleven_v4), not the fast
+//   npm run tts:bank -w server -- --voice wizard [--buy]
+//                                         the same for another voice of the picker
+//                                         (AI_VOICES in shared/src/aiVoices.ts): the same
+//                                         lines, model and trim, into that voice's own
+//                                         folder, server/tts/bank-wizard.
+// The dry run also prints the size of the whole bank (clips, characters) and the estimated
+// credits for the bank model.
+//
+// Voice: the default voice (Jessica), or its id from ELEVENLABS_VOICE_ID; `--voice <key>`
+// takes any other voice of the picker and its own id. Model: ELEVENLABS_BANK_MODEL (default eleven_v4), not the fast
 // model the live lines use. A clip is named by voice + model + exact text.
 //
 // Clips already in the bank are never bought again, and a clip in the local cache
@@ -32,14 +42,24 @@ try {
 
 const argv = process.argv.slice(2);
 const buy = argv.includes('--buy');
-const voiceId = process.env.ELEVENLABS_VOICE_ID || DEFAULT_VOICE_ID;
+// --voice <key> or --voice=<key>: one of the picker's voices. None = the default voice.
+const flag = argv.findIndex((a) => a === '--voice' || a.startsWith('--voice='));
+const asked = flag < 0 ? null : argv[flag]!.includes('=') ? argv[flag]!.slice('--voice='.length) : (argv[flag + 1] ?? '');
+const voice: AiVoice | null = asked === null ? DEFAULT_AI_VOICE : parseAiVoice(asked.toLowerCase());
+if (!voice) {
+  console.error(`unknown voice "${asked}". Known: ${AI_VOICES.map((v) => v.key).join(', ')}. Nothing was bought.`);
+  process.exit(1);
+}
+// ELEVENLABS_VOICE_ID is the id behind the default voice only, the same rule as the server.
+const voiceId = voice === DEFAULT_AI_VOICE ? process.env.ELEVENLABS_VOICE_ID || DEFAULT_VOICE_ID : AI_VOICES.find((v) => v.key === voice)!.id;
+const bankDir = bankDirFor(voice);
 const { modelId, bankModelId } = ttsModels(process.env);
 // Only --buy ever sees the key. A dry run gets no key and a fetch that throws.
 const apiKey = buy ? process.env.ELEVENLABS_API_KEY : undefined;
 const noNetwork = (() => {
   throw new Error('a dry run must not call the network');
 }) as unknown as typeof fetch;
-const tts = createTts({ apiKey, voiceId, modelId, bankModelId, log: () => {}, ...(buy ? {} : { fetchFn: noNetwork }) });
+const tts = createTts({ apiKey, voiceId, modelId, bankModelId, bankDir, log: () => {}, ...(buy ? {} : { fetchFn: noNetwork }) });
 
 /** Is ffmpeg on PATH? Only asked when buying. */
 const hasFfmpeg = (): boolean => {
@@ -69,8 +89,9 @@ process.exit(
     lines: bankLines(parsePersona(process.env.AI_PERSONA)),
     tts,
     hasKey: !!apiKey,
-    bankDir: TTS_BANK_DIR,
+    bankDir,
     voiceId,
+    ...(voice === DEFAULT_AI_VOICE ? {} : { voiceArg: `--voice ${voice}` }),
     modelId: bankModelId,
     ...(buy && hasFfmpeg() ? { trim } : {}),
     out: (line) => console.log(line),

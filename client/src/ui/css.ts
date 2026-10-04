@@ -335,6 +335,9 @@ ${ICONS.map((name, i) => `.cu-ico.${name} { background-position: -${i * 16}u 0; 
 /* the controls tab: an action and the key it is on. Click the key, press a new one. */
 .cu-key { ${nine('ui/field.png', 4)} height: var(--row-h); min-width: 30t; padding: 0 3t; line-height: 7t; flex: none; background: none; color: ${ROLE.ink}; white-space: nowrap; outline: none; display: flex; align-items: center; justify-content: center; }
 .cu-key > span { display: block; margin-top: -3t; }
+/* the Partner voice row holds a label, two names and Play: all three are a little tighter */
+.cu-key.cu-preview { min-width: 0; padding: 0 1t; margin-left: -2t; }
+.cu-seg[data-key="aiVoice"] span { padding: 0 2t; }
 .cu-key:hover { border-image-source: ${url('ui/field-active.png')}; }
 .cu-key.cap { border-image-source: ${url('ui/field-active.png')}; color: ${ROLE.in.deep}; }
 /* the other row of a swap: marked for a moment */
@@ -384,6 +387,13 @@ ${focusRule()} {
 /* the tail: it points at who is speaking */
 .cu-bubble::after { content: ""; position: absolute; left: 50%; bottom: -6u; margin-left: -1u; width: 2u; height: 2u; background: ${ROLE.ink}; }
 .cu-bubble.under::after { bottom: auto; top: -6u; }
+/* the name of the tile you stand on (ui/label.ts places it): the same tag, no tail, yours alone */
+.cu-label {
+  position: absolute; white-space: nowrap; text-transform: uppercase;
+  ${nine('ui/tag.png', 4)} padding: 0 3t; color: ${ROLE.paper}; z-index: 1;
+  animation: cu-label-pop 0.12s steps(3) both;
+}
+@keyframes cu-label-pop { from { transform: translateY(2u); opacity: 0; } to { transform: none; opacity: 1; } }
 
 /* ---------- captions and "Partner speaking" ---------- */
 .cu-subs { position: absolute; left: 50%; bottom: max(6u, calc(var(--subs-lift, 0px) + 2u)); transform: translateX(-50%); z-index: 8; display: flex; flex-direction: column; align-items: center; gap: 2u; pointer-events: none; max-width: 90%; }
@@ -418,7 +428,7 @@ ${focusRule()} {
 .cu[data-contrast="high"] .cu-banner { text-decoration: underline; }
 .cu[data-contrast="high"] .cu-caption b { text-decoration: underline; }
 .cu[data-contrast="high"] .cu-view { outline: 2u solid ${ROLE.paper}; }
-.cu[data-contrast="high"] .cu-caption, .cu[data-contrast="high"] .cu-bubble, .cu[data-contrast="high"] .cu-speaking, .cu[data-contrast="high"] .cu-room, .cu[data-contrast="high"] .cu-stat, .cu[data-contrast="high"] .cu-banner { outline: 1u solid ${ROLE.paper}; }
+.cu[data-contrast="high"] .cu-caption, .cu[data-contrast="high"] .cu-bubble, .cu[data-contrast="high"] .cu-label, .cu[data-contrast="high"] .cu-speaking, .cu[data-contrast="high"] .cu-room, .cu[data-contrast="high"] .cu-stat, .cu[data-contrast="high"] .cu-banner { outline: 1u solid ${ROLE.paper}; }
 .cu[data-contrast="high"][data-side="in"] .cu-room, .cu[data-contrast="high"][data-side="in"] .cu-stat, .cu[data-contrast="high"][data-side="in"] .cu-banner, .cu[data-contrast="high"] .cu-bubble.mine, .cu[data-contrast="high"] .cu-speaking { outline-color: ${ROLE.ink}; }
 .cu[data-contrast="high"] .cu-chip, .cu[data-contrast="high"] .cu-pips > i { outline-width: 2u; }
 .cu[data-contrast="high"] .cu-edge { color: ${ROLE.ink}; }

@@ -15,9 +15,10 @@ import {
   type PuzzleScript,
   type Say,
   type Side,
+  type Token,
 } from '@cubic/shared';
 import type { Room } from '../rooms';
-import type { Budget, GeminiReason } from './budget';
+import type { Budget, GeminiReason, Refusal } from './budget';
 import { isQuotaError, type Brain } from './gemini';
 import { MAX_SAY_CHARS, turnPrompt, type Persona } from './prompt';
 import { eventLine, humanSays, lineText } from './scripted';
@@ -37,9 +38,13 @@ import { eventLine, humanSays, lineText } from './scripted';
 //              and the game is running: one gentle question, once per quiet period.
 //    It never moves the body and never presses anything: a reply has no action.
 //
-// The body never waits for Gemini. A call that takes longer than 3 s, fails, or is refused
-// (one call at a time and per 6 s per room; the server-wide and per-game caps in budget.ts)
-// is dropped, never queued or retried, and the script's own line is said instead.
+// The body never waits for Gemini. A call that takes too long (3 s; 6 s for a chat line, which
+// the human is waiting on), fails, or is refused (one call at a time and per 6 s per room; the
+// server-wide and per-game caps in budget.ts) is dropped, never queued or retried, and the
+// script's own line is said instead.
+//
+// A free-form chat line is never met with silence: when Gemini does not answer it (ChatMiss
+// says why, and the log has it), the script's own "huh" line is the reply.
 
 export interface AiOptions {
   persona?: Persona;
@@ -52,6 +57,8 @@ export interface AiOptions {
   minThinkMs?: number;
   /** Give up on a Gemini call after this long: the script's line is used. */
   timeoutMs?: number;
+  /** The same for a chat line (default: `timeoutMs` if that is given, else CHAT_TIMEOUT_MS). */
+  chatTimeoutMs?: number;
   /** First back-off after a failed call; doubles per failure in a row, up to a minute. */
   backoffMs?: number;
   /** The server-wide caps and the usage log. Without it (tests) only this room's own throttle applies. */
@@ -67,6 +74,12 @@ export interface AiOptions {
 const STEP_MS = AI_STEP_MS; // the walking pace, shared/src/pace.ts (267 ms at the default)
 const MIN_THINK_MS = 6000;
 const TIMEOUT_MS = 3000;
+/**
+ * The deadline of a CHAT call. Longer than the others: the human asked something and is
+ * waiting for it (the typing dots show), and live calls were seen to take up to 3 s, so at
+ * 3 s an answer that was on its way was thrown away and the call was spent for nothing.
+ */
+export const CHAT_TIMEOUT_MS = 6000;
 const BACKOFF_MS = 6000;
 const BACKOFF_MAX_MS = 60_000;
 /** The human is "stuck" after this long with no solve, no strike and no chat line of theirs. */
@@ -121,6 +134,22 @@ export function parseReply(text: string): ParsedReply | null {
   return { say, heard };
 }
 
+/**
+ * Why a free-form chat line got the script's preset reply instead of Gemini's:
+ *  off        no advisor: no GEMINI_API_KEY, or AI_FAKE=1
+ *  busy       a call of this room is still out
+ *  throttled  less than 6 s since this room's last call
+ *  backoff    this room's calls are backing off after a failed one
+ *  disabled | paused_429 | minute_cap | day_cap | game_cap   the budget said no (budget.ts)
+ *  timeout | 429 | error   the call was made and failed
+ *  unusable   the reply was not the JSON asked for
+ *  no_say     the reply had no line to say
+ *  fault      our own code threw around the call
+ */
+export type ChatMiss = 'off' | 'busy' | 'throttled' | 'backoff' | Refusal | 'timeout' | '429' | 'error' | 'unusable' | 'no_say' | 'fault';
+/** Protocol words the body does not visibly act on: a line that held only these and got no word back is still owed a reply. */
+const QUIET: ReadonlySet<Token['t']> = new Set(['again', 'yes', 'no', 'sign']);
+
 /** Why a call is made: a line of the script to reword (solved, strike, stuck), or a human message to read. */
 type Ask = { kind: 'line'; reason: Exclude<GeminiReason, 'chat'>; line: string; key: string } | { kind: 'chat'; text: string; read: Heard };
 const reasonOf = (ask: Ask): GeminiReason => (ask.kind === 'chat' ? 'chat' : ask.reason);
@@ -129,6 +158,8 @@ const REWORDED = new Set(['solved', 'win']);
 
 /** A line of a puzzle script: an answer (a relay line) or a question the script waits on. Never dropped from the queue. */
 const essential = (l: { line?: Say }): boolean => !!l.line && isPuzzleLine(l.line.key) && !l.line.key.startsWith('event.');
+/** A line that must be said however long it waits: a puzzle line, or the reply to something the human typed. */
+const kept = (l: { line?: Say; reply?: boolean }): boolean => essential(l) || !!l.reply;
 
 export class AiPlayer {
   private mind = newMind();
@@ -137,7 +168,9 @@ export class AiPlayer {
   /** What the script hears on its next decision. */
   private heard: Heard[] = [];
   /** Lines waiting for the chat rate limit. */
-  private outbox: { text: string; scripted: boolean; line?: Say; at: number }[] = [];
+  private outbox: { text: string; scripted: boolean; line?: Say; at: number; reply?: boolean }[] = [];
+  /** Free-form chat lines Gemini did not answer: each gets the preset reply on the next decision, unless the script took it. */
+  private owed: Heard[] = [];
   /** How long the line said last is given before the next one (lineHoldMs). */
   private holdMs = 0;
   private last: Decision | null = null;
@@ -150,6 +183,9 @@ export class AiPlayer {
   private thinking = false;
   /** No Gemini call before this time (rate limit + back-off after errors). */
   private nextThinkAt = 0;
+  /** Until when that is a back-off after a failed call (and not just the 6 s between calls). */
+  private backoffUntil = 0;
+  private offLogged = false;
   private failures = 0;
   private lastHuhAt = -Infinity;
   private lastSaidAt = -Infinity;
@@ -162,10 +198,11 @@ export class AiPlayer {
   private readonly persona: Persona;
   private readonly minThinkMs: number;
   private readonly timeoutMs: number;
+  private readonly chatTimeoutMs: number;
   /** Stats, for logs and tests. */
   calls = 0;
   tokens = { input: 0, output: 0 };
-  stats = { answered: 0, timeouts: 0, errors: 0, scriptedLines: 0, modelLines: 0, refused: 0 };
+  stats = { answered: 0, timeouts: 0, errors: 0, scriptedLines: 0, modelLines: 0, refused: 0, chatMisses: 0 };
 
   constructor(
     private room: Room,
@@ -177,6 +214,7 @@ export class AiPlayer {
     this.persona = opts.persona ?? 'default';
     this.minThinkMs = opts.minThinkMs ?? MIN_THINK_MS;
     this.timeoutMs = opts.timeoutMs ?? TIMEOUT_MS;
+    this.chatTimeoutMs = opts.chatTimeoutMs ?? opts.timeoutMs ?? CHAT_TIMEOUT_MS;
     this.mindOf = room.state;
     this.strikes = room.state.strikes;
     this.solved = room.state.solved.length;
@@ -196,12 +234,31 @@ export class AiPlayer {
    * room, then the caps of the whole server. A yes is counted as a call: ask at once.
    */
   private may(reason: GeminiReason, now: number): boolean {
-    if (!this.advisor || this.thinking || now < this.nextThinkAt) return false;
-    if (this.opts.budget && this.opts.budget.gemini(this.room.code, reason) !== null) {
-      this.stats.refused++;
-      return false;
-    }
-    return true;
+    return this.refusal(reason, now) === null;
+  }
+
+  /** The same question, with the answer spelled out: null = yes (and the call is counted), else why not. */
+  private refusal(reason: GeminiReason, now: number): ChatMiss | null {
+    if (!this.advisor) return 'off';
+    if (this.thinking) return 'busy';
+    if (now < this.nextThinkAt) return now < this.backoffUntil ? 'backoff' : 'throttled';
+    const no = this.opts.budget?.gemini(this.room.code, reason) ?? null;
+    if (no) this.stats.refused++;
+    return no;
+  }
+
+  /**
+   * A free-form chat line Gemini did not answer. The script still gets it as typed, the
+   * log says why, and the human gets the preset reply (see act) instead of silence.
+   */
+  private unanswered(read: Heard, why: ChatMiss, toScript = true): void {
+    if (toScript) this.heard.push(read);
+    this.owed.push(read);
+    this.stats.chatMisses++;
+    // No key at all is not news on every line: once per room.
+    if (why === 'off' && this.offLogged) return;
+    if (why === 'off') this.offLogged = true;
+    this.log(`chat: gemini did not answer (why=${why}), the script's preset line is the reply`);
   }
 
   /** Something happened: the human is not stuck. */
@@ -234,7 +291,7 @@ export class AiPlayer {
     this.ask(ask, now).catch((e: unknown) => {
       this.thinking = false;
       this.fault('think', e);
-      if (!this.stopped) this.scripted(ask);
+      if (!this.stopped) this.scripted(ask, 'fault');
     });
   }
 
@@ -263,12 +320,13 @@ export class AiPlayer {
       if (m.from === side) continue;
       this.stir(now);
       const read = parseHuman(m.text);
-      if (read.plain) this.heard.push(read);
-      else if (this.may('chat', now)) this.consult({ kind: 'chat', text: m.text, read }, now);
-      else {
+      if (read.plain) {
         this.heard.push(read);
-        if (!read.tokens.length) this.huh(now);
+        continue;
       }
+      const why = this.refusal('chat', now);
+      if (why === null) this.consult({ kind: 'chat', text: m.text, read }, now);
+      else this.unanswered(read, why);
     }
 
     // 2. Decide, from this side's own view only.
@@ -283,6 +341,9 @@ export class AiPlayer {
     }
     // A question that was answered while it waited its turn is not asked after the answer.
     if (d.cancel.length) this.outbox = this.outbox.filter((l) => !l.line || !d.cancel.includes(l.line.key));
+    // Chat that Gemini did not answer: never silence. The preset line, unless the script took
+    // the line itself (it spoke, or a word in it moves the body: wait, go, a direction, a face).
+    for (const h of this.owed.splice(0)) if (!h.tokens.length || (!d.say.length && h.tokens.every((t) => QUIET.has(t.t)))) this.huh(now);
     // The two events the script has no line of its own for: a strike, and a quiet minute.
     if (room.state.solved.length !== this.solved) {
       this.solved = room.state.solved.length;
@@ -316,15 +377,15 @@ export class AiPlayer {
   private event(reason: 'strike' | 'stuck', now: number): void {
     const ask: Ask = { kind: 'line', reason, line: eventLine(this.persona, reason), key: `event.${reason}` };
     if (this.may(reason, now)) this.consult(ask, now);
-    else this.scripted(ask);
+    else this.queue(ask.line, true, { key: ask.key });
   }
 
-  private queue(text: string, scripted: boolean, line?: Say): void {
+  private queue(text: string, scripted: boolean, line?: Say, reply = false): void {
     if (this.outbox.some((l) => l.text === text)) return;
-    this.outbox.push(line ? { text, scripted, line, at: Date.now() } : { text, scripted, at: Date.now() });
+    this.outbox.push({ text, scripted, at: Date.now(), ...(line ? { line } : {}), ...(reply ? { reply } : {}) });
     // Bounded: the oldest small talk gives way. Puzzle lines are few and each is said once.
     while (this.outbox.length > OUTBOX_MAX) {
-      const i = this.outbox.findIndex((l) => !essential(l));
+      const i = this.outbox.findIndex((l) => !kept(l));
       if (i < 0) break;
       this.outbox.splice(i, 1);
     }
@@ -335,7 +396,8 @@ export class AiPlayer {
     const now = Date.now();
     if (now - this.lastSaidAt < this.holdMs) return;
     // small talk that waited too long behind other lines is stale: skip it
-    while (this.outbox[0] && !essential(this.outbox[0]) && now - this.outbox[0].at > STALE_MS) this.outbox.shift();
+    // (a reply to the human's own chat line is not small talk: it is said however late)
+    while (this.outbox[0] && !kept(this.outbox[0]) && now - this.outbox[0].at > STALE_MS) this.outbox.shift();
     const line = this.outbox[0];
     if (!line) return;
     const msg = this.room.say(this.side, line.text, line.line?.key);
@@ -351,14 +413,13 @@ export class AiPlayer {
   private huh(now: number): void {
     if (now - this.lastHuhAt < HUH_EVERY_MS) return;
     this.lastHuhAt = now;
-    this.queue(lineText(this.persona, 'huh'), true, { key: 'huh' });
+    this.queue(lineText(this.persona, 'huh'), true, { key: 'huh' }, true);
   }
 
-  /** The script's own answer to a turn Gemini did not take. */
-  private scripted(ask: Ask): void {
+  /** The script's own answer to a turn Gemini did not take (`why` is for a chat line: see ChatMiss). */
+  private scripted(ask: Ask, why: ChatMiss): void {
     if (ask.kind === 'line') return this.queue(ask.line, true, { key: ask.key });
-    this.heard.push(ask.read);
-    if (!ask.read.tokens.length) this.huh(Date.now());
+    this.unanswered(ask.read, why);
   }
 
   /** One Gemini call. The body keeps moving meanwhile; on any failure the script answers instead. */
@@ -381,11 +442,12 @@ export class AiPlayer {
       chat: this.room.chat,
     });
     const abort = (this.abort = new AbortController());
+    const deadline = ask.kind === 'chat' ? this.chatTimeoutMs : this.timeoutMs;
     let timedOut = false;
     const timeout = setTimeout(() => {
       timedOut = true;
       abort.abort();
-    }, this.timeoutMs);
+    }, deadline);
     try {
       const reply = await Promise.race([advisor.think(turn, abort.signal), new Promise<never>((_, no) => abort.signal.addEventListener('abort', () => no(new Error('timed out'))))]);
       const took = Date.now() - now;
@@ -399,7 +461,7 @@ export class AiPlayer {
       if (!parsed) {
         this.stats.errors++;
         this.log(`gemini: unusable reply after ${took} ms, the script answers: ${reply.text.slice(0, 120)}`);
-        return this.scripted(ask);
+        return this.scripted(ask, 'unusable');
       }
       this.failures = 0;
       this.stats.answered++;
@@ -412,12 +474,13 @@ export class AiPlayer {
       if (!timedOut && isQuotaError(e)) budget?.geminiQuota(this.room.code);
       this.failures++;
       const backoff = Math.min(BACKOFF_MAX_MS, (this.opts.backoffMs ?? BACKOFF_MS) * 2 ** (this.failures - 1));
-      this.nextThinkAt = Date.now() + Math.max(this.minThinkMs, backoff);
+      this.nextThinkAt = this.backoffUntil = Date.now() + Math.max(this.minThinkMs, backoff);
       if (timedOut) this.stats.timeouts++;
       else this.stats.errors++;
-      const why = timedOut ? `no answer after ${this.timeoutMs} ms` : `error: ${(e instanceof Error ? e.message : String(e)).slice(0, 200)}`;
+      // (a 429 says which quota ran out further into its message: keep enough of it to read that)
+      const why = timedOut ? `no answer after ${deadline} ms` : `error: ${(e instanceof Error ? e.message : String(e)).slice(0, isQuotaError(e) ? 600 : 200)}`;
       this.log(`gemini ${why}; the script answers, next call in ${Math.round(Math.max(this.minThinkMs, backoff) / 1000)}s`);
-      if (!this.stopped) this.scripted(ask);
+      if (!this.stopped) this.scripted(ask, timedOut ? 'timeout' : isQuotaError(e) ? '429' : 'error');
     } finally {
       clearTimeout(timeout);
       this.thinking = false;
@@ -435,9 +498,10 @@ export class AiPlayer {
     // The model read no protocol word into it: only keep what cannot be small talk (a sign, a face).
     const sure = ask.read.tokens.filter((t) => t.t === 'sign' || t.t === 'face');
     // The script gets the line as typed, with the tokens the model (or nobody) read into it.
-    this.heard.push({ text: ask.text, tokens: heard?.tokens.length ? heard.tokens : sure, plain: false });
-    if (reply.say) this.queue(reply.say, false);
-    else if (!heard?.tokens.length && !sure.length) this.huh(Date.now());
+    const read: Heard = { text: ask.text, tokens: heard?.tokens.length ? heard.tokens : sure, plain: false };
+    this.heard.push(read);
+    if (reply.say) this.queue(reply.say, false, undefined, true);
+    else this.unanswered(read, 'no_say', false);
   }
 
   stop(): void {
@@ -449,7 +513,7 @@ export class AiPlayer {
     this.opts.budget?.endRoom(this.room.code);
     const s = this.stats;
     this.log(
-      `stopped: gemini calls=${this.calls} answered=${s.answered} timeouts=${s.timeouts} errors=${s.errors}, tokens in=${this.tokens.input} out=${this.tokens.output}; lines scripted=${s.scriptedLines} model=${s.modelLines}; calls refused by the budget=${s.refused}`,
+      `stopped: gemini calls=${this.calls} answered=${s.answered} timeouts=${s.timeouts} errors=${s.errors}, tokens in=${this.tokens.input} out=${this.tokens.output}; lines scripted=${s.scriptedLines} model=${s.modelLines}; calls refused by the budget=${s.refused}; chat lines gemini did not answer=${s.chatMisses}`,
     );
   }
 }

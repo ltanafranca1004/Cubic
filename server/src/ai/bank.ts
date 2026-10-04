@@ -28,6 +28,16 @@ export function trimCommand(from: string, to: string): string[] {
   return ['-hide_banner', '-loglevel', 'error', '-y', '-i', from, '-af', `${cut},areverse,${cut},areverse`, '-codec:a', 'libmp3lame', '-b:a', '64k', '-ar', '44100', to];
 }
 
+/**
+ * ESTIMATED credits per character of text for a model. ElevenLabs bills text-to-speech in
+ * credits per character sent: 1 for its standard models, 0.5 for the Flash and Turbo
+ * families (its pricing page). A model id that is neither (the bank default included) is
+ * taken as a standard model: 1. What a clip really cost is in the "character-cost" header
+ * of each bought clip, which `--buy` prints.
+ */
+export const creditsPerChar = (modelId: string): number => (/flash|turbo/i.test(modelId) ? 0.5 : 1);
+export const estimateCredits = (chars: number, modelId: string): number => Math.ceil(chars * creditsPerChar(modelId));
+
 export interface BankPlan {
   /** Lines with a clip in the bank. */
   banked: string[];
@@ -88,6 +98,8 @@ export interface BankRun {
   voiceId: string;
   /** The model the banked clips are made with (ELEVENLABS_BANK_MODEL). */
   modelId: string;
+  /** What to add to the command to build this bank again (`--voice wizard`), for the hint the dry run prints. */
+  voiceArg?: string;
   /** Local only: trims the silence off a clip that was just bought (ffmpeg). Absent = clips stay as bought. */
   trim?: (file: string) => boolean;
   out: (line: string) => void;
@@ -101,8 +113,13 @@ export async function runBank(run: BankRun): Promise<number> {
   out(`voice bank: ${lines.length} clips wanted, voice ${run.voiceId}, model ${run.modelId}: ${plan.banked.length} banked, ${plan.cached.length} in the local cache (free), ${plan.missing.length} missing`);
   for (const line of plan.missing) out(`  missing ${String(line.length).padStart(3)} chars  ${line}`);
   out(`total to buy with ${run.modelId}: ${plan.chars} characters in ${plan.missing.length} clips (limit per run: ${BUY_LIMIT_CHARS})`);
+  const all = lines.reduce((n, l) => n + l.length, 0);
+  const rate = creditsPerChar(run.modelId);
+  out(`whole bank: ${lines.length} clips, ${all} characters. Folder: ${run.bankDir}`);
+  out(`ESTIMATED cost with ${run.modelId}: ${estimateCredits(plan.chars, run.modelId)} credits to buy what is missing (${estimateCredits(all, run.modelId)} for the whole bank), at ${rate} credit${rate === 1 ? '' : 's'} per character.`);
+  out('  (an estimate: 1 credit per character for a standard model, 0.5 for Flash and Turbo; the real charge is what ElevenLabs reports for each bought clip)');
   if (!buy) {
-    out('dry run: nothing was bought and nothing was written. To buy the missing clips: npm run tts:bank -w server -- --buy');
+    out(`dry run: nothing was bought and nothing was written. To buy the missing clips: npm run tts:bank -w server --${run.voiceArg ? ` ${run.voiceArg}` : ''} --buy`);
     return 0;
   }
   if (plan.chars > BUY_LIMIT_CHARS) {
