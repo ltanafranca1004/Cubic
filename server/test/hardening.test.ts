@@ -123,6 +123,16 @@ test('rate-limited moves are not broadcast, but the sender still gets every ack'
   assert.ok(got >= 1 && got <= LIMITS.moveBurst + 15, `the partner got ${got} state updates for ${N} moves`);
 });
 
+test('a move seq that is not a sane number does not poison the ack', async () => {
+  LIMITS.moveBurst = 1e9;
+  const { a } = await pair(true);
+  a.sock.emit('move', { dx: 1, dy: 0, seq: 1e300 });
+  a.sock.emit('move', { dx: -1, dy: 0, seq: 1 });
+  await until(() => a.ack('out') === 1, 'ack 1');
+  await sleep(50);
+  assert.equal(a.ack('out'), 1);
+});
+
 test('voice: nothing is relayed in the lobby', async () => {
   const { a, b } = await pair(false);
   a.sock.emit('voice:signal', { data: { relay: true } });
@@ -193,4 +203,14 @@ test('voice: a flood of signals or chunks is cut off at the rate limit', async (
   // the burst, plus whatever was refilled while the flood was being read
   assert.ok(b.signals.length >= 1 && b.signals.length <= VOICE_LIMITS.signalBurst * 2, `${b.signals.length} of ${N} signals relayed`);
   assert.ok(b.chunks.length >= 1 && b.chunks.length <= VOICE_LIMITS.chunkBurst * 2, `${b.chunks.length} of ${N} chunks relayed`);
+});
+
+test('joining the room you are already in keeps it alive', async () => {
+  const a = new Client();
+  const first = await a.create();
+  const again = await a.join(first.code);
+  assert.deepEqual([again.code, again.id, again.role], [first.code, first.id, 'host']);
+  // the room is still there for a friend to find
+  const b = new Client();
+  assert.equal((await b.join(first.code)).role, 'guest');
 });

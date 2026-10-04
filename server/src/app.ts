@@ -234,6 +234,8 @@ export function createApp(opts: AppOptions = {}): App {
       safe(ack, () => {
         const r = rooms.get(msg?.code);
         if (!r) throw new Error('Room not found. Check the code.');
+        // Already in it: leaving first would close the room (if we are alone) and seat us in the dead one.
+        if (r === room && me !== null) return r.resume(me);
         if (r.mode !== 'friend' || r.isFull()) throw new Error('That room is full.');
         detach(true);
         enter(r);

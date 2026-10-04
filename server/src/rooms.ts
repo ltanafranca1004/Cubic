@@ -46,6 +46,8 @@ const CHAT_PER_WINDOW = 5;
  * disconnect (short: the room is blocked for a new guest meanwhile).
  */
 export const LIMITS = { moveBurst: 5, moveRefillMs: 90, lobbyHoldMs: 15_000 };
+/** How far past the last ack a move's seq may be (moves lost on the way leave small gaps). */
+const SEQ_JUMP_MAX = 1000;
 
 interface Member {
   id: number;
@@ -368,7 +370,8 @@ export class Room {
   private input(side: Side, seq: number, apply: () => GameEvent[]): GameEvent[] {
     const seat = this.playing(side);
     if (!seat) return [];
-    if (seq > seat.ack) seat.ack = seq;
+    // a real client counts up by one: anything else (1e300, NaN) must not become the ack
+    if (Number.isSafeInteger(seq) && seq > seat.ack && seq <= seat.ack + SEQ_JUMP_MAX) seat.ack = seq;
     if (!this.spend(seat)) {
       const update: StateUpdate = { state: this.state, events: [], acks: this.acks() };
       for (const l of this.listeners) l.onAck?.(seat.id, update);
