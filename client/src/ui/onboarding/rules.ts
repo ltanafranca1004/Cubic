@@ -9,7 +9,10 @@ import { moveKeys } from '../../input/keymap';
 //
 //   side card      at the start of a game, once per side per session. It goes by itself,
 //                  or at once when the player dismisses it (GOT IT, Esc, a click outside)
-//   controls       from the first spawn until the player has moved AND interacted
+//   controls       at the first spawn, for CONTROLS_MS or until the first move, whichever
+//                  comes first. Once it has gone it never comes back: not on another
+//                  face, not after a solve or a strike, not in the next game, and not
+//                  after a reload in the middle of the same game (controlsSeenFor)
 //   context hints  cube (the first time the HUD is on screen), edge (the first face edge
 //                  reached), voice (the first time the partner gets quieter). Once each
 //                  per session, one at a time, never under the side card.
@@ -57,8 +60,11 @@ export const START_SETTLE_MS = 1500;
 /** A breath between two context hints. */
 export const HINT_GAP_MS = 500;
 export const CAPTION_MS = 5500;
-/** The controls hint never sticks forever, even if the player never interacts. */
-export const CONTROLS_MAX_MS = 90_000;
+/** The controls hint sits over the bottom of the map, so it only stays this long. */
+export const CONTROLS_MS = 3000;
+/** How long a part of the layer takes to fade (css.ts), and with "Reduce motion": not at all. */
+export const FADE_MS = 320;
+export const fadeMs = (reduceMotion: boolean): number => (reduceMotion ? 0 : FADE_MS);
 
 /** What the rules need to know about the running game. */
 export interface GameSnapshot {
@@ -82,8 +88,8 @@ export interface Snapshot {
   hints: boolean;
   /** null while not on the game screen. */
   game: GameSnapshot | null;
-  /** The player pressed an interact key since the last snapshot. */
-  interacted: boolean;
+  /** The player pressed a move key since the last snapshot (a step into a wall counts too). */
+  moved: boolean;
   /** The player closed the side card since the last snapshot (GOT IT, Esc, a click outside). */
   dismissed?: boolean;
 }
@@ -108,8 +114,13 @@ export interface Onboarding {
   seen(): string[];
 }
 
+export interface OnboardingMemory {
+  /** The game (GameSnapshot.id) whose controls hint this tab has already shown: a reload or a rejoin in the middle of it does not bring the hint back. */
+  controlsSeenFor?: number | null;
+}
+
 /** One per page load: its memory IS "once per session". */
-export function createOnboarding(): Onboarding {
+export function createOnboarding(memory: OnboardingMemory = {}): Onboarding {
   const seen = new Set<string>();
   let gameId: number | null = null;
   let games = 0;
@@ -118,14 +129,19 @@ export function createOnboarding(): Onboarding {
   let solvedAtStart = 0;
   let solveSaid = false;
 
-  let moved = false;
-  let interacted = false;
+  /** Since when the controls hint is up; null while it is not. */
   let controlsSince: number | null = null;
 
   let card: { side: Side; since: number; moved: boolean } | null = null;
   let hint: { id: ContextHint; since: number } | null = null;
   let hintFreeAt = 0;
   let caption: { text: string; since: number } | null = null;
+
+  /** The controls hint goes. If it was up, that was its one time: it does not come back. */
+  function controlsOff(): void {
+    if (controlsSince !== null) seen.add('controls');
+    controlsSince = null;
+  }
 
   function step(s: Snapshot): OnboardingView {
     const g = s.game;
@@ -135,7 +151,7 @@ export function createOnboarding(): Onboarding {
       card = null;
       hint = null;
       caption = null;
-      controlsSince = null;
+      controlsOff();
       return EMPTY_VIEW;
     }
 
@@ -145,6 +161,7 @@ export function createOnboarding(): Onboarding {
       gameId = g.id;
       solvedAtStart = g.solved;
     }
+    if (g.id === memory.controlsSeenFor) seen.add('controls'); // this game, before a reload
     if (g.id !== gameId) {
       gameId = g.id;
       startedAt = s.now;
@@ -160,8 +177,6 @@ export function createOnboarding(): Onboarding {
 
     const stepped = !!last && (last.x !== g.x || last.y !== g.y || last.face !== g.face);
     const folded = !!last && last.face !== g.face;
-    if (stepped) moved = true;
-    if (s.interacted) interacted = true;
     if (stepped && card) card.moved = true;
 
     // the narrator's second line: the first solve of this game
@@ -176,24 +191,23 @@ export function createOnboarding(): Onboarding {
       seen.add('edge');
       if (hint?.id === 'edge') hint = null;
     }
-    // controls: done once the player has moved and interacted, shown or not
-    if (moved && interacted) seen.add('controls');
-
     if (!s.hints || g.won) {
       // hints off (or the win screen is up): everything goes at once. A hint that has not
       // been shown yet is not used up, so it can still show once the setting is back on.
+      // (The controls hint that WAS up is used up: once gone, it stays gone.)
       card = null;
       hint = null;
-      controlsSince = null;
+      controlsOff();
       last = g;
       return { ...EMPTY_VIEW, caption: g.won ? null : (caption?.text ?? null) };
     }
 
     if (card && (s.dismissed || (card.moved && s.now - card.since >= CARD_MIN_MS) || s.now - card.since >= CARD_MAX_MS)) card = null;
 
+    // controls: up from the first snapshot, gone at the first move or after CONTROLS_MS
     if (!seen.has('controls')) {
       controlsSince ??= s.now;
-      if (s.now - controlsSince >= CONTROLS_MAX_MS) seen.add('controls');
+      if (stepped || s.moved || s.now - controlsSince >= CONTROLS_MS) controlsOff();
     }
 
     if (hint && s.now - hint.since >= HINT_MS) {

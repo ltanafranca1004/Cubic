@@ -8,7 +8,8 @@ import {
   CAPTION_MS,
   CARD_MAX_MS,
   CARD_MIN_MS,
-  CONTROLS_MAX_MS,
+  CONTROLS_MS,
+  FADE_MS,
   HINT_GAP_MS,
   HINT_MS,
   HINT_TEXT,
@@ -16,6 +17,7 @@ import {
   atFaceEdge,
   controlsHint,
   createOnboarding,
+  fadeMs,
   type GameSnapshot,
   type Onboarding,
 } from '../src/ui/onboarding/rules';
@@ -39,9 +41,9 @@ function session(o: Onboarding = createOnboarding()) {
     hints(on: boolean) {
       hints = on;
     },
-    step(ms = 0, interacted = false, dismissed = false) {
+    step(ms = 0, moved = false, dismissed = false) {
       now += ms;
-      return o.step({ now, hints, game: g, interacted, dismissed });
+      return o.step({ now, hints, game: g, moved, dismissed });
     },
   };
 }
@@ -69,7 +71,7 @@ test('onboarding: the side card goes at once when it is dismissed, and does not 
   assert.equal(s.step().card, 'out');
   assert.equal(s.step(100, false, true).card, null, 'GOT IT, Esc or a click outside');
   assert.equal(s.step(100).card, null);
-  assert.equal(s.step(100).controls, true, 'the controls hint is not the card: it stays');
+  assert.equal(s.step(100).controls, true, 'the controls hint is not the card: it has its own time');
   assert.equal(s.step(HINT_GAP_MS).hint, 'cube', 'and the context hints can start');
 });
 
@@ -86,28 +88,105 @@ test('onboarding: the side card stays a moment after the first step, then goes; 
   assert.equal(idle.step(1).card, null);
 });
 
-test('onboarding: the controls hint fades only after the player has moved AND interacted', () => {
+test('controls hint: up at the start, gone after 3 s without input', () => {
+  assert.equal(CONTROLS_MS, 3000);
   const s = session();
-  s.step();
-  assert.equal(s.step(100, true).controls, true, 'interacting alone is not enough');
-  s.set({ x: 5 });
-  assert.equal(s.step(100).controls, false, 'moved and interacted: gone');
-  assert.equal(s.step(60_000).controls, false, 'and it does not come back');
+  assert.equal(s.step().controls, true, 'visible at the start');
+  assert.equal(s.step(CONTROLS_MS - 1).controls, true);
+  assert.equal(s.step(1).controls, false, 'hidden at 3 s');
+  assert.equal(s.step(60_000).controls, false);
+  assert.ok(s.o.seen().includes('controls'));
+});
+
+test('controls hint: gone at once on the first move, whichever comes first', () => {
+  const key = session();
+  key.step();
+  assert.equal(key.step(100, true).controls, false, 'a move key (even into a wall)');
 
   const walker = session();
   walker.step();
   walker.set({ y: 5 });
-  assert.equal(walker.step(100).controls, true, 'moving alone is not enough');
-  assert.equal(walker.step(100, true).controls, false);
+  assert.equal(walker.step(100).controls, false, 'a step seen in the game state (d-pad, gamepad)');
+
+  const still = session();
+  still.step();
+  assert.equal(still.step(100, false, true).controls, true, 'closing the side card is not a move');
 });
 
-test('onboarding: the controls hint lists every key of the brief and never sticks forever', () => {
-  const keys = controlsHint(DEFAULT_BINDINGS).map((c) => `${c.keys.join('/')} ${c.does}`);
-  assert.deepEqual(keys, ['WASD/Arrows move', 'E interact', 'Q drop', 'Enter chat', 'V talk']);
+test('controls hint: once gone it never comes back during play', () => {
   const s = session();
   s.step();
-  assert.equal(s.step(CONTROLS_MAX_MS - 1).controls, true);
-  assert.equal(s.step(1).controls, false);
+  assert.equal(s.step(100, true).controls, false);
+  s.set({ face: 2, x: 0 });
+  assert.equal(s.step(500).controls, false, 'a face change');
+  s.set({ solved: 1 });
+  assert.equal(s.step(500).controls, false, 'a solve (a strike changes nothing the rules read)');
+  s.set(null);
+  s.step(500);
+  s.set({});
+  assert.equal(s.step(500).controls, false, 'off the game screen and back');
+  s.hints(false);
+  s.step(100);
+  s.hints(true);
+  assert.equal(s.step(100).controls, false, 'hints off and on again');
+  s.set({ id: 2, x: 4, y: 4, face: 1, solved: 0 });
+  assert.equal(s.step(60_000).controls, false, 'play again: hints are once per session, also across games');
+  s.set({ id: 3, side: 'in' });
+  assert.equal(s.step(60_000).controls, false, 'and on the other side');
+});
+
+test('controls hint: what took it away while it was up also used it up', () => {
+  const off = session();
+  off.step();
+  off.hints(false);
+  assert.equal(off.step(100).controls, false);
+  off.hints(true);
+  assert.equal(off.step(100).controls, false, 'hints off while it was up');
+
+  const left = session();
+  left.step();
+  left.set(null);
+  left.step(100);
+  left.set({});
+  assert.equal(left.step(100).controls, false, 'the game screen went away while it was up');
+});
+
+test('controls hint: a reload or a rejoin in the middle of the same game does not show it again', () => {
+  const again = session(createOnboarding({ controlsSeenFor: 1 }));
+  const v = again.step();
+  assert.equal(v.controls, false);
+  assert.equal(v.card, 'out', 'the side card is not part of this: it keeps its own rule');
+  assert.equal(again.step(60_000).controls, false);
+
+  // the id that settles right after the start is checked too
+  const settle = session(createOnboarding({ controlsSeenFor: 11 }));
+  settle.set({ id: 10 });
+  settle.step();
+  settle.set({ id: 11 });
+  assert.equal(settle.step(100).controls, false);
+
+  const other = session(createOnboarding({ controlsSeenFor: 99 }));
+  assert.equal(other.step().controls, true, 'another game after a reload is a new session: shown once');
+  assert.equal(session(createOnboarding({ controlsSeenFor: null })).step().controls, true);
+});
+
+test('controls hint: it fades, and with reduce motion it goes with no fade at all', () => {
+  assert.equal(fadeMs(false), FADE_MS);
+  assert.equal(fadeMs(true), 0);
+  const src = (path: string): string => readFileSync(new URL(`../src/${path}`, import.meta.url), 'utf8');
+  const css = src('ui/onboarding/css.ts');
+  assert.match(css, /\.cu-onb > \* \{[^}]*opacity: 0; visibility: hidden; transition: opacity \$\{FADE_MS\}ms/);
+  assert.match(css, /\.cu-onb\.still > \* \{ transition: none; \}/);
+  const layer = src('ui/onboarding/index.ts');
+  assert.match(layer, /classList\.toggle\('still', fadeMs\(settings\(\)\.reduceMotion\) === 0\)/);
+  assert.match(layer, /keys\.classList\.toggle\('on', next\.controls\)/);
+  // fingers have no keys: the touch layer keeps the keyboard hint out of sight from the start
+  assert.match(src('ui/mobile/css.ts'), /\.cu\[data-touch\] \.cu-onb-keys \{ opacity: 0 !important; \}/);
+});
+
+test('controls hint: it lists every key of the brief', () => {
+  const keys = controlsHint(DEFAULT_BINDINGS).map((c) => `${c.keys.join('/')} ${c.does}`);
+  assert.deepEqual(keys, ['WASD/Arrows move', 'E interact', 'Q drop', 'Enter chat', 'V talk']);
 });
 
 test('onboarding: the cube hint is the first context hint, once the card is gone', () => {
@@ -185,7 +264,7 @@ test('onboarding: one context hint at a time; a moment that passes while another
 test('onboarding: every hint shows once per session, also across games', () => {
   const s = settled();
   s.set({ x: 6 });
-  s.step(100, true); // controls done
+  s.step(100); // (the controls hint went long ago)
   s.set({ id: 2, x: 4, y: 4 }); // play again
   const v = s.step(1000);
   assert.equal(v.card, null, 'the card for this side was already shown');
@@ -223,7 +302,7 @@ test('onboarding: hints off shows no hint at all, hides what is up at once, and 
   assert.deepEqual(off.o.seen(), [], 'nothing was shown, so nothing is used up');
   off.hints(true);
   v = off.step(100);
-  assert.equal(v.controls, true, 'back on: the controls hint is still owed');
+  assert.equal(v.controls, true, 'back on: the controls hint was never up, so it is still owed');
   assert.equal(v.hint, 'cube');
 
   const mid = session();
