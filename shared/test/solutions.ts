@@ -1,5 +1,9 @@
 import type { FaceId, Side } from '../src/index';
 import type { SolutionScript, Solver } from './harness';
+// face 4: botanical-mirror
+import assert from 'node:assert/strict';
+import { visibleObjects } from '../src/index';
+import { FLOWER_ID } from '../src/puzzles/chain';
 
 // ONE SOLUTION SCRIPT PER PUZZLE, keyed by the module's `id`.
 // A script plays the puzzle the way two players would: it walks (t.go / t.move), presses E
@@ -38,7 +42,22 @@ export const SOLUTIONS: Record<string, SolutionScript> = {
   // ---------- end face 3 ----------
 
   // ---------- face 4: botanical-mirror ----------
-  'botanical-mirror': stub(4, 'in'),
+  'botanical-mirror': (t) => {
+    // The flower comes from face 6: play that first when it is still to do.
+    if (!t.state.solved.includes(6)) SOLUTIONS['laser-path']!(t);
+    const flower = t.state.items[FLOWER_ID];
+    assert.ok(flower, 'face 6 is solved but left no flower');
+    if (flower.carriedBy !== 'out') {
+      t.go('out', t.item(FLOWER_ID));
+      t.interact('out');
+    }
+    // Outside says the colour they carry; inside finds the pot with that flower and names it.
+    const colour = flower.kind.replace('flower-', '');
+    const pot = visibleObjects(t.state, 'in', 4, t.env).find((o) => o.type === 'f4-flowerpot' && o.state === colour);
+    assert.ok(pot, `the inside player sees no ${colour} flower on face 4`);
+    t.go('out', { face: 4, x: pot.x, y: pot.y });
+    t.interact('out');
+  },
   // ---------- end face 4 ----------
 
   // ---------- face 5: sequence-laser ----------
