@@ -86,7 +86,8 @@ class CubeCanvas {
 
   /** The six faces for a side, with a green frame on solved faces and a violet one on the open portal's. */
   private faces(art: CubeArt | null, s: CubeHudState, pulse: boolean): CubeFaces {
-    const base = bakeFaces(art, s.side, texelFor(this.half * 2));
+    // only what is the same in every game: this cube does not know the game's seed
+    const base = bakeFaces(art, s.side, texelFor(this.half * 2), false, true);
     const out = {} as CubeFaces;
     for (const face of FACES) {
       const mark = face === PORTAL_FACE && s.portalOpen ? (pulse ? ROLE.portal : ROLE.portalDark) : s.solved.includes(face) ? ROLE.ok : null;
