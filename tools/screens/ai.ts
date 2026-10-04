@@ -1,7 +1,7 @@
-// PLAY WITH AI, in a real browser: one human (this script, with real keys, a real mouse and
+// PLAY SOLO, in a real browser: one human (this script, with real keys, a real mouse and
 // a touch screen) and the AI partner on the server. It checks everything about the AI
 // partner that does not depend on which puzzles the game has:
-//   - the mode screen offers PLAY WITH AI, and the side popup works by keyboard, mouse and touch;
+//   - the mode screen offers PLAY SOLO, and the side popup works by keyboard, mouse and touch;
 //   - the AI takes the other side, greets, and what it says shows up as a caption;
 //   - its voice arrives (a clip from the committed bank, or the browser voice);
 //   - it follows the human to another face, obeys "wait" and "go", and answers chat.
@@ -31,7 +31,7 @@ mkdirSync(OUT, { recursive: true });
 
 type How = 'keyboard' | 'mouse' | 'touch';
 export type Step =
-  /** From the title: Play, PLAY WITH AI, pick a side. */
+  /** From the title: Play, PLAY SOLO, pick a side. */
   | { start: Side; how: How }
   /** Open the side popup and close it again without picking (Esc, or Cancel). */
   | { cancelPopup: How }
@@ -155,22 +155,22 @@ class Session {
     return this.side === 'out' ? 'in' : 'out';
   }
 
-  /** The side popup is up: PLAY WITH AI was chosen from the mode screen. */
+  /** The side popup is up: PLAY SOLO was chosen from the mode screen. */
   private async openPopup(how: How): Promise<void> {
-    const want = 'BACK|CREATE LOBBY|JOIN LOBBY|PLAY WITH AI';
+    const want = 'BACK|CREATE LOBBY|JOIN LOBBY|PLAY SOLO';
     if ((await labels(this.page)).join('|') !== want) throw new Error(`mode screen buttons are [${(await labels(this.page)).join(', ')}], expected [${want}]`);
     if (how === 'keyboard') {
       await keys(this.page, 'ArrowDown', 'ArrowDown', 'ArrowDown');
       const focused = (await buttons(this.page)).find((b) => b.focused)?.label;
-      if (focused !== 'PLAY WITH AI') throw new Error(`three presses of Down focus "${focused}", not PLAY WITH AI`);
+      if (focused !== 'PLAY SOLO') throw new Error(`three presses of Down focus "${focused}", not PLAY SOLO`);
       await keys(this.page, 'Enter');
       await sleep(300);
-    } else await pressButton(this.page, 'PLAY WITH AI', how);
-    await expect(`${how}: PLAY WITH AI opens the side popup`, async () => {
+    } else await pressButton(this.page, 'PLAY SOLO', how);
+    await expect(`${how}: PLAY SOLO opens the side popup`, async () => {
       const have = await labels(this.page);
       return ['OUTSIDE', 'INSIDE', 'CANCEL'].every((l) => have.includes(l));
     });
-    const behind = (await buttons(this.page)).filter((b) => ['CREATE LOBBY', 'JOIN LOBBY', 'PLAY WITH AI', 'BACK'].includes(b.label));
+    const behind = (await buttons(this.page)).filter((b) => ['CREATE LOBBY', 'JOIN LOBBY', 'PLAY SOLO', 'BACK'].includes(b.label));
     if (behind.some((b) => b.enabled)) throw new Error('the menu behind the side popup is still enabled');
   }
 
@@ -310,7 +310,7 @@ async function open(context: BrowserContext, query: string): Promise<Page> {
 }
 
 async function play(browser: Browser, renderer: 'webgl' | 'canvas'): Promise<void> {
-  console.log(`\n=== PLAY WITH AI (${renderer}) ===`);
+  console.log(`\n=== PLAY SOLO (${renderer}) ===`);
   const tag = renderer === 'canvas' ? '-canvas' : '';
   for (const part of STEPS) {
     console.log(` ${part.name}`);

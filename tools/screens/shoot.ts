@@ -248,7 +248,7 @@ async function faces(browser: Browser): Promise<void> {
 
 async function ai(browser: Browser): Promise<void> {
   console.log('ai modes');
-  // PLAY WITH AI is the third choice; its popup opens on OUTSIDE, Right moves to INSIDE
+  // PLAY SOLO is the third choice; its popup opens on OUTSIDE, Right moves to INSIDE
   for (const [side, keys] of [['out', ['ArrowDown', 'ArrowDown', 'ArrowDown', 'Enter', 'Enter']], ['in', ['ArrowDown', 'ArrowDown', 'ArrowDown', 'Enter', 'ArrowRight', 'Enter']]] as const) {
     const page = await open(browser);
     await toMode(page);
