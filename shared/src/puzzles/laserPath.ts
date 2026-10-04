@@ -208,10 +208,10 @@ export const laserPath: PuzzleModule<State> = {
   objective(s, ctx, side) {
     if (s.done) return 'The lava has cooled.';
     if (side === 'out') {
-      if (s.burnt) return 'Take the flower. Guide your partner over the lava along the path you see. RESET moves the mirrors off it.';
-      return ctx.faceSolved(5) ? 'Push the mirrors so the beam hits the wooden crate. E on RESET puts them back.' : 'Mirrors to push, a crate on the edge, and no beam yet: the laser above needs solving.';
+      if (s.burnt) return "The flower waits beside the cooled lava. Your partner's path glows beneath their feet.";
+      return ctx.faceSolved(5) ? 'Mirrors stand ready. Beam seeks the crate. RESET returns them to rest.' : 'Mirrors await. Cold crate sits empty. Cave waits for light from above.';
     }
     if (!ctx.faceSolved(5)) return 'Cold rock and a button in the middle. The laser above is still dead.';
-    return s.burnt ? 'A safe path crosses the lava to the button. Only your partner can see it. Press E on the button.' : 'The laser has lit the lava. Stay on the outer ring until your partner burns the crate.';
+    return s.burnt ? 'A safe path glows through lethal heat. The button waits for touch.' : 'Laser light fills the cavern. Stone cools where fire once flowed.';
   },
 };

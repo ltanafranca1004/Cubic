@@ -187,8 +187,8 @@ export const equationSafe: PuzzleModule<State> = {
   },
 
   objective(_s, _ctx, side) {
-    if (side === 'out') return 'Count the berry bushes, the round rocks and the birds. Tell your partner all three.';
-    return 'A safe. Carved above it: 3 x bushes x 2 x birds x rocks. Type the answer (E on a key), then ENTER.';
+    if (side === 'out') return 'WOW, what beautiful scenery!';
+    return 'A safe. Symbols are carved on the ground, I wonder what they mean?';
   },
 };
 
