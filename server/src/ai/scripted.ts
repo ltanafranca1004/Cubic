@@ -82,6 +82,47 @@ const PUZZLE: Record<string, string> = {
   'mirrored-glyph.in.next': 'Row done. What is the next row?',
   'mirrored-glyph.in.cleared': 'All tiles are off. Start again from row 1.',
   // ---- end faces 1-3 ----
+  // ---- faces 4-6 (scripts-b) ----
+  // face 4, botanical-mirror. A pot is named by row and column, counted from the edges beside faces 5 and 3.
+  'botanical-mirror.relay': '{words}',
+  'botanical-mirror.out.ask': 'Which pot? Say row and column. Rows from the face 5 edge, columns from face 3.',
+  'botanical-mirror.out.nopot': 'I see no pot there. Rows count from the face 5 edge, columns from face 3.',
+  'botanical-mirror.out.strike': 'That was the wrong pot. I have the flower back. Which row and column?',
+  'botanical-mirror.in.ask': 'What colour is your flower? Red, blue, yellow, pink or white?',
+  'botanical-mirror.in.how': 'Rows count from the edge by face 5, columns from the edge by face 3.',
+  'botanical-mirror.in.strike': 'That was the wrong pot. Count from the edges by face 5 and face 3.',
+  // face 5, sequence-laser
+  'sequence-laser.relay': '{words}',
+  'sequence-laser.in.battery': 'The laser is dead. I am getting the battery from the vault on face 2.',
+  'sequence-laser.in.how': 'The laser has power. Tell me the symbols in the order they light up.',
+  'sequence-laser.in.first': 'What is the first symbol?',
+  'sequence-laser.in.next': 'What is next?',
+  'sequence-laser.in.strike': 'That one was wrong, it all went dark. Tell me the order again from the start.',
+  'sequence-laser.out.dark': 'The symbols are dark. The laser on your side needs the battery from face 2.',
+  'sequence-laser.out.how': 'I watched the symbols light up. Say again to hear the order once more.',
+  'sequence-laser.out.strike': 'That one was wrong. Start over, from the first symbol.',
+  // face 6, laser-path. Directions are always on the walker's own screen.
+  'laser-path.relay': '{words}',
+  'laser-path.out.mirrors': 'I am pushing the mirrors to burn the crate. Stay on the ring, the lava is hot.',
+  'laser-path.out.side.1': 'I see the path. It starts from the side of the ring next to face 1. Go there.',
+  'laser-path.out.side.2': 'I see the path. It starts from the side of the ring next to face 2. Go there.',
+  'laser-path.out.side.3': 'I see the path. It starts from the side of the ring next to face 3. Go there.',
+  'laser-path.out.side.4': 'I see the path. It starts from the side of the ring next to face 4. Go there.',
+  'laser-path.out.lava': 'On that side, which way is the lava from you? Say up, down, left or right.',
+  'laser-path.out.tile': 'Now the tile to start from. Rows count from your top, columns from your left.',
+  'laser-path.out.ready': 'Say yes when you are there, and yes after each part. Say again to hear it.',
+  'laser-path.out.fell': 'You fell in. You are back on the ring, right beside the start of the path.',
+  'laser-path.in.side': 'I am staying on the ring. Which face does the path start next to? Say face 4.',
+  'laser-path.in.lava.up': 'I am on that side of the ring. On my screen the lava is up.',
+  'laser-path.in.lava.down': 'I am on that side of the ring. On my screen the lava is down.',
+  'laser-path.in.lava.left': 'I am on that side of the ring. On my screen the lava is left.',
+  'laser-path.in.lava.right': 'I am on that side of the ring. On my screen the lava is right.',
+  'laser-path.in.tile': 'Which tile do I start from? Say row or column and a number, on my screen.',
+  'laser-path.in.ready': 'I am on that tile. Which way now? Say it like: right 2 then up 1.',
+  'laser-path.in.done': 'Done. Which way now?',
+  'laser-path.in.ask': 'Which way now?',
+  'laser-path.in.fell': 'I fell in the lava. I am back beside the start of the path. Which way from here?',
+  // ---- end faces 4-6 ----
 };
 
 /** Fill the {placeholders} of a line. One that has no value stays as written. */

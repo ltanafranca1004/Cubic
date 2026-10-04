@@ -99,6 +99,10 @@ function humanOn(room: Room, side: Side, lines: Say[], opts: HumanOptions = {}) 
     },
   };
 }
+// ---- faces 4-6 (scripts-b) ----
+/** The order a human who knows the chain plays in: 2 hands the battery to 5, 5 lights 6, 6 hands the flower to 4. */
+const CHAIN_ORDER: FaceId[] = [1, 2, 3, 5, 6, 4];
+// ---- end faces 4-6 ----
 /** The whole-game tests need a script and a simulated human for every puzzle of the game. */
 const wholeGame = defaultEnv.puzzles.every((p) => PUZZLE_SCRIPTS.some((s) => s.id === p.id) && HUMAN_SCRIPTS.some((h) => h.id === p.id));
 
@@ -125,7 +129,7 @@ for (const humanSide of ['out', 'in'] as const) {
   test(`no Gemini key: the scripted partner and a human ${humanSide}side finish the whole game on a real Room`, { skip: !wholeGame }, async (t) => {
     const pass = clock(t);
     const { room, ai, said, lines } = setup(humanSide, null);
-    const { tick } = humanOn(room, humanSide, lines);
+    const { tick } = humanOn(room, humanSide, lines, { order: CHAIN_ORDER });
     for (let i = 0; i < 4500 && room.state.wonAt === null; i++) {
       await pass(200, 200);
       tick();
@@ -262,7 +266,7 @@ test('a whole game with a Gemini that hangs, errors and hits the rate limit is s
   const flaky: Reply[] = [];
   for (let i = 0; i < 40; i++) flaky.push('hang', new Error('503'), Object.assign(new Error('429'), { status: 429 }), 'not json at all');
   const { room, ai, lines } = setup('in', flaky);
-  const { tick } = humanOn(room, 'in', lines);
+  const { tick } = humanOn(room, 'in', lines, { order: CHAIN_ORDER });
   for (let i = 0; i < 6000 && room.state.wonAt === null; i++) {
     await pass(200, 200);
     tick();
