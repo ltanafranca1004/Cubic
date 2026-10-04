@@ -28,7 +28,8 @@ handle.update(state);                   // on every change
 | File | What |
 | --- | --- |
 | `cubicUI.ts` | The active `UIHost`. Starts the menu stage (`../scenes`), and is the DOM on top of it: top bar (leave, room code, gear), HUD, chat, voice, win screen. |
-| `settingsPanel.ts` | The panel behind the gear: master / music / SFX volume, proximity chat on/off and volume, mic mute. Same panel on every screen. |
+| `settingsPanel.ts` | The panel behind the gear: master / music / SFX volume, proximity chat on/off and volume, mic mute, hints on/off. Same panel on every screen. |
+| `onboarding/` | The hint layer over the HUD: side intro card, controls hint, the three context hints, the narrator's caption. `rules.ts` decides what shows (pure, tested in `test/onboarding.test.ts`), `index.ts` draws it, `anchors.ts` holds the HUD selectors the hints point at, `caption.ts` is the one `showCaption(text)` function. Narrator lines: `../content/narrator.ts`. Mounted once in `app.ts`. |
 | `css.ts` | The stylesheet. Sizes are in art pixels (`4u`), on the same pixel grid as the canvases. |
 | `hooks.ts` | The contract above. |
 | `mock.ts` | Static states for building UI without a server. |

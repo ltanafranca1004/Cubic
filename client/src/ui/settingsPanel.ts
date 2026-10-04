@@ -39,6 +39,7 @@ const ROWS: Row[] = [
   { section: 'access', kind: 'toggle', key: 'highContrast', label: 'High contrast' },
   { section: 'access', kind: 'toggle', key: 'screenShake', label: 'Screen shake' },
   { section: 'access', kind: 'toggle', key: 'reduceMotion', label: 'Reduce motion', icon: 'hand' },
+  { section: 'access', kind: 'toggle', key: 'hints', label: 'Hints' },
 ];
 
 function control(row: Row): string {
