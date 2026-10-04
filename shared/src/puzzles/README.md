@@ -62,7 +62,7 @@ out again, and has a test for it.
 Pure helpers, each with a usage example in its header comment: `keypad.ts` (digit keys,
 ENTER, display), `flip.ts` (a set of flipped tiles), `sequence.ts` (a light sequence on the
 tick, and checking the presses), `push.ts` (sokoban boxes), `hazard.ts` (lava: back to the
-start with a strike), `path.ts` (`safeLine`, a seeded winding path), `deps.ts`
+start with a strike), `deps.ts`
 (`lockedUntil(ctx, face)`). `util.ts` has `at`, `keyOf`, `around`, `flood`, `mix`.
 
 ## The hooks
