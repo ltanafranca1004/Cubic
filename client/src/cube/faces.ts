@@ -4,9 +4,9 @@ import { FACE_HUD } from '../style/tokens';
 import { faceOps, type CubeManifest } from './layout';
 import { pack, type CubeFaces, type FaceTex } from './raster';
 
-// THE SIX FACE TEXTURES, baked from the real maps with the real tiles, objects, items and
-// the turtles (assets/manifest.json), so the cube always shows the world as it is. Baked
-// once per (side, texel size) and kept.
+// THE SIX FACE TEXTURES, baked from the real maps with the real tiles, puzzle objects, items
+// and the turtles (assets/manifest.json), so the cube always shows the world as it is at
+// the start of a game. Baked once per (side, texel size) and kept.
 
 export interface CubeArt {
   manifest: CubeManifest;
@@ -72,10 +72,11 @@ const cache = new Map<string, FaceTex>();
 
 /**
  * One face as a texture, `texel` pixels per map tile (16 = the art as drawn; smaller sizes
- * are cut down with nearest-neighbour, so a pixel stays a pixel).
+ * are cut down with nearest-neighbour, so a pixel stays a pixel). `fixed`: leave out what
+ * differs from game to game (layout.ts: startObjects).
  */
-export function bakeFace(art: CubeArt | null, side: Side, face: FaceId, texel: number, player = false): FaceTex {
-  const key = `${art ? 'art' : 'flat'}:${side}:${face}:${texel}:${player}`;
+export function bakeFace(art: CubeArt | null, side: Side, face: FaceId, texel: number, player = false, fixed = false): FaceTex {
+  const key = `${art ? 'art' : 'flat'}:${side}:${face}:${texel}:${player}:${fixed}`;
   const hit = cache.get(key);
   if (hit) return hit;
   const full = FACE_SIZE * TILE_PX;
@@ -86,7 +87,7 @@ export function bakeFace(art: CubeArt | null, side: Side, face: FaceId, texel: n
   g.fillStyle = flat(side, face);
   g.fillRect(0, 0, full, full);
   if (art) {
-    for (const op of faceOps(art.manifest, side, face, player)) {
+    for (const op of faceOps(art.manifest, side, face, player, fixed)) {
       const sheet = art.sheets.get(op.image);
       if (!sheet) continue;
       const cols = Math.floor(sheet.width / TILE_PX);
@@ -112,8 +113,8 @@ export function bakeFace(art: CubeArt | null, side: Side, face: FaceId, texel: n
 }
 
 /** All six faces of one side. */
-export function bakeFaces(art: CubeArt | null, side: Side, texel: number, player = false): CubeFaces {
+export function bakeFaces(art: CubeArt | null, side: Side, texel: number, player = false, fixed = false): CubeFaces {
   const faces = {} as CubeFaces;
-  for (const face of FACES) faces[face] = bakeFace(art, side, face, texel, player);
+  for (const face of FACES) faces[face] = bakeFace(art, side, face, texel, player, fixed);
   return faces;
 }

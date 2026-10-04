@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { FACES, FACE_SIZE, NORMALS, SIDES, compassDrift, neighbours, screenToCanon, stepPose, upsOn, type FaceId, type Pose } from '@cubic/shared';
 import type { CubeMapDir } from '../src/cube/api';
-import { faceOps, texelFor, type CubeManifest } from '../src/cube/layout';
+import { faceOps, startObjects, texelFor, type CubeManifest } from '../src/cube/layout';
 import { apply, det, mul, rotX, rotY, type Mat3 } from '../src/cube/mat';
 import { HUD_TILT, QUARTER, facing, partnerHint, poseView, turnAt, turnBetween, upFromDrift, whereIs } from '../src/cube/orient';
 import { clearTarget, createTarget, drawCube, project, shadeOf, visibleFaces, type CubeFaces, type FaceTex } from '../src/cube/raster';
@@ -254,4 +254,19 @@ test('faces: every tile of the real map is drawn, then its objects, then the tur
       assert.equal(faceOps(manifest, side, face, false).filter((o) => o.image.startsWith('player')).length, 0);
     }
   assert.deepEqual([4, 8, 16].map((t) => texelFor(FACE_SIZE * t)), [4, 8, 16]);
+});
+
+test('faces: the cube shows what the puzzles show, in its state, and the HUD only what every game has', () => {
+  // none of these is a map object: they exist only through the puzzle's visible()
+  const has = (side: 'out' | 'in', face: FaceId, type: string, fixed = false) => startObjects(side, face, fixed).some((o) => o.type === type);
+  assert.ok(has('out', 1, 'code-mark') && has('in', 1, 'key') && has('in', 2, 'f2-safe'));
+  assert.ok(has('out', 3, 'f3-glyph') && has('in', 3, 'f3-tile') && has('out', 4, 'f4-pot'));
+  assert.ok(has('out', 5, 'f5-symbol') && has('out', 6, 'f6-mirror') && has('in', 6, 'f6-lava'));
+  // the number, the counts and the flowers differ per game: the HUD cube must not show another game's
+  assert.ok(!has('out', 1, 'code-mark', true) && !has('in', 4, 'f4-flowerpot', true));
+  assert.ok(has('out', 3, 'f3-glyph', true) && has('in', 1, 'key', true) && has('in', 6, 'f6-lava', true));
+  // the frame is the one of the object's state, not the type's default
+  const manifest: CubeManifest = { objects: { 'f6-lava': { image: 'objects.png', frames: { default: 1, hot: 1, cold: 2 } }, unknown: { image: 'objects.png', frames: { default: 9 } } } };
+  const lava = startObjects('in', 6).find((o) => o.type === 'f6-lava')!;
+  assert.equal(faceOps(manifest, 'in', 6, false).find((o) => o.x === lava.x && o.y === lava.y)!.frame, 2);
 });
