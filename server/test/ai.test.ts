@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { after, test, type TestContext } from 'node:test';
-import { AI_STEP_MS, CORE_LINES, FACES, PUZZLE_SCRIPTS, defaultEnv, devSolve, devTeleport, faceDistance, lineKeys, visibleObjects, type FaceId, type PuzzleScript, type Say, type Side } from '@cubic/shared';
+import { AI_STEP_MS, CORE_LINES, FACES, PUZZLE_SCRIPTS, createGame, defaultEnv, devSolve, devTeleport, faceDistance, lineKeys, visibleObjects, type FaceId, type PuzzleScript, type Say, type Side } from '@cubic/shared';
 import { HUMAN_SCRIPTS, SimHuman, type HumanOptions } from '../../shared/test/partnerSim';
 import { AiPlayer, LINE_GAP_MS, LINE_MS_PER_CHAR, STALE_MS, lineHoldMs, parseReply, type AiOptions } from '../src/ai/aiPlayer';
 import { Budget, GEMINI_PAUSE_MS } from '../src/ai/budget';
@@ -52,8 +52,10 @@ function clock(t: TestContext) {
  * Gemini; null = no key. `humanOn` puts the human on another face first, so the bot has
  * somewhere to walk whatever the puzzles are.
  */
-function setup(human: Side, replies: Reply[] | null, opts: AiOptions & { humanOn?: FaceId; bothOn?: FaceId } = {}) {
+function setup(human: Side, replies: Reply[] | null, opts: AiOptions & { humanOn?: FaceId; bothOn?: FaceId; seed?: number } = {}) {
   const room = rooms.create('ai');
+  // a room draws a fresh seed per game: a test that is about one layout pins it
+  if (opts.seed !== undefined) room.state = createGame(Date.now(), defaultEnv, opts.seed);
   room.sit(human);
   const prompts: string[] = [];
   const brain: Brain | null = replies && {
@@ -67,7 +69,7 @@ function setup(human: Side, replies: Reply[] | null, opts: AiOptions & { humanOn
     },
   };
   const logs: string[] = [];
-  const { humanOn, bothOn, ...ai_ } = opts;
+  const { humanOn, bothOn, seed: _seed, ...ai_ } = opts;
   /** The script's own lines as they were said: what a simulated human listens to. */
   const lines: Say[] = [];
   const ai = new AiPlayer(room, other(human), brain, {
@@ -146,8 +148,36 @@ for (const humanSide of ['out', 'in'] as const) {
     assert.equal(room.state.strikes, 0);
     assert.equal(ai.calls, 0);
     assert.ok(said().every((line) => line.length <= MAX_SAY_CHARS)); // only its own lines, each one short enough
-    await pass(400);
-    assert.equal(said().at(-1), L('win'));
+    assert.equal(await lastWord(pass, said), L('win'));
+  });
+}
+
+/**
+ * The win line is said like any other: after the line before it has had its time (lineHoldMs,
+ * up to MAX_SAY_CHARS * LINE_MS_PER_CHAR = 5.2 s) and after whatever still waits in front of
+ * it. Let the AI finish talking, then return its last line.
+ */
+async function lastWord(pass: (ms: number, slice?: number) => Promise<void>, said: () => string[]): Promise<string | undefined> {
+  for (let i = 0; i < 150 && said().at(-1) !== L('win'); i++) await pass(200, 200);
+  return said().at(-1);
+}
+
+// Seeds whose last flower is planted while the AI is still saying something: the win line
+// came later than the 400 ms the whole-game test used to wait, and the test failed about
+// two runs in five (a room draws a fresh seed). The game itself was always won.
+for (const seed of [2, 29, 33, 40]) {
+  test(`no Gemini key: seed ${seed}, where the win comes while the AI is talking: the game is won and "win" is its last word`, { skip: !wholeGame }, async (t) => {
+    const pass = clock(t);
+    const { room, said, lines } = setup('out', null, { seed });
+    const { tick } = humanOn(room, 'out', lines, { order: CHAIN_ORDER });
+    for (let i = 0; i < 4500 && room.state.wonAt === null; i++) {
+      await pass(200, 200);
+      tick();
+    }
+    assert.notEqual(room.state.wonAt, null, `solved ${room.state.solved.join()}`);
+    assert.equal(room.state.strikes, 0);
+    assert.equal(await lastWord(pass, said), L('win'));
+    assert.equal(said().filter((l) => l === L('win')).length, 1);
   });
 }
 

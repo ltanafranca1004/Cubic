@@ -313,6 +313,31 @@ test('botanical-mirror: the objective says what each side has to do', () => {
   for (const side of SIDES) assert.equal(objective(state, side), 'Every pot is in bloom.');
 });
 
+test('botanical-mirror: 200 seeds: every start flower can be walked to and picked up, and every flower planted in its pot', () => {
+  for (let seed = 0; seed < 200; seed++) {
+    // the real maps and the real blockers of every puzzle; the crate's flower is put in the hands at the end
+    const state = createGame(0, defaultEnv, seed);
+    const t = solver(state);
+    const ids = startFlowers(seed).map((f) => f.id);
+    assert.equal(ids.length, 4, `seed ${seed}`);
+    for (const id of [...ids, FLOWER_ID]) {
+      if (id === FLOWER_ID) hold(state, flowerColour(seed));
+      else {
+        t.go('out', t.item(id));
+        assert.deepEqual(t.interact('out').map((e) => e.type), ['pickup'], `seed ${seed}: ${id}`);
+      }
+      const colour = state.items[id]!.kind.slice('flower-'.length);
+      const pot = visibleObjects(state, 'in', FACE).find((o) => o.state === colour)!;
+      // every pot has a tile beside it that can be reached and faced from
+      t.face('out', tileOf(pot));
+      assert.deepEqual(facedTile(state, 'out'), tileOf(pot), `seed ${seed}: the pot at ${pot.x},${pot.y} cannot be faced`);
+      assert.ok(t.interact('out').some((e) => e.type === 'place'), `seed ${seed}: ${id}`);
+      assert.deepEqual([state.players.out.carrying, !!state.items[id]!.placedOn], [null, true], `seed ${seed}: ${id}`);
+    }
+    assert.deepEqual([state.solved.includes(FACE), state.strikes], [true, 0], `seed ${seed}`);
+  }
+});
+
 test('botanical-mirror: the real game: fetch the five flowers and plant them, for many seeds', () => {
   for (let seed = 0; seed < 25; seed++) {
     const state = createGame(0, defaultEnv, seed);
