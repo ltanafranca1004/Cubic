@@ -29,6 +29,7 @@ export class ModeScene extends MenuScene {
   private net!: Phaser.GameObjects.Container;
   private buttons: Button[] = [];
   private aiButtons: Button[] = [];
+  private back!: Button;
   private status!: Text;
   private focus = -1;
   private popup: JoinPopup | null = null;
@@ -46,19 +47,13 @@ export class ModeScene extends MenuScene {
     this.focus = -1;
     this.add.rectangle(0, 0, W, H, hex(ROLE.surface)).setOrigin(0, 0);
 
-    // Back button in bottom-left corner
-    new Button(this, {
-      label: 'BACK',
-      variant: 'light',
-      width: 80,
-      height: 26,
-      onClick: () => this.ctx.flow.goTo('start')
-    }).setPosition(16, H - 42); // 16px from left, 26px height + 16px margin from bottom
-
     const cx = Math.round(W / 2);
     const cy = Math.round(H / 2);
     // the world, faded, behind everything
     this.buildNet(cx, cy);
+
+    // Back button in bottom-left corner, over the net: 16px from the left and the bottom
+    this.back = new Button(this, { label: 'BACK', variant: 'light', width: 80, height: 26, onClick: () => this.ctx.flow.back() }).setPosition(16, H - 42);
 
     // a small title and one clear vertical menu
     const { actions } = this.ctx;
@@ -93,7 +88,7 @@ export class ModeScene extends MenuScene {
       // arriving through the clouds: the world grows as we fall, then the choices land
       this.net.setScale(0.3).setAlpha(0);
       this.tweens.add({ targets: this.net, scale: 1, alpha: NET_ALPHA, delay: TIME.dive * 0.4, duration: TIME.dive * 0.6, ease: EASE.out });
-      [title, ...this.buttons.map((b) => b.root), this.status].forEach((o, i) => {
+      [title, ...this.buttons.map((b) => b.root), this.status, this.back.root].forEach((o, i) => {
         const y = o.y;
         o.setAlpha(0).setY(y + 10);
         this.tweens.add({ targets: o, y, alpha: 1, delay: TIME.dive * 0.8 + i * 50, duration: TIME.panel, ease: EASE.out });
@@ -145,6 +140,8 @@ export class ModeScene extends MenuScene {
     const busy = s.status === 'connecting' || !s.online;
     this.buttons.forEach((b) => b.setEnabled(!busy && !this.popup));
     this.aiButtons.forEach((b) => b.setEnabled(!busy && !this.popup && s.aiAvailable));
+    // while we wait for a room, Back would only bounce straight into it
+    this.back.setEnabled(s.status !== 'connecting' && !this.popup);
     const msg = !s.online ? 'WAKING THE SERVER... THIS CAN TAKE A MINUTE.' : s.status === 'connecting' ? 'CONNECTING...' : !this.popup && s.error ? s.error.toUpperCase() : ENABLE_AI && !s.aiAvailable ? 'THE AI PARTNER IS NOT AVAILABLE ON THIS SERVER.' : '';
     paint(this.status.setText(msg), !this.popup && s.error && s.online ? ROLE.danger : ROLE.ink);
     this.status.x = Math.round(this.W / 2 - this.status.width / 2);
@@ -191,6 +188,7 @@ export class ModeScene extends MenuScene {
       const next = this.focus < 0 ? 0 : this.focus + move[e.key]!;
       if (next >= 0 && next < this.buttons.length) this.setFocus(next);
     } else if (e.key === 'Enter' && this.focus >= 0) this.buttons[this.focus]!.press();
+    else if (e.key === 'Escape') this.back.press();
   }
 }
 
