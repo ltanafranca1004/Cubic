@@ -3,7 +3,7 @@ import { FACE_SIZE, TILE_PX, canonToScreen, itemsOn, screenToCanon, tileAt, visi
 import { inputPaused } from '../input/gate';
 import { settings } from '../style/settings';
 import { CodeArt, type ArtProvider } from './art';
-import { InputBuffer, easeInOut, hopLift, mirrorStrip, rollPoint, rollStrips, rollWalker, transitionKind, transitionMs, upBeforeFlip, type Buffered, type TransitionKind } from './transition';
+import { InputBuffer, easeInOut, hopBoxes, hopFrame, mirrorStrip, rollPoint, rollStrips, rollWalker, transitionKind, transitionMs, upBeforeFlip, type Buffered, type TransitionKind } from './transition';
 
 // The playable view. Shows ONLY the local player's side of the face they are on, rotated
 // and mirrored so their own "up" is screen-up: every screen cell is looked up through
@@ -24,11 +24,19 @@ const LIGHT_FAR = FACE_SIZE * 0.55;
 const DARK_MAX = 0.92;
 const BG = '#2e222f';
 /** Inside: the wall between two rooms, seen while hopping over it. */
-const WALL_PX = 6;
+const WALL_PX = 10;
 const WALL = '#3e3546';
 const WALL_TOP = '#625565';
+const WALL_LIGHT = '#7f708a';
+const WALL_EDGE = '#2e222f';
+const WALL_SHADE = 'rgba(0, 0, 0, 0.35)';
+/** A wall lying across the screen shows this much of its near face; the top is that much higher. */
+const WALL_FACE = 4;
+const WALL_RISE = WALL_FACE + 1;
+/** How much of the wall's thickness is its top (after the far edge line), by how it lies. */
+const wallTop = (upright: boolean): number => WALL_PX - 2 - (upright ? 1 : WALL_FACE);
 /** How high the inside player hops. */
-const HOP_PX = 10;
+const HOP_PX = 14;
 const WALK_FRAME_MS = 90;
 /** The turtle sheets (sprites/player-*.png): 6 columns, 4-frame walk rows per direction. */
 const TURTLE = { cols: 6, down: 5, up: 6, right: 7, frames: 4 };
@@ -317,6 +325,39 @@ export class GameScene extends Phaser.Scene {
     return key ? { key, flip: t.dx < 0 } : { key: this.art.player(this.me, player.steps + tick), flip: player.pose.dir < 0 };
   }
 
+  /**
+   * Inside: the wall between two rooms, WALL_PX thick from `start` along the direction
+   * walked. A wall running up the screen shows its top; one running across also shows its
+   * near face. Either way it drops a shadow on the floor beside it.
+   */
+  private paintWall(g: CanvasRenderingContext2D, upright: boolean, start: number): void {
+    const V = VIEW_PX;
+    // `along` runs through the wall's thickness, whichever way the wall lies.
+    const band = (along: number, thick: number, color: string) => {
+      g.fillStyle = color;
+      if (upright) g.fillRect(start + along, 0, thick, V);
+      else g.fillRect(0, start + along, V, thick);
+    };
+    const face = upright ? 1 : WALL_FACE;
+    const top = wallTop(upright) - 1;
+    band(0, WALL_PX, WALL_EDGE);
+    band(1, 1, WALL_LIGHT);
+    band(2, top, WALL_TOP);
+    band(2 + top, face, WALL);
+    band(WALL_PX, 2, WALL_SHADE);
+    // Stone joints, so the wall reads as built, not as a gap.
+    g.fillStyle = WALL;
+    for (let i = 0; i < V; i += TILE_PX) {
+      const j = i + (TILE_PX >> 1);
+      if (upright) g.fillRect(start + 2, j, top, 1);
+      else g.fillRect(j, start + 2, 1, top);
+    }
+    if (!upright) {
+      g.fillStyle = WALL_EDGE;
+      for (let i = 0; i < V; i += TILE_PX) g.fillRect(i, start + 2 + top + 1, 1, face - 1);
+    }
+  }
+
   private drawTransition(t: Transition, time: number): void {
     const state = this.state;
     if (!state) return;
@@ -351,26 +392,60 @@ export class GameScene extends Phaser.Scene {
 
     const { key, flip } = this.walkKey(t, elapsed);
     if (t.kind === 'hop') {
-      // The view slides to the next room; the wall between the two passes under the hop.
-      const e = easeInOut(k);
+      // The view slides to the next room while the character jumps the wall between the two.
+      // All of it is painted here, in whole pixels (the sprites are hidden): floor, shadow,
+      // wall, then the character above the wall.
       const span = V + WALL_PX;
-      const fromX = Math.round(-t.dx * span * e);
-      const fromY = Math.round(-t.dy * span * e);
-      const toX = fromX + t.dx * span;
-      const toY = fromY + t.dy * span;
-      g.fillStyle = WALL;
+      const hop = hopFrame(k, { size: T, span, reach: T + WALL_PX, height: HOP_PX });
+      const fromX = t.dx ? -t.dx * hop.slide : 0;
+      const fromY = t.dy ? -t.dy * hop.slide : 0;
+      const at = hopBoxes(hop, fromX + t.from.sx * T + t.dx * hop.travel, fromY + t.from.sy * T + t.dy * hop.travel, T);
+      // A hop from the top rows would leave the view: the view follows it up instead, and
+      // shows the wall along the top of the rooms.
+      const peek = Math.max(0, -at.body.y);
+      g.fillStyle = BG;
       g.fillRect(0, 0, V, V);
-      g.fillStyle = WALL_TOP;
-      if (sideways) g.fillRect(Math.min(fromX, toX) + V + 1, 0, 2, V);
-      else g.fillRect(0, Math.min(fromY, toY) + V + 1, V, 2);
+      g.save();
+      g.translate(0, peek);
+      if (peek > 0) this.paintWall(g, false, -WALL_PX);
       g.drawImage(from, fromX, fromY);
-      g.drawImage(to, toX, toY);
+      g.drawImage(to, fromX + t.dx * span, fromY + t.dy * span);
+      // The shadow stays on the ground under the character. The wall is painted over the
+      // part on the floor behind it, and the part that falls on the wall lies on its top.
+      const shade = (rise: number) => {
+        const s = at.shadow;
+        g.fillStyle = `rgba(0, 0, 0, ${hop.shadowAlpha})`;
+        g.fillRect(s.x + 2, s.y - rise, s.w - 4, 1);
+        g.fillRect(s.x, s.y - rise + 1, s.w, s.h - 2);
+        g.fillRect(s.x + 2, s.y - rise + s.h - 1, s.w - 4, 1);
+      };
+      const wall = (sideways ? Math.min(fromX, fromX + t.dx * span) : Math.min(fromY, fromY + t.dy * span)) + V;
+      if (hop.shadowAlpha > 0) shade(0);
+      this.paintWall(g, sideways, wall);
+      if (hop.shadowAlpha > 0) {
+        g.save();
+        g.beginPath();
+        if (sideways) g.rect(wall + 1, 0, wallTop(true), V);
+        else g.rect(0, wall + 1, V, wallTop(false));
+        g.clip();
+        shade(WALL_RISE);
+        g.restore();
+      }
+      const image = (name: string) => this.textures.get(name).getSourceImage() as CanvasImageSource;
+      const b = at.body;
+      if (flip) {
+        g.save();
+        g.translate(b.x + b.w, b.y);
+        g.scale(-1, 1);
+        g.drawImage(image(key), 0, 0, b.w, b.h);
+        g.restore();
+      } else g.drawImage(image(key), b.x, b.y, b.w, b.h);
+      const player = state.players[this.me];
+      const item = player.carrying ? state.items[player.carrying] : null;
+      if (item) g.drawImage(image(this.art.item(item.kind)), at.carried.x, at.carried.y);
+      g.restore();
       this.face.refresh();
-      const ax = fromX + t.from.sx * T;
-      const ay = fromY + t.from.sy * T;
-      const bx = toX + sx * T;
-      const by = toY + sy * T;
-      this.placeHero(Math.round(ax + (bx - ax) * e), Math.round(ay + (by - ay) * e) - hopLift(k, HOP_PX), key, flip);
+      for (const o of [this.hero, this.shadow, this.carried]) o.setVisible(false);
       return;
     }
 
