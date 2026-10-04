@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { io, type Socket } from 'socket.io-client';
-import { FACE_SIZE, defaultEnv, pathTo, type ChatMessage, type ClientToServer, type GameEvent, type RoomInfo, type Seat, type ServerToClient, type Side, type StateUpdate, type FaceId, type TileRef } from '@cubic/shared';
+import { FACE_SIZE, defaultEnv, pathTo, visibleObjects, type ChatMessage, type ClientToServer, type GameEvent, type RoomInfo, type Seat, type ServerToClient, type Side, type StateUpdate, type FaceId, type TileRef } from '@cubic/shared';
+import { readCode } from '../../shared/src/puzzles/hiddenCode';
 import { createApp, type App } from '../src/app';
 import { LIMITS } from '../src/rooms';
 
@@ -209,8 +210,15 @@ test('two clients play a whole game online', async () => {
   };
 
   // ---------- face 1: hidden-code ----------
-  await stub(a, 1);
-  await b.until(() => b.events.some((e) => e.type === 'use' && e.side === 'out'), 'the use event reaches the other player');
+  // outside reads the number laid out in the grass, inside types it on the floor keypad
+  const code = readCode(visibleObjects(a.last.state, 'out', 1));
+  assert.ok(code, 'the outside player sees the number');
+  assert.equal(readCode(visibleObjects(b.last.state, 'in', 1)), null, 'the inside player does not');
+  for (const name of [...code, 'enter']) {
+    await b.walkTo(find('in', 1, 'key', name));
+    await b.interact();
+  }
+  await a.until(() => a.events.some((e) => e.type === 'use' && e.side === 'in'), 'the use event reaches the other player');
   await b.until(() => b.events.some((e) => e.type === 'solve' && e.face === 1), 'solve reaches both');
   assert.deepEqual(a.last.state.solved, [1]);
   // ---------- end face 1 ----------

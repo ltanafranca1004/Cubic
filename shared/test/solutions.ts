@@ -1,4 +1,7 @@
+import assert from 'node:assert/strict';
+import { visibleObjects } from '../src/index';
 import type { FaceId, Side } from '../src/index';
+import { readCode } from '../src/puzzles/hiddenCode';
 import type { SolutionScript, Solver } from './harness';
 
 // ONE SOLUTION SCRIPT PER PUZZLE, keyed by the module's `id`.
@@ -26,7 +29,15 @@ const stub = (face: FaceId, side: Side = 'out') => (t: Solver) => {
 
 export const SOLUTIONS: Record<string, SolutionScript> = {
   // ---------- face 1: hidden-code ----------
-  'hidden-code': stub(1),
+  // Outside reads the number in the grass and says it; inside types it and presses ENTER.
+  'hidden-code': (t) => {
+    const code = readCode(visibleObjects(t.state, 'out', 1, t.env));
+    assert.ok(code, 'the outside player sees no number on face 1');
+    for (const name of [...code, 'enter']) {
+      t.go('in', t.find('in', 1, 'key', name));
+      t.interact('in');
+    }
+  },
   // ---------- end face 1 ----------
 
   // ---------- face 2: equation-safe ----------

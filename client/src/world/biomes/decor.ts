@@ -92,20 +92,21 @@ export const DECOR_LEGEND: Readonly<Record<string, Entry>> = {
  * same columns). Each face is composed around one thing to remember it by.
  */
 export const DECOR: Record<FaceId, readonly string[]> = {
-  // Grass: a meadow taller than the turtle down the west side, a lily pond with reeds in the south east.
+  // Grass: a meadow taller than the turtle in the south west, a lily pond with reeds in the south east.
+  // Rows 2-6 stay bare: the hidden code's number is laid out there.
   1: [
-    'g...........',
-    '..g.....f...',
-    '.ggg....f...',
-    '..gg..f.....',
+    'g.g..f...f..',
+    '..g.g...f...',
     '............',
-    '...f...f....',
-    '........r...',
-    'gg.....r.l..',
-    'ggg...r.l...',
-    'gg.g...r....',
-    '..ggg.......',
-    'g.gg....f...',
+    '............',
+    '............',
+    '............',
+    '............',
+    'ggg.f..r.l..',
+    'gggg..r.l...',
+    'gg.g...r.r..',
+    '..ggg.f.....',
+    'g.gg.g..f...',
   ],
   // Desert: the oasis. Palms and reeds round the pool, bare sand and bones away from it.
   2: [
