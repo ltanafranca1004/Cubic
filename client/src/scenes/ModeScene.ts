@@ -46,6 +46,15 @@ export class ModeScene extends MenuScene {
     this.focus = -1;
     this.add.rectangle(0, 0, W, H, hex(ROLE.surface)).setOrigin(0, 0);
 
+    // Back button in bottom-left corner
+    new Button(this, {
+      label: 'BACK',
+      variant: 'light',
+      width: 80,
+      height: 26,
+      onClick: () => this.ctx.flow.goTo('start')
+    }).setPosition(16, H - 42); // 16px from left, 26px height + 16px margin from bottom
+
     const cx = Math.round(W / 2);
     const cy = Math.round(H / 2);
     // the world, faded, behind everything
