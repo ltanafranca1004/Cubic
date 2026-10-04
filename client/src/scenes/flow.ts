@@ -28,6 +28,14 @@ export interface StageContext {
 export const ctxOf = (scene: Phaser.Scene): StageContext => scene.registry.get('ctx') as StageContext;
 /** Game event fired on every UI state change (payload: the UIState). */
 export const UI_EVENT = 'cubic:ui';
+/** Game event fired when a transition has ended: scenes that put off a rebuild do it now. */
+export const SETTLED_EVENT = 'cubic:settled';
+/**
+ * How long after a transition should have ended the flow ends it by itself. Its end
+ * normally comes from the leaving scene (a tween, a camera fade, a timer); if that scene
+ * is restarted or stopped meanwhile the end never comes, and the menus would stay stuck.
+ */
+const GUARD_MS = 1000;
 
 export class Flow {
   current: Screen | null = null;
@@ -35,6 +43,9 @@ export class Flow {
   entered = false;
   private busy = false;
   private loaded = false;
+  /** Ends the transition under way. Safe to call twice: only the first call counts. */
+  private finish: (() => void) | null = null;
+  private guard: ReturnType<typeof setTimeout> | undefined;
 
   constructor(
     private game: Phaser.Game,
@@ -50,6 +61,37 @@ export class Flow {
   /** Tell the cube scene which screen it is behind now (the game hides it). */
   private cube(to: Screen, ms: number): void {
     (this.game.scene.getScene('cube') as CubeBackdropScene).show(to === 'backdrop' ? 'off' : to, ms);
+  }
+
+  /** A transition is under way: scenes must not restart until it has ended. */
+  get moving(): boolean {
+    return this.busy;
+  }
+
+  /**
+   * Start a transition of `ms`. `done` runs exactly once: when the caller's own end fires
+   * (through `this.finish`), or from the guard timer if that end was lost.
+   */
+  private begin(ms: number, done: () => void): () => void {
+    this.busy = true;
+    const finish = () => {
+      if (this.finish !== finish) return;
+      clearTimeout(this.guard);
+      this.finish = null;
+      done();
+      this.busy = false;
+      this.game.events.emit(SETTLED_EVENT);
+      this.route(); // the state may have moved on meanwhile
+    };
+    this.finish = finish;
+    this.guard = setTimeout(finish, ms + GUARD_MS);
+    return finish;
+  }
+
+  /** The stage is going away: no timer may fire into a destroyed game. */
+  destroy(): void {
+    clearTimeout(this.guard);
+    this.finish = null;
   }
 
   private want(): Screen {
@@ -80,7 +122,6 @@ export class Flow {
       scenes.start(to, {});
       return;
     }
-    this.busy = true;
     const half = (to === 'backdrop' ? TIME.enterGame : TIME.scene) / 2;
     const scene = scenes.getScene(from);
     const cam = scene.cameras.main;
@@ -88,13 +129,11 @@ export class Flow {
     // its place behind the next screen. Into and out of the game everything goes through
     // a colour, and the cube is put away (or brought back) while the screen is covered.
     const menus = to !== 'backdrop' && from !== 'backdrop';
-    const next = () => {
+    const next = this.begin(half, () => {
       scenes.stop(from);
       if (!menus) this.cube(to, 0);
       scenes.start(to, menus ? { fadeIn: half, soft: true } : { fadeIn: half, fadeColor: fade.color });
-      this.busy = false;
-      this.route(); // the state may have moved on while we were fading
-    };
+    });
     if (menus) {
       this.cube(to, half * 2);
       scene.tweens.add({ targets: cam, alpha: 0, duration: half, onComplete: next });
@@ -113,7 +152,7 @@ export class Flow {
 
   /** StartScene began its dive: the mode screen appears underneath it. */
   dive(): void {
-    this.busy = true;
+    this.begin(TIME.dive, () => this.game.scene.stop('start'));
     this.entered = true;
     this.current = 'mode';
     this.game.scene.run('mode', { intro: true });
@@ -122,9 +161,7 @@ export class Flow {
   }
 
   diveDone(): void {
-    this.game.scene.stop('start');
-    this.busy = false;
-    this.route();
+    this.finish?.();
   }
 }
 
@@ -146,6 +183,8 @@ export interface SceneData {
 /** Base for the menu scenes: state access, fade in, rebuild on resize. */
 export abstract class MenuScene extends Phaser.Scene {
   protected ctx!: StageContext;
+  /** The window was resized during a transition: rebuild when it has ended. */
+  private stale = false;
   private onUi = (): void => {
     if (this.scene.isActive()) this.sync();
   };
@@ -174,11 +213,23 @@ export abstract class MenuScene extends Phaser.Scene {
       const { r, g, b } = splitRgb(hex(data.fadeColor ?? C.white));
       this.cameras.main.fadeIn(data.fadeIn, r, g, b);
     }
-    const rebuild = () => this.scene.restart({});
+    // A restart in the middle of a transition would kill the tween, fade or timer that
+    // ends it, so a resize then only marks the scene, and it is rebuilt once the flow has
+    // settled (if it is still the screen being shown: the one we left is stopped instead).
+    this.stale = false;
+    const rebuild = () => {
+      if (this.ctx.flow.moving) this.stale = true;
+      else this.scene.restart({});
+    };
+    const settled = () => {
+      if (this.stale && this.ctx.flow.current === this.scene.key) this.scene.restart({});
+    };
     this.game.events.on(UI_EVENT, this.onUi);
+    this.game.events.on(SETTLED_EVENT, settled);
     this.scale.on(Phaser.Scale.Events.RESIZE, rebuild);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.game.events.off(UI_EVENT, this.onUi);
+      this.game.events.off(SETTLED_EVENT, settled);
       this.scale.off(Phaser.Scale.Events.RESIZE, rebuild);
     });
     this.sync();

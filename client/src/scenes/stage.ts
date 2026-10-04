@@ -80,6 +80,7 @@ export function createStage(parent: HTMLElement, actions: UIActions, initial: UI
     screen: () => ctx.flow.current,
     destroy() {
       window.removeEventListener('resize', onResize);
+      ctx.flow.destroy();
       game.destroy(true);
     },
   };

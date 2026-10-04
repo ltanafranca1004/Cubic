@@ -4,9 +4,12 @@
 // step that does not end where it should. It also checks that no click on a DOM overlay
 // (settings, pause, chat) reaches a canvas button behind it, and that the side select
 // heroes land back where they started however fast the sides are switched.
+// Before that it resizes the window in the middle of every screen transition (the dive,
+// the fade to side select, the fade into the game and the fade back out), which must
+// never leave the menus stuck between two screens.
 //
 //   needs:  npm run dev (server :3001, client :5173)      BASE overrides the client URL
-//   run:    cd tools && npx tsx screens/check.ts
+//   run:    cd tools && npx tsx screens/check.ts            (add "resize" for the resize steps only)
 //   other ports:  PORT=3340 AI_FAKE=1 npm run dev -w server
 //                 VITE_SERVER_URL=http://localhost:3340 npm run dev -w client -- --port 5440
 //                 cd tools && BASE=http://localhost:5440 npx tsx screens/check.ts
@@ -216,6 +219,87 @@ async function hasPanel(page: Page, label: string): Promise<boolean> {
   return !(r! > 240 && g! > 240 && bl! > 240); // not white: there is a panel there
 }
 
+/**
+ * Resize the window again and again for `ms`, as dragging its edge or going fullscreen
+ * does, and end on the size it started with.
+ */
+async function resizeStorm(page: Page, size: { width: number; height: number }, ms: number): Promise<void> {
+  const small = { width: size.width - 160, height: size.height - 90 };
+  const end = Date.now() + ms;
+  for (let i = 0; Date.now() < end; i++) {
+    await page.setViewportSize(i % 2 ? size : small);
+    await page.waitForTimeout(50);
+  }
+  await page.setViewportSize(size);
+}
+
+/**
+ * The window is resized in the middle of every screen transition. Each one must still end
+ * on the screen it was heading for, with the keyboard and the mouse working there.
+ */
+async function resizeMidTransition(browser: Browser, size: { width: number; height: number }, renderer: 'webgl' | 'canvas'): Promise<void> {
+  const tag = `${size.width}x${size.height} ${renderer} resize`;
+  const q = renderer === 'canvas' ? '?renderer=canvas' : '';
+  const MODE = 'BACK|CREATE LOBBY|JOIN LOBBY';
+  const a = await open(browser, size, q, `${tag} host`);
+
+  // during the dive after Play
+  await click(a, 'PLAY', tag);
+  await a.waitForTimeout(150);
+  await resizeStorm(a, size, 700);
+  await expect(tag, 'a resize during the dive still lands on the mode screen', async () => (await labelsOf(a)) === MODE, 6000);
+  await a.waitForTimeout(400);
+  await a.keyboard.press('Escape');
+  await expect(tag, 'Esc works after it (back to the title)', async () => (await labelsOf(a)) === 'PLAY');
+  await a.waitForTimeout(600);
+  await click(a, 'PLAY', tag);
+  await a.waitForTimeout(2200);
+
+  // during the fade from the mode screen to side select
+  // (the storm starts the moment the room exists, which is when the fade starts)
+  await click(a, 'CREATE LOBBY', tag);
+  await a.waitForFunction(() => !!window.__cubic.code, undefined, { polling: 'raf', timeout: 5000 }).catch(() => fail(`${tag}: Create Lobby made no room`));
+  await resizeStorm(a, size, 700);
+  await expect(tag, 'a resize during the fade to side select still shows the lobby', async () => !!(await net(a, (c) => c.code)) && (await buttons(a)).some((b) => b.label === 'LEAVE') && !(await buttons(a)).some((b) => b.label === 'CREATE LOBBY'), 6000);
+  await a.waitForTimeout(500);
+  await a.keyboard.press('a');
+  await expect(tag, 'keys work after it (the host picks a side)', async () => !!(await net(a, (c) => c.room?.members.host?.side ?? null)));
+  const code = (await net(a, (c) => c.code)) ?? '';
+
+  // during the fade into the game, on both clients
+  const b = await open(browser, size, q, `${tag} guest`);
+  await click(b, 'PLAY', tag);
+  await b.waitForTimeout(2200);
+  await click(b, 'JOIN LOBBY', tag);
+  await b.waitForTimeout(500);
+  await b.keyboard.type(code.toLowerCase());
+  await click(b, 'JOIN', tag);
+  await expect(tag, 'the guest joins', async () => (await net(b, (c) => c.role)) === 'guest');
+  await b.waitForTimeout(900);
+  await b.keyboard.press('d');
+  await b.waitForTimeout(400);
+  await click(b, 'READY', tag);
+  await a.waitForTimeout(600);
+  await click(a, 'START', tag);
+  await a.waitForFunction(() => window.__cubic.room?.phase === 'playing', undefined, { polling: 'raf', timeout: 5000 }).catch(() => fail(`${tag}: Start did not start the game`));
+  await Promise.all([resizeStorm(a, size, 800), resizeStorm(b, size, 800)]);
+  await expect(tag, 'a resize during the fade into the game still ends in the game, menus gone', async () => (await screenOf(a)) === 'game' && (await screenOf(b)) === 'game' && (await labelsOf(a)) === '' && (await labelsOf(b)) === '', 6000);
+  await a.waitForTimeout(800);
+  await a.keyboard.press('Escape');
+  await expect(tag, 'Esc opens the pause menu after it', () => a.evaluate(() => !!document.querySelector('#cu-pause.on')));
+
+  // during the fade out of the game, after Leave
+  await mouseClick(a, await middle(a, '#cu-pause [data-act="leave"]'));
+  await resizeStorm(a, size, 800);
+  await expect(tag, 'a resize during the fade out of the game still lands on the mode screen', async () => (await labelsOf(a)) === MODE, 6000);
+  await a.waitForTimeout(700);
+  await click(a, 'CREATE LOBBY', tag);
+  await expect(tag, 'the mouse works after it (Create Lobby makes a room)', async () => !!(await net(a, (c) => c.code)));
+
+  await a.close();
+  await b.close();
+}
+
 async function run(browser: Browser, size: { width: number; height: number }, renderer: 'webgl' | 'canvas'): Promise<void> {
   const tag = `${size.width}x${size.height} ${renderer}`;
   const q = renderer === 'canvas' ? '?renderer=canvas' : '';
@@ -412,7 +496,10 @@ async function run(browser: Browser, size: { width: number; height: number }, re
 const browser = await chromium.launch();
 try {
   for (const size of [{ width: 1920, height: 1080 }, { width: 1280, height: 720 }]) {
-    for (const renderer of ['webgl', 'canvas'] as const) await run(browser, size, renderer);
+    for (const renderer of ['webgl', 'canvas'] as const) {
+      await resizeMidTransition(browser, size, renderer).catch((e: Error) => fail(`${size.width}x${size.height} ${renderer} resize: stopped early: ${e.message}`));
+      if (process.argv[2] !== 'resize') await run(browser, size, renderer);
+    }
   }
 } finally {
   await browser.close();
