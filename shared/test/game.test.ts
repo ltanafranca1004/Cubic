@@ -6,6 +6,7 @@ import {
   applyInteract,
   applyMove,
   createGame,
+  devSolve,
   defaultEnv,
   loadWorld,
   objectiveFor,
@@ -121,6 +122,8 @@ test('portal win: needs every puzzle solved and both players on the portal', () 
   assert.ok(planted.some((e) => e.type === 'place' && e.item === 'rose'));
   assert.ok(planted.some((e) => e.type === 'puzzle' && e.name === 'bloom'));
   assert.deepEqual(s.solved, [1, 6]);
+  assert.equal(portalOpen(s), false); // faces 3, 4 and 5 have puzzles too (played in puzzles.test.ts)
+  for (const face of [3, 4, 5] as const) devSolve(s, face, 1);
   assert.equal(portalOpen(s), true);
   go(s, 'out', portalOut);
   // The win fires the moment the second player touches any portal tile.

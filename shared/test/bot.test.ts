@@ -11,6 +11,7 @@ import {
   applyMove,
   chooseGoal,
   createGame,
+  devSolve,
   faceDistance,
   hearPartner,
   leashAllows,
@@ -208,6 +209,7 @@ test('chooseGoal: the nearest unsolved puzzle it knows about, otherwise stay wit
   place(s, 'in', 1);
   assert.deepEqual(chooseGoal(observe(s, 'in'), m), { kind: 'puzzle', face: 6, here: false, inReach: true });
   // Partner on the far side of face 6 (face 5): the puzzle is known but out of reach.
+  devSolve(s, 5, 0); // face 5 has a puzzle of its own: out of the way for this check
   place(s, 'in', 2);
   place(s, 'out', 5);
   m = look(s, 'in', m); // faint, and no idea which face
@@ -222,6 +224,7 @@ test('chooseGoal: the nearest unsolved puzzle it knows about, otherwise stay wit
 
 test('chooseGoal: carrying an item and the open portal come first, and lift the leash', () => {
   const s = createGame(0);
+  for (const face of [3, 4, 5] as const) devSolve(s, face, 0); // this check is about faces 1 and 6
   run(s, 'in', planActionSteps(s, 'in', { type: 'step_on', object: 'plate' }));
   run(s, 'out', planActionSteps(s, 'out', { type: 'step_on', object: 'crystal' }));
   run(s, 'out', planActionSteps(s, 'out', { type: 'step_on', object: 'rose' }));
