@@ -94,8 +94,8 @@ export const DECOR_LEGEND: Readonly<Record<string, Entry>> = {
 export const DECOR: Record<FaceId, readonly string[]> = {
   // Grass: a meadow taller than the turtle down the west side, a lily pond with reeds in the south east.
   1: [
-    '............',
-    '.gg.....f...',
+    'g...........',
+    '..g.....f...',
     '.ggg....f...',
     '..gg..f.....',
     '............',
@@ -104,8 +104,8 @@ export const DECOR: Record<FaceId, readonly string[]> = {
     'gg.....r.l..',
     'ggg...r.l...',
     'gg.g...r....',
-    '.gggg.......',
-    '..gg....f...',
+    '..ggg.......',
+    'g.gg....f...',
   ],
   // Desert: the oasis. Palms and reeds round the pool, bare sand and bones away from it.
   2: [
@@ -134,20 +134,20 @@ export const DECOR: Record<FaceId, readonly string[]> = {
     '...s...*....',
     '............',
     '.....s......',
-    '.s..........',
-    '.......s....',
+    '............',
+    's......s....',
   ],
   // Forest: the clearing belongs to the stepping stones, so everything grows in the ring of trees around it.
   4: [
-    '..F..m..F...',
-    '...n.....F..',
+    '..Fn.m..F.F.',
+    '............',
     'F..........m',
-    '.m..........',
+    'm...........',
     '.F........F.',
-    '..........n.',
+    '...........n',
     'm..........F',
     '.F..........',
-    '..........F.',
+    '...........F',
     'F..........m',
     '...F..m.....',
     '..m..F...F..',
@@ -161,7 +161,7 @@ export const DECOR: Record<FaceId, readonly string[]> = {
     '............',
     '............',
     '............',
-    '.....o..v...',
+    '....o...v...',
     '............',
     '............',
     '..o......o..',

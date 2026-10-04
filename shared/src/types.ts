@@ -78,6 +78,11 @@ export interface GameState {
   /** Faces whose puzzle is solved (latched). */
   solved: FaceId[];
   strikes: number;
+  /**
+   * What every puzzle's random content is mixed from (ctx.rand). Picked by the server per
+   * game and sent with the state, so the client predicts with the same numbers.
+   */
+  seed: number;
   /** Epoch ms. */
   startedAt: number;
   wonAt: number | null;
@@ -88,7 +93,10 @@ export type GameEvent =
   | { type: 'bump'; side: Side }
   /** Walked over a cube edge onto another face. dx/dy is the screen direction walked. */
   | { type: 'flip'; side: Side; from: FaceId; to: FaceId; dx: number; dy: number }
+  /** A puzzle's onPush moved something (a box). */
   | { type: 'push'; side: Side }
+  /** E on a tile with nothing to pick up and empty hands, on a face whose puzzle listens (onUse). */
+  | { type: 'use'; side: Side }
   | { type: 'solve'; face: FaceId; puzzle: string }
   | { type: 'strike'; side: Side }
   | { type: 'win' }

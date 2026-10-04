@@ -1,4 +1,4 @@
-import { FACES, FACE_NAMES, NORMALS, neighbours, type FaceId, type Side } from '@cubic/shared';
+import { FACES, FACE_NAMES, NORMALS, defaultEnv, neighbours, type FaceId, type Side } from '@cubic/shared';
 import { settings } from '../style/settings';
 import { ROLE } from '../style/tokens';
 import { cubeMap, registerCubeMap, type CubeMapDir } from './api';
@@ -46,6 +46,8 @@ const HUD_LIGHT: V3 = [-0.2, 0.6, 0.77];
 const DIRS: readonly CubeMapDir[] = ['up', 'down', 'left', 'right'];
 
 const INK = pack(ROLE.ink);
+/** The face the portal is on. Null in a world without one: then no face gets the portal's frame. */
+const PORTAL_FACE: FaceId | null = FACES.find((f) => (['out', 'in'] as const).some((side) => defaultEnv.world[side][f].objects.some((o) => o.type === 'portal'))) ?? null;
 
 /** A copy of a face texture with a one-texel-wide frame (two for the larger textures). */
 function framed(tex: FaceTex, color: number): FaceTex {
@@ -79,7 +81,7 @@ class CubeCanvas {
     const base = bakeFaces(art, s.side, texelFor(this.half * 2));
     const out = {} as CubeFaces;
     for (const face of FACES) {
-      const mark = face === 6 && s.portalOpen ? (pulse ? ROLE.portal : ROLE.portalDark) : s.solved.includes(face) ? ROLE.ok : null;
+      const mark = face === PORTAL_FACE && s.portalOpen ? (pulse ? ROLE.portal : ROLE.portalDark) : s.solved.includes(face) ? ROLE.ok : null;
       if (!mark) {
         out[face] = base[face];
         continue;
@@ -262,7 +264,7 @@ export function createCubeHud(mount: HTMLElement, pips: HTMLElement): CubeHud {
   const timer = window.setInterval(() => {
     // the partner's marker and the portal's frame pulse (not with reduced motion)
     if (settings().reduceMotion || !state || !mount.isConnected || mount.offsetParent === null) return;
-    if (!state.partnerFace && !state.portalOpen) return;
+    if (!state.partnerFace && !(state.portalOpen && PORTAL_FACE !== null)) return;
     pulse = !pulse;
     draw();
   }, PULSE_MS);

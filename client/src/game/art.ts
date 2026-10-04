@@ -1,6 +1,6 @@
 import type Phaser from 'phaser';
 import { TILE_PX, type FaceId, type Side, type TileKind, type Vec } from '@cubic/shared';
-import { drawPuzzleObject } from './puzzleArt';
+import { drawPuzzleItem, drawPuzzleObject } from './puzzleArt';
 
 // ART. The scene asks an ArtProvider for texture keys and never draws pixels itself, so a
 // provider backed by real tilesets (assets/manifest.json) can replace CodeArt later
@@ -78,7 +78,7 @@ function terrain(g: G, side: Side, face: FaceId, kind: TileKind, variant: number
 }
 
 function object(g: G, side: Side, type: string, state: string | undefined, frame: number) {
-  // the co-op puzzle objects (signs, skylight, bridge, stepping stones): ./puzzleArt.ts
+  // the co-op puzzle objects (keypad, buttons, each face's own things): ./puzzleArt
   if (drawPuzzleObject((x, y, w, h, c) => px(g, x, y, w, h, c), type, state)) return;
   switch (type) {
     case 'plate':
@@ -141,6 +141,8 @@ function object(g: G, side: Side, type: string, state: string | undefined, frame
 }
 
 function item(g: G, kind: string) {
+  // the battery and the flowers: ./puzzleArt/items.ts
+  if (drawPuzzleItem((x, y, w, h, c) => px(g, x, y, w, h, c), kind)) return;
   if (kind === 'rose') {
     px(g, 7, 8, 1, 6, '#2F7D45');
     px(g, 8, 10, 2, 1, '#3E9A56');

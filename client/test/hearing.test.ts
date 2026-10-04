@@ -7,7 +7,7 @@ import { heardSfx, hears, sfxFor } from '../src/audio/hearing';
 // the face-change ding is never the partner's.
 
 // The keys of the synthesized table in game/sfx.ts (it needs Web Audio types, so it is not imported here).
-const SFX = new Set(['step', 'bump', 'flip', 'push', 'solve', 'strike', 'win', 'pickup', 'drop', 'place', 'door-open', 'door-close', 'puzzle']);
+const SFX = new Set(['step', 'bump', 'flip', 'push', 'solve', 'strike', 'win', 'pickup', 'drop', 'place', 'use', 'chime', 'key', 'toggle', 'burn', 'laser', 'splash', 'puzzle']);
 const known = (id: string) => SFX.has(id);
 const other = (side: Side): Side => (side === 'out' ? 'in' : 'out');
 
@@ -69,23 +69,33 @@ test('ding: your own face change plays, wherever the partner is', () => {
   }
 });
 
+test('use and push: your own always, those of the partner only through the shared wall', () => {
+  for (const type of ['use', 'push'] as const) {
+    for (const theirs of FACES) {
+      const state = game({ out: 1, in: theirs });
+      assert.deepEqual(heardSfx([{ type, side: 'out' }], 'out', state, known), [type]);
+      assert.deepEqual(heardSfx([{ type, side: 'in' }], 'out', state, known), theirs === 1 ? [type] : [], `${type}, partner on ${theirs}`);
+    }
+  }
+});
+
 test('a mixed batch keeps its order and drops only what the wall hides', () => {
   const state = game({ out: 1, in: 4 });
   const events: GameEvent[] = [
     { type: 'step', side: 'out' },
     { type: 'step', side: 'in' },
     { type: 'flip', side: 'in', from: 1, to: 4, dx: 1, dy: 0 },
-    { type: 'puzzle', puzzle: 'plate-door', name: 'door-open' },
+    { type: 'puzzle', puzzle: 'hidden-code', name: 'chime' },
     { type: 'flip', side: 'out', from: 2, to: 1, dx: -1, dy: 0 },
-    { type: 'solve', face: 1, puzzle: 'plate-door' },
+    { type: 'solve', face: 1, puzzle: 'hidden-code' },
   ];
-  assert.deepEqual(heardSfx(events, 'out', state, known), ['step', 'door-open', 'flip']);
-  assert.deepEqual(heardSfx(events, 'in', state, known), ['step', 'flip', 'door-open']);
+  assert.deepEqual(heardSfx(events, 'out', state, known), ['step', 'chime', 'flip']);
+  assert.deepEqual(heardSfx(events, 'in', state, known), ['step', 'flip', 'chime']);
 });
 
 test('everything else is heard as before', () => {
   const state = game({ out: 1, in: 3 });
-  for (const type of ['bump', 'push', 'strike'] as const) assert.deepEqual(heardSfx([{ type, side: 'in' }], 'out', state, known), [type]);
+  for (const type of ['bump', 'strike'] as const) assert.deepEqual(heardSfx([{ type, side: 'in' }], 'out', state, known), [type]);
   assert.deepEqual(heardSfx([{ type: 'pickup', side: 'in', item: 'rose' }, { type: 'win' }], 'out', state, known), ['pickup', 'win']);
   // A puzzle event without a sound of its own gets the generic blip; the solve sting is a sample.
   assert.equal(sfxFor({ type: 'puzzle', puzzle: 'x', name: 'no-such-sound' }, known), 'puzzle');

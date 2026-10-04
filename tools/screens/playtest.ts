@@ -2,7 +2,7 @@
 // PASS / FAIL steps. It is the regression pass for "does the whole game still work":
 // the full lobby flow, every face and every edge on both sides, items, chat, pause,
 // settings, the map, leave / rejoin / refresh, every co-op puzzle solved for real, the
-// portal and the win screen, and then a section that tries to break it.
+// win screen, and then a section that tries to break it.
 //
 // One Chromium, one browser context per player (A creates the room and plays OUTSIDE, B
 // joins with the code and plays INSIDE, C is the stranger who tries to get in).
@@ -16,7 +16,7 @@
 //
 //   sections   comma separated, default all:
 //              lobby,hud,walk,items,rejoin,puzzles,break,menus
-//              `puzzles:rose-pot` runs one puzzle of the table (no finale).
+//              `puzzles:hidden-code` runs one puzzle of the table (no finale).
 //   BASE       client URL (default http://localhost:5410)
 //   RENDERER   webgl | canvas (default: both, one after the other)
 //   OUT        folder for screenshots, GIFs and results.json
@@ -40,7 +40,6 @@ import {
   compassDrift,
   defaultEnv,
   findPath,
-  isBlocked,
   neighbours,
   objectsOn,
   visibleObjects,
@@ -83,6 +82,12 @@ type PuzzleStep =
   | { who: Side; read: Sight; onto: Sight }
   /** Walk onto every tile `follow` shows on that player's screen, in the order listed. */
   | { who: Side; follow: Sight }
+  /**
+   * Steps worked out at run time from the live server state, for content that is seeded
+   * per game (a code, a sequence, which pot is which). The steps it returns are played like
+   * any others, with real keys, by whoever they name (`who` here is whose state is read).
+   */
+  | { who: Side; plan: (state: GameState) => PuzzleStep[] }
   | { wait: number }
   /** Something that must be true by now (it is waited for, up to 4 s). */
   | { expect: string; check: (state: GameState) => boolean };
@@ -98,68 +103,35 @@ interface PuzzleScript {
  * instead of hardcoding tiles, so a map edit does not break the script. After the last
  * step the puzzle's face must be latched in `state.solved`.
  */
-const SIGN: PuzzleStep = { who: 'out', read: { by: 'in', face: 3, type: 'tablet' }, onto: { by: 'out', face: 3, type: 'glyph' } };
+/** A stub puzzle: one player walks to its crystal and presses E. Replace the entry with the real script. */
+const stub = (id: string, face: FaceId): PuzzleScript => ({
+  id,
+  steps: [
+    {
+      who: 'out',
+      plan: (state) => {
+        const side = (['out', 'in'] as const).find((sd) => visibleObjects(state, sd, face).some((o) => o.type === 'crystal'));
+        if (!side) throw new Error(`no crystal on face ${face}`);
+        return [{ who: side, goto: { object: [side, face, 'crystal'] } }, { who: side, keys: 'e' }];
+      },
+    },
+  ],
+});
 
+// In chain order: 1 and 3 stand alone, then 2 -> 5 -> 6 -> 4.
 const PUZZLE_SCRIPTS: PuzzleScript[] = [
-  // Face 1. Inside holds the plate down, outside walks through the door to the crystal.
-  {
-    id: 'plate-door',
-    steps: [
-      { who: 'in', goto: { object: ['in', 1, 'plate'] } },
-      { expect: 'the plate is pressed', check: (s) => (s.puzzles['plate-door'] as { pressed: boolean }).pressed },
-      { who: 'out', goto: { object: ['out', 1, 'door'] } },
-      { who: 'out', goto: { object: ['out', 1, 'crystal'] } },
-    ],
-  },
-  // Face 3. Inside stands on the plate and reads the tablet; outside steps on the stone
-  // with that sign. Four times; the code is different every game.
-  {
-    id: 'glyph-code',
-    steps: [
-      { who: 'in', goto: { object: ['in', 3, 'plate'] } },
-      { expect: 'the tablet shows a sign to the inside player', check: (s) => !!visibleObjects(s, 'in', 3).find((o) => o.type === 'tablet')?.state },
-      SIGN,
-      SIGN,
-      { expect: 'two signs in, not solved yet', check: (s) => !s.solved.includes(3) },
-      SIGN,
-      SIGN,
-    ],
-  },
-  // Face 4. Outside sees the pale stepping stones; inside walks exactly those tiles from
-  // the doorway to the crystal. The line is different every game and moves on a fall.
-  {
-    id: 'mirror-maze',
-    steps: [
-      { who: 'out', goto: { tile: { face: 4, x: 5, y: 10 } } },
-      { who: 'in', goto: { object: ['in', 4, 'entry'] } },
-      { who: 'in', follow: { by: 'out', face: 4, type: 'trail' } },
-    ],
-  },
-  // Face 5. Outside stands on pane a, inside crosses bridge a to the dry ring; outside
-  // moves to pane b, inside crosses bridge b to the crystal.
-  {
-    id: 'skylight',
-    steps: [
-      { who: 'in', goto: { object: ['in', 5, 'bridge'], name: 'a', dx: -1 } },
-      { who: 'out', goto: { object: ['out', 5, 'skylight'], name: 'a' } },
-      { expect: 'bridge a is lit', check: (s) => visibleObjects(s, 'in', 5).some((o) => o.type === 'bridge' && o.state === 'lit') },
-      { who: 'in', goto: { object: ['in', 5, 'bridge'], name: 'b', dx: 1 } },
-      { who: 'out', goto: { object: ['out', 5, 'skylight'], name: 'b' } },
-      { expect: 'not solved while the inside player waits on the ring', check: (s) => !s.solved.includes(5) },
-      { who: 'in', goto: { object: ['in', 5, 'crystal'] } },
-    ],
-  },
-  // Face 6. Outside carries the rose from face 1 to the pot on the far side of the cube.
-  {
-    id: 'rose-pot',
-    steps: [
-      { who: 'out', goto: { item: 'rose' } },
-      { who: 'out', keys: 'e' },
-      { expect: 'the outside player carries the rose', check: (s) => s.players.out.carrying === 'rose' },
-      { who: 'out', goto: { object: ['out', 6, 'target'] } },
-      { who: 'out', keys: 'e' },
-    ],
-  },
+  // Face 1. Hidden Code.
+  stub('hidden-code', 1),
+  // Face 3. Mirrored Glyph.
+  stub('mirrored-glyph', 3),
+  // Face 2. Equation Safe.
+  stub('equation-safe', 2),
+  // Face 5. Sequence Laser.
+  stub('sequence-laser', 5),
+  // Face 6. Laser and Invisible Path.
+  stub('laser-path', 6),
+  // Face 4. Botanical Mirror.
+  stub('botanical-mirror', 4),
 ];
 
 // ---------- setup ----------
@@ -1005,10 +977,14 @@ async function items(run: Run): Promise<void> {
   const carrying = async (page: Page, side: Side) => (await stateOf(page)).players[side].carrying;
   const item = async (page: Page, id: string) => (await stateOf(page)).items[id]!;
   let id = '';
+  // the items of this game are handed out by the puzzles: with none lying outside at the start there is nothing to carry yet
+  if (!Object.values((await stateOf(a)).items).some((i) => i.side === 'out' && !i.carriedBy && !i.placedOn)) {
+    await step(run, 'outside: an item to carry', async () => 'skipped: no item lies on the outside at the start of this game');
+    return;
+  }
 
   await step(run, 'outside: walk onto the item; Q with empty hands does nothing', async () => {
-    const lying = Object.values((await stateOf(a)).items).find((i) => i.side === 'out' && !i.carriedBy && !i.placedOn);
-    if (!lying) throw new Error('no item lies on the outside of this map');
+    const lying = Object.values((await stateOf(a)).items).find((i) => i.side === 'out' && !i.carriedBy && !i.placedOn)!;
     id = lying.id;
     await goToTile(a, 'out', lying);
     await press(a, 'q');
@@ -1094,9 +1070,9 @@ async function rejoin(run: Run): Promise<void> {
   let a!: Page;
   let b!: Page;
   let code = '';
-  if (!(await step(run, 'setup: two players in a game, away from the spawn, outside carrying the item', async () => {
+  if (!(await step(run, 'setup: two players in a game, away from the spawn, outside carrying an item if one lies there', async () => {
     ({ a, b, code } = await startGame(run));
-    const lying = Object.values((await stateOf(a)).items).find((i) => i.side === 'out');
+    const lying = Object.values((await stateOf(a)).items).find((i) => i.side === 'out' && !i.carriedBy && !i.placedOn);
     if (lying) {
       await goToTile(a, 'out', lying);
       await press(a, 'e');
@@ -1167,7 +1143,7 @@ async function rejoin(run: Run): Promise<void> {
     check((await snap(a)).modal === null, 'the pause menu is still open on the mode screen');
     check(await canWalk(b, 'in'), 'B cannot walk after the host left');
   });
-  await step(run, 'rejoin: the old host joins again and is back outside, with the item', async () => {
+  await step(run, 'rejoin: the old host joins again and is back outside, with what they carried', async () => {
     const before = (await snap(b)).server!.players.out;
     await a.waitForTimeout(500);
     await joinRoom(a, code);
@@ -1205,9 +1181,11 @@ const describe = (s: PuzzleStep) =>
       ? `${s.who} walks onto the ${s.onto.type} that matches the ${s.read.type} the ${s.read.by} player sees`
       : 'follow' in s
         ? `${s.who} walks the ${s.follow.type} tiles the ${s.follow.by} player sees`
-        : 'keys' in s ? `${s.who} presses ${s.keys}` : 'wait' in s ? `wait ${s.wait} ms` : `expect ${s.expect}`;
+        : 'plan' in s
+          ? `steps planned from the state the ${s.who} player has`
+          : 'keys' in s ? `${s.who} presses ${s.keys}` : 'wait' in s ? `wait ${s.wait} ms` : `expect ${s.expect}`;
 
-/** Every puzzle of the table solved with real keys, then the portal and the win screen. */
+/** Every puzzle of the table solved with real keys, then the win screen. */
 async function puzzles(run: Run): Promise<void> {
   const tag = `puzzles-${run.renderer}`;
   const video = process.env.GIF !== '0';
@@ -1232,26 +1210,42 @@ async function puzzles(run: Run): Promise<void> {
     puzzleResults.push(result);
     await step(run, `puzzle ${script.id}: solved with real input`, async () => {
       if (!module) throw new Error(`"${script.id}" is not registered in shared/src/puzzles/index.ts`);
+      /** One step, with real keys. A `plan` step is expanded from the live state and its steps played in turn. */
+      const play = async (s: PuzzleStep): Promise<void> => {
+        if ('plan' in s) {
+          // the server state as that player's client has it: never the prediction
+          const planned = s.plan((await snap(page(s.who))).server!);
+          for (const [j, sub] of planned.entries()) {
+            try {
+              await play(sub);
+            } catch (e) {
+              throw new Error(`planned step ${j + 1} of ${planned.length} (${describe(sub)}): ${e instanceof Error ? e.message : e}`, { cause: e });
+            }
+          }
+        } else if ('goto' in s) await goToTile(page(s.who), s.who, resolveTarget(s.goto, await stateOf(page(s.who))));
+        else if ('read' in s) {
+          // each sight is read from the screen state of the player who sees it
+          const shown = sees(await stateOf(page(s.read.by)), s.read)[0]?.state;
+          const match = sees(await stateOf(page(s.onto.by)), s.onto).find((o) => o.state === shown);
+          if (!shown || !match) throw new Error(`${s.read.by} sees "${shown}", but ${s.onto.by} sees no ${s.onto.type} like that`);
+          const before = JSON.stringify((await stateOf(a)).puzzles[script.id]);
+          await goToTile(page(s.who), s.who, { face: s.onto.face, x: match.x, y: match.y });
+          await until(`the puzzle moved on after "${shown}"`, async () => JSON.stringify((await stateOf(a)).puzzles[script.id]) !== before && JSON.stringify((await stateOf(b)).puzzles[script.id]) !== before);
+        } else if ('follow' in s) {
+          const line = sees(await stateOf(page(s.follow.by)), s.follow);
+          if (!line.length) throw new Error(`${s.follow.by} sees no ${s.follow.type} on face ${s.follow.face}`);
+          const strikes = (await stateOf(a)).strikes;
+          for (const o of line) await goToTile(page(s.who), s.who, { face: s.follow.face, x: o.x, y: o.y });
+          check((await stateOf(a)).strikes === strikes, `following ${line.length} tiles cost ${(await stateOf(a)).strikes - strikes} strike(s)`);
+        } else if ('keys' in s) {
+          await press(page(s.who), ...s.keys.split(' '));
+          await settle(page(s.who));
+        } else if ('wait' in s) await sleep(s.wait);
+        else await until(s.expect, async () => s.check((await snap(a)).server!) && s.check((await snap(b)).server!));
+      };
       for (const [i, s] of script.steps.entries()) {
         try {
-          if ('goto' in s) await goToTile(page(s.who), s.who, resolveTarget(s.goto, await stateOf(page(s.who))));
-          else if ('read' in s) {
-            // each sight is read from the screen state of the player who sees it
-            const shown = sees(await stateOf(page(s.read.by)), s.read)[0]?.state;
-            const match = sees(await stateOf(page(s.onto.by)), s.onto).find((o) => o.state === shown);
-            if (!shown || !match) throw new Error(`${s.read.by} sees "${shown}", but ${s.onto.by} sees no ${s.onto.type} like that`);
-            const before = JSON.stringify((await stateOf(a)).puzzles[script.id]);
-            await goToTile(page(s.who), s.who, { face: s.onto.face, x: match.x, y: match.y });
-            await until(`the puzzle moved on after "${shown}"`, async () => JSON.stringify((await stateOf(a)).puzzles[script.id]) !== before && JSON.stringify((await stateOf(b)).puzzles[script.id]) !== before);
-          } else if ('follow' in s) {
-            const line = sees(await stateOf(page(s.follow.by)), s.follow);
-            if (!line.length) throw new Error(`${s.follow.by} sees no ${s.follow.type} on face ${s.follow.face}`);
-            const strikes = (await stateOf(a)).strikes;
-            for (const o of line) await goToTile(page(s.who), s.who, { face: s.follow.face, x: o.x, y: o.y });
-            check((await stateOf(a)).strikes === strikes, `following ${line.length} tiles cost ${(await stateOf(a)).strikes - strikes} strike(s)`);
-          } else if ('keys' in s) await press(page(s.who), ...s.keys.split(' '));
-          else if ('wait' in s) await sleep(s.wait);
-          else await until(s.expect, async () => s.check((await snap(a)).server!) && s.check((await snap(b)).server!));
+          await play(s);
         } catch (e) {
           result.stuck = `step ${i + 1} of ${script.steps.length} (${describe(s)}): ${e instanceof Error ? e.message : e}`;
           throw new Error(`stuck at ${result.stuck}`, { cause: e });
@@ -1272,22 +1266,14 @@ async function puzzles(run: Run): Promise<void> {
   }
   if (PUZZLE_FILTER) return void (await closeAll(run));
 
-  const finale: PuzzleResult = { renderer: run.renderer, id: 'portal finale', completed: false, stuck: '' };
+  const finale: PuzzleResult = { renderer: run.renderer, id: 'finale', completed: false, stuck: '' };
   puzzleResults.push(finale);
-  await step(run, 'finale: the portal is awake for both; both step into it; the win screen shows', async () => {
+  await step(run, 'finale: the last puzzle wins the game; the win screen shows for both', async () => {
     try {
       const all = PUZZLES.map((p) => p.face);
       const state = await stateOf(a);
-      check(all.every((f) => state.solved.includes(f)), `solved faces are [${state.solved}], the portal needs [${all}]`);
-      const face = FACES.find((f) => objectsOn(defaultEnv.world, 'out', f, 'portal').length > 0);
-      if (!face) throw new Error('no portal on the outside map');
-      // any portal tile counts: the game is won the moment the second player touches one
-      const onPortal = (side: Side) => (p: Pose) => p.face === face && objectsOn(defaultEnv.world, side, face, 'portal').some((o) => o.x === p.x && o.y === p.y);
-      await Promise.all([goTo(a, 'out', 'the portal', onPortal('out')), goTo(b, 'in', `face ${face}`, (p) => p.face === face)]);
-      await until('the objective says the portal is awake', async () => /portal is awake/i.test((await text(b, '#cu-obj')) ?? ''));
-      await shots(run, `${tag}-portal-awake`);
-      check((await stateOf(a)).wonAt === null, 'the game was won before the inside player stepped in');
-      await goTo(b, 'in', 'the portal', onPortal('in'));
+      check(all.every((f) => state.solved.includes(f)), `solved faces are [${state.solved}], the win needs [${all}]`);
+      // no portal to walk to: the game is won the moment the last face is solved
       await until('the game is won on both clients', async () => (await stateOf(a)).wonAt !== null && (await stateOf(b)).wonAt !== null);
       await until('the win screen on both', async () => (await snap(a)).modal === 'cu-win' && (await snap(b)).modal === 'cu-win');
       const shown = (await text(a, '#cu-wintime')) ?? '';
@@ -1508,25 +1494,6 @@ async function breakIt(run: Run): Promise<void> {
     const got = (await snap(b)).chat.length - before;
     check(got >= 1 && got <= 5, `${got} of 12 lines arrived (the limit is 5 per 5 s)`);
     return `${got} of 12 arrived`;
-  });
-  await attempt('mid-puzzle: the inside player steps off the plate while the outside player stands in the doorway', async () => {
-    const plate = objectsOn(defaultEnv.world, 'in', 1, 'plate')[0];
-    const door = objectsOn(defaultEnv.world, 'out', 1, 'door')[0];
-    const crystal = objectsOn(defaultEnv.world, 'out', 1, 'crystal')[0];
-    if (!plate || !door || !crystal) return 'skipped: no plate, door and crystal on face 1 of this map';
-    if ((await stateOf(a)).solved.includes(1)) return 'skipped: face 1 is already solved';
-    await goToTile(b, 'in', { face: 1, ...plate });
-    await goToTile(a, 'out', { face: 1, ...door });
-    await canWalk(b, 'in'); // off the plate: the door shuts on the outside player
-    await a.waitForTimeout(300);
-    await shots(run, `${tag}-09-door-shut-on-player`);
-    const s = await stateOf(a);
-    check(!(s.puzzles['plate-door'] as { pressed: boolean }).pressed, 'the plate still reads as pressed');
-    check(findPath(s, 'out', (p) => p.face !== 1) !== null || findPath(s, 'out', onTile({ face: 1, ...crystal })) !== null, 'the outside player is sealed in');
-    await goToTile(a, 'out', { face: 1, ...crystal });
-    await until('face 1 solved', async () => (await stateOf(b)).solved.includes(1));
-    check(isBlocked(await stateOf(a), 'out', { face: 1, ...door }) === false, 'the door is shut behind the player after the solve');
-    return 'the outside player walked out of the shut doorway to the crystal';
   });
   await attempt('mid-puzzle: the outside player leaves while carrying the item; the inside player plays on; they rejoin', async () => {
     const lying = Object.values((await stateOf(a)).items).find((i) => i.side === 'out' && !i.placedOn && !i.carriedBy);
