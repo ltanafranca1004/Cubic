@@ -15,6 +15,12 @@ const asLocal = {
   },
 };
 
+// On Vercel the client and the server are on different hosts. Without VITE_SERVER_URL the
+// build would talk to its own origin and wait for a server that is not there: fail instead.
+if (process.env.VERCEL && !process.env.VITE_SERVER_URL) {
+  throw new Error('VITE_SERVER_URL is not set: add it in the Vercel project settings (the Render URL, no trailing slash).');
+}
+
 export default defineConfig({
   server: {
     port: 5173,
