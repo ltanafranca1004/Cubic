@@ -207,7 +207,7 @@ async function flow(browser: Browser): Promise<void> {
   await b.close();
 }
 
-/** Every face, outside and inside, in the offline game (?mock=game), plus the win screen. */
+/** Every face, outside and inside, in the offline game (?mock=game), plus the ending's title card. */
 async function faces(browser: Browser): Promise<void> {
   console.log('faces');
   const UP: Record<number, number[]> = { 1: [0, 1, 0], 2: [0, 1, 0], 3: [0, 1, 0], 4: [0, 1, 0], 5: [0, 0, -1], 6: [0, 0, 1] };
@@ -239,7 +239,9 @@ async function faces(browser: Browser): Promise<void> {
         c.state!.wonAt = Date.now();
         c.move(0, -1);
       });
-      await page.waitForTimeout(700);
+      // (a win set by hand has no win event: the ending starts a second later and plays to its card)
+      await page.waitForSelector('#cu-win[data-phase="card"]', { timeout: 15_000 });
+      await page.waitForTimeout(900);
       await shot(page, '21-win');
     }
     await page.close();

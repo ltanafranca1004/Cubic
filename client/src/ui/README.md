@@ -27,7 +27,7 @@ handle.update(state);                   // on every change
 
 | File | What |
 | --- | --- |
-| `cubicUI.ts` | The active `UIHost`. Starts the menu stage (`../scenes`), and is the DOM on top of it: top bar (leave, room code, gear), HUD, chat, voice, win screen. |
+| `cubicUI.ts` | The active `UIHost`. Starts the menu stage (`../scenes`), and is the DOM on top of it: top bar (leave, room code, gear), HUD, chat, voice, the ending's title card. |
 | `settingsPanel.ts` | The panel behind the gear, three tabs in one box: SOUND (volumes, voice chat, mic mode), ACCESS (text size, high contrast, reduce motion, screen shake, hints), CONTROLS (one row per action: click its key, press a new one; a key in use swaps; RESET TO DEFAULTS). Same panel on every screen. Settings and bindings are saved in `localStorage` (`style/settings.ts`). |
 | `copy.ts` | `copyText()`: the clipboard, with a fallback. The lobby's COPY button and the C key use it. |
 | `onboarding/` | The hint layer over the HUD: side intro card, controls hint, the three context hints, the narrator's caption. `rules.ts` decides what shows (pure, tested in `test/onboarding.test.ts`), `index.ts` draws it, `anchors.ts` holds the HUD selectors the hints point at, `caption.ts` is the one `showCaption(text)` function. Narrator lines: `../content/narrator.ts`. Mounted once in `app.ts`. |
@@ -43,7 +43,7 @@ handle.update(state);                   // on every change
 | Chat: Enter opens, Esc closes, AI lines labelled, typing indicator | `cubicUI.ts` | `chat`, `partnerTyping` |
 | Voice: mic permission, hold V / open mic, mute, signal bars, speaking dots | `cubicUI.ts` | `voice`, the settings |
 | Room code (top middle, from the side select on) and settings gear (top right, always). In game the top bar is the head of the column | `cubicUI.ts` | `roomCode`, `mode` |
-| Win screen: title, time, Leave / Play again | `cubicUI.ts` | `hud.won`, `hud.elapsedMs`, `hud.solved`, `hud.puzzleTotal` |
+| The ending's title card: "Passed cube 1!", time, strikes, Main menu / Play again (shown when the sequence in `scenes/ending` gets to it) | `cubicUI.ts` | `hud.won`, `hud.elapsedMs`, `hud.strikes`, `scenes/ending/run.ts` |
 
 | Pause menu (Esc): Resume, Settings, Leave, the controls reference | `pauseMenu.ts` | |
 | Quick-chat bubbles over the game view | `cubicUI.ts` | `signals` |

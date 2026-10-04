@@ -101,7 +101,7 @@ faces 5 and 6 and the helpers their unit tests share: `stepTo`, `insideGo`,
 `solveSequenceLaser`, `solveLaserPath`).
 
 `tools/screens/playtest.ts puzzles` plays all six in two real browsers with real key
-presses, in WebGL and in Canvas, to the win screen. Its table is `PUZZLE_SCRIPTS`: one
+presses, in WebGL and in Canvas, to the ending and its title card. Its table is `PUZZLE_SCRIPTS`: one
 entry per puzzle, in chain order (1, 3, 2, 5, 6, 4), made of `goto`, `keys`, `wait`,
 `expect` and `plan` steps. A `plan` step is a function of the live server state that
 returns more steps, for content that is seeded per game: it reads what one player sees

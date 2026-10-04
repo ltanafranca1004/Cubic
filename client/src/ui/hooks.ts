@@ -2,7 +2,7 @@ import type { ChatMessage, FaceId, Role, RoomMode, Side, SignalView } from '@cub
 import { noteText } from '../net/notes';
 
 // THE UI HOOK INTERFACE.
-// Everything outside the Phaser canvas (lobby, HUD, chat, voice controls, win screen) is a
+// Everything outside the Phaser canvas (lobby, HUD, chat, voice controls, the ending's title card) is a
 // UIHost. The app calls `mount` once, then `update(state)` every time something changes.
 // The UI calls `actions` when the player does something. A UI never talks to the socket,
 // the game engine or Phaser directly.

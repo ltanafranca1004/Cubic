@@ -197,3 +197,45 @@ export function players(a: Page, b: Page) {
   const solved = (face: FaceId) => until(`face ${face} solved on both clients`, async () => (await stateOf(a)).solved.includes(face) && (await stateOf(b)).solved.includes(face));
   return { page, state, sees, goTo, go, use, stepOnto, beside, solved };
 }
+
+// ---------- the ending (client/src/scenes/ending) ----------
+
+/** What the ending shows on a page (the scene's dev hook). `run` is null when none is playing. */
+export interface EndingProbe {
+  run: { id: number; t0: number; skippedAt: number | null } | null;
+  /** Milliseconds since the run started, and the time on the timeline (a skip jumps it to the card). */
+  elapsed: number | null;
+  t: number | null;
+  card: boolean;
+  phase: 'flash' | 'unfold' | 'meet' | 'run' | 'card' | null;
+  /** 'game': the cube is made of the faces of the game just won. */
+  faces: 'game' | 'start';
+}
+export const endingState = (page: Page) =>
+  js<EndingProbe>(page, `typeof window.__cubicEnding === 'function' ? window.__cubicEnding() : { run: null, elapsed: null, t: null, card: false, phase: null, faces: 'start' }`);
+
+/** The moments of the ending worth a picture: name and time on the timeline (ms). */
+export const ENDING_MOMENTS = [
+  ['1-flash', 240],
+  ['2-unfold', 2350],
+  ['3-jump', 1750],
+  ['4-landing', 2790],
+  ['5-running', 5700],
+] as const;
+
+/** A moment with the title card up worth a picture: the two turtles apart, left and right of the middle of their lap. */
+export const ENDING_CARD_MOMENT = 8150;
+
+/**
+ * A picture of each of those moments, on a page whose game is won: the sequence is played
+ * again (dev hook) and held at the moment, so the picture is the same every time. Leaves
+ * the sequence running from its start.
+ */
+export async function endingShots(page: Page, path: (name: string) => string): Promise<void> {
+  for (const [name, t] of ENDING_MOMENTS) {
+    await js(page, `(window.__cubicEndingReplay(), window.__cubicEndingHold(${t}))`);
+    await sleep(350);
+    await page.screenshot({ path: path(name) });
+  }
+  await js(page, `(window.__cubicEndingHold(null), window.__cubicEndingReplay())`);
+}

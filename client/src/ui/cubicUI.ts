@@ -5,6 +5,7 @@ import { keyLabel } from '../input/bindings';
 import { mountGamepad } from '../input/gamepad';
 import { isMapHeld, setMapHeld } from '../input/gate';
 import { gameAction } from '../input/keymap';
+import { ending } from '../scenes/ending/run';
 import { createStage, type Stage } from '../scenes/stage';
 import { ITEM_DEFAULT_FRAME, ITEM_FRAMES, asset } from '../style/assets';
 import { hudScale, layout, onFit, uiScale, viewport, viewZoom } from '../style/scale';
@@ -83,10 +84,15 @@ const HTML = `
   <div class="cu-speaking" id="cu-speaking" role="status" hidden><i class="cu-ico speaker"></i><span></span></div>
   <div class="cu-caption" id="cu-caption" role="status" aria-live="polite" hidden><b></b><span></span></div>
 </div>
-<div class="cu-modal" id="cu-win"><div class="cu-panel cu-win" role="dialog" aria-label="You escaped">
-  <h2>The cube opens</h2>
-  <p class="cu-dim">Escaped in</p><b class="cu-wintime" id="cu-wintime"></b><p id="cu-wintxt"></p>
-  <div class="cu-actions"><button class="cu-btn light" id="cu-winleave"><span>Leave</span></button><button class="cu-btn in" id="cu-again" data-first><span>Play again</span></button></div>
+<div class="cu-modal cu-ending" id="cu-win" data-phase="play"><div class="cu-win" role="dialog" aria-label="Passed cube 1">
+  <h2>Passed cube 1!</h2>
+  <div class="cu-panel cu-winbox">
+    <div class="cu-winstats">
+      <div class="cu-stat" title="Time"><i class="cu-ico clock"></i><span id="cu-wintime"></span></div>
+      <div class="cu-stat x" title="Strikes"><i class="cu-ico cross"></i><span id="cu-wintxt"></span></div>
+    </div>
+    <div class="cu-actions"><button class="cu-btn light" id="cu-winleave"><span>Main menu</span></button><button class="cu-btn in" id="cu-again" data-first><span>Play again</span></button></div>
+  </div>
 </div></div>`;
 
 export const cubicUI: UIHost = {
@@ -177,6 +183,21 @@ export const cubicUI: UIHost = {
     $('cu-leave').addEventListener('click', () => actions.onLeaveRoom());
     $('cu-winleave').addEventListener('click', () => actions.onLeaveRoom());
     $('cu-again').addEventListener('click', () => actions.onPlayAgain());
+    // THE ENDING (scenes/ending). The win modal is on from the moment the game is won; its
+    // card (title, time, strikes, the two buttons) shows when the run says so. Until then
+    // every key and tap is the sequence's: after its first two seconds they skip to the card.
+    const winEl = $('cu-win');
+    const renderEnding = () => {
+      const on = inGame() && !!ending.current;
+      el.toggleAttribute('data-ending', on);
+      const phase = on && ending.card ? 'card' : 'play';
+      if (winEl.dataset.phase === phase) return;
+      winEl.dataset.phase = phase;
+      if (phase === 'card') focusFirst(winEl);
+    };
+    const endingOff = ending.onChange(renderEnding);
+    // (a click, not the press: the card takes the focus when it shows, and a press would take it away again)
+    winEl.addEventListener('click', () => void ending.skip());
     // The room code: COPY next to it in the lobby (a real button: click, tap, or C), and a
     // click on the code itself copies too. The button says COPIED for a moment.
     const copyBtn = $<HTMLButtonElement>('cu-copy');
@@ -225,9 +246,14 @@ export const cubicUI: UIHost = {
       if (modal) {
         // a key button in the settings is waiting for its new key: every key is its answer
         if (panel.isOpen() && panel.captureKey(e)) eat(e);
-        else if (e.key === 'Escape') {
+        else if (modal === winEl && winEl.dataset.phase !== 'card') {
+          // the ending is playing: no key is the game's or a panel's (a held key does not skip, a fresh press does)
+          if (!e.repeat) ending.skip();
+          if (/^F\d+$/.test(e.key)) e.stopImmediatePropagation();
+          else eat(e);
+        } else if (e.key === 'Escape') {
           // settings: close (back to the pause menu if it came from there). pause: resume.
-          // The win screen has no back: pick Leave or Play again.
+          // The ending's card has no back: pick Main menu or Play again.
           if (panel.isOpen()) panel.toggle(false);
           else if (pause.isOpen()) pause.close();
           eat(e);
@@ -455,7 +481,7 @@ export const cubicUI: UIHost = {
       $('cu-strikebox').hidden = hud.strikes <= 0;
       $('cu-strikes').textContent = String(hud.strikes);
       $('cu-wintime').textContent = clock(hud.elapsedMs);
-      $('cu-wintxt').textContent = `${done} of ${hud.puzzleTotal} puzzles solved${hud.strikes > 0 ? `, ${hud.strikes} strike${hud.strikes === 1 ? '' : 's'}` : ''}.`;
+      $('cu-wintxt').textContent = `${hud.strikes} strike${hud.strikes === 1 ? '' : 's'}`;
     }
 
     function renderChat(s: UIState): void {
@@ -553,18 +579,20 @@ export const cubicUI: UIHost = {
         $('cu-banner').hidden = !banner;
         $('cu-banner').firstElementChild!.textContent = banner;
         const won = inGame && !!hud?.won;
-        const win = $('cu-win');
+        const win = winEl;
         if (won !== win.classList.contains('on')) {
           win.classList.toggle('on', won);
           if (won) {
-            // the win screen takes over: close what was open and give it the focus
+            // the ending takes over: close what was open, and nothing keeps the focus
             fromPause = false;
             pause.close();
             panel.toggle(false);
             releaseMap();
-            focusFirst(win);
+            (document.activeElement as HTMLElement | null)?.blur?.();
           }
         }
+        ending.sync(inGame ? !!hud?.won : null, settings().reduceMotion);
+        renderEnding();
         renderSpeaking();
         renderSignals(inGame ? (next.signals ?? NO_SIGNALS) : NO_SIGNALS);
         if (!inGame || !hud) return;
@@ -579,6 +607,8 @@ export const cubicUI: UIHost = {
         window.removeEventListener('keyup', onGameKeyUp);
         window.removeEventListener('blur', releaseMap);
         padOff();
+        endingOff();
+        ending.sync(null);
         captionOff();
         speakingOff();
         lookOff();

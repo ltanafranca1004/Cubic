@@ -1,11 +1,12 @@
 import Phaser from 'phaser';
-import { FACE_SIZE, TILE_PX, brightFace, canonToScreen, eq, itemsOn, linesOn, screenToCanon, tileAt, visibleObjects, defaultEnv, type FaceId, type GameEvent, type GameState, type Side, type Vec } from '@cubic/shared';
+import { CANON_UP, FACES, FACE_SIZE, SIDES, TILE_PX, brightFace, canonToScreen, eq, itemsOn, linesOn, screenToCanon, tileAt, visibleObjects, defaultEnv, type FaceId, type GameEvent, type GameState, type Side, type Vec } from '@cubic/shared';
 import { inputPaused } from '../input/gate';
 import { settings } from '../style/settings';
 import type { PropPass } from '../world/biomes/dress';
 import { CodeArt, type ArtProvider } from './art';
 import { PropFades, fadingProps, liftedProps, propsOver, tallProps, type TallProp } from '../world/biomes/depth';
 import { GameKeys, HoldRepeat } from './keys';
+import { registerFacePainter, type FaceShots } from './shots';
 import { InputBuffer, easeInOut, hopBoxes, hopFrame, mirrorStrip, rollPoint, rollStrips, rollWalker, transitionKind, transitionMs, upBeforeFlip, type Buffered, type TransitionKind } from './transition';
 import { CARRY_PX, ITEM_HOP_MS, WALK_HOLD_MS, carryBob, facingFromStep, facingOf, itemHop, playerFlip, type Facing } from './turtle';
 
@@ -188,10 +189,12 @@ export class GameScene extends Phaser.Scene {
     const down = (e: KeyboardEvent) => this.keyDown(e);
     const up = (e: KeyboardEvent) => this.keyUp(e);
     const blur = () => this.releaseAll();
+    registerFacePainter(() => this.shots());
     window.addEventListener('keydown', down);
     window.addEventListener('keyup', up);
     window.addEventListener('blur', blur);
     this.events.once(Phaser.Scenes.Events.DESTROY, () => {
+      registerFacePainter(null);
       window.removeEventListener('keydown', down);
       window.removeEventListener('keyup', up);
       window.removeEventListener('blur', blur);
@@ -433,8 +436,40 @@ export class GameScene extends Phaser.Scene {
     this.front.refresh();
   }
 
-  /** Paint one face as `me` sees it with `up` as screen-up. `at` = the screen tile we stand on. */
-  private paint(g: CanvasRenderingContext2D, face: FaceId, up: Vec, at: { sx: number; sy: number }, pass?: PropPass): void {
+  /**
+   * All twelve faces as they are now, each with its own up at the top (./shots.ts): the
+   * ending opens the cube with them. Painted like any face, as each side sees it; the
+   * inside ones fully lit, then mirrored into the map's layout.
+   */
+  private shots(): FaceShots | null {
+    if (!this.state) return null;
+    const { me, hop } = this;
+    const shots = { out: {}, in: {} } as FaceShots;
+    try {
+      this.hop = null;
+      for (const side of SIDES) {
+        this.me = side;
+        for (const face of FACES) {
+          const g = layer();
+          this.paint(g, face, CANON_UP[face], { sx: 0, sy: 0 }, undefined, true);
+          if (side === 'in') {
+            const flipped = layer();
+            flipped.translate(VIEW_PX, 0);
+            flipped.scale(-1, 1);
+            flipped.drawImage(g.canvas, 0, 0);
+            shots.in[face] = flipped.canvas;
+          } else shots.out[face] = g.canvas;
+        }
+      }
+    } finally {
+      this.me = me;
+      this.hop = hop;
+    }
+    return shots;
+  }
+
+  /** Paint one face as `me` sees it with `up` as screen-up. `at` = the screen tile we stand on. `lit`: no darkness inside. */
+  private paint(g: CanvasRenderingContext2D, face: FaceId, up: Vec, at: { sx: number; sy: number }, pass?: PropPass, lit = false): void {
     const state = this.state!;
     const me = this.me;
     const world = defaultEnv.world;
@@ -466,7 +501,7 @@ export class GameScene extends Phaser.Scene {
     }
     for (const it of items) if (!under.has(`${it.sx},${it.sy}`)) put(this.art.item(it.kind), it.sx, it.sy);
 
-    if (me === 'in' && !brightFace(face)) {
+    if (me === 'in' && !lit && !brightFace(face)) {
       // The inside is dark: light falls off by tile distance from the player. A room whose
       // puzzle is `bright` is drawn fully lit instead.
       for (let sy = 0; sy < FACE_SIZE; sy++) {

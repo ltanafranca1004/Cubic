@@ -176,20 +176,22 @@ async function mock(browser: Browser): Promise<void> {
           const total = await page.evaluate(() => Number((document.querySelector('#cu-progn')!.textContent ?? '').split('/')[1]));
           if (new Set(shown).size !== shown.length || pips.length !== total || !total) fail(`${tag}: ${pips.length} pips for ${total} puzzles, or two share a colour (${shown.join(' ')})`);
           await page.screenshot({ path: `${OUT}${tag}-six-colours.png` });
-          // the win screen: the title, the time, leave or play again
+          // the ending's title card: the title, the time, the strikes, main menu or play again
+          // (a win set by hand has no win event: the sequence starts a second later, then plays to its card)
           await page.evaluate(() => {
             const c = window.__cubic as unknown as { state: { wonAt: number | null }; move(dx: number, dy: number): void };
             c.state.wonAt = Date.now();
             c.move(0, -1);
           });
           await page.waitForSelector('#cu-win.on');
-          await sleep(500);
+          await page.waitForSelector('#cu-win[data-phase="card"]', { timeout: 15_000 });
+          await sleep(900);
           const win = await page.evaluate(() => {
             const w = document.querySelector<HTMLElement>('#cu-win .cu-win')!;
             const r = w.getBoundingClientRect();
             return { title: w.querySelector('h2')!.textContent, time: w.querySelector('#cu-wintime')!.textContent, text: w.querySelector('#cu-wintxt')!.textContent, buttons: [...w.querySelectorAll('button')].map((b) => b.textContent!.trim()), inside: r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight, clipped: w.scrollWidth > w.clientWidth + 1 };
           });
-          if (win.title !== 'The cube opens' || !/^\d+:\d\d$/.test(win.time ?? '') || win.buttons.join('|') !== 'Leave|Play again' || !win.inside || win.clipped || /strike/.test(win.text ?? '')) fail(`${tag}: the win screen is wrong: ${JSON.stringify(win)}`);
+          if (win.title !== 'Passed cube 1!' || !/^\d+:\d\d$/.test(win.time ?? '') || win.buttons.join('|') !== 'Main menu|Play again' || !win.inside || win.clipped || !/^\d+ strikes?$/.test(win.text ?? '')) fail(`${tag}: the win screen is wrong: ${JSON.stringify(win)}`);
           await page.screenshot({ path: `${OUT}${tag}-win.png` });
         }
         await page.close();
