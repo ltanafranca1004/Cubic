@@ -26,7 +26,7 @@ import { createGameView, type GameHandle } from './game';
 import { sfx } from './game/sfx';
 import { Net } from './net/client';
 import { ending } from './scenes/ending/run';
-import { settings } from './style/settings';
+import { onSettings, settings } from './style/settings';
 import { setPartnerLevel, showCaption } from './ui/captions';
 import { chatText, type HudState, type LobbyState, type UIActions, type UIHandle, type UIHost, type UIState } from './ui/hooks';
 import { mountOnboarding } from './ui/onboarding';
@@ -167,6 +167,7 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
     onPlayAgain: () => net.restart(),
     onDrop: () => playing() && net.interact('drop'),
     onQuickChat: (index) => playing() && net.quick(index),
+    onPreviewVoice: (v) => void voice.playPreview(net.previewVoice(v)),
   };
 
   /** The side we draw: our own, unless the dev tools show the other one. */
@@ -268,6 +269,10 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
   for (const type of ['keydown', 'pointerdown']) window.addEventListener(type, () => net.activity(), true);
   // iOS only lets sound start from a tap: every tap keeps the voice path allowed to play.
   window.addEventListener('touchend', () => voice.prime(), true);
+  // The AI partner's voice (Settings): the server is told the key now, on every reconnect
+  // and whenever it changes, and uses it from the AI's next line.
+  net.setAiVoice(settings().aiVoice);
+  onSettings((s) => net.setAiVoice(s.aiVoice));
   net.start();
   render();
   setInterval(render, 500); // keeps the clock ticking

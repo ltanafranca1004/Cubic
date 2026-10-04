@@ -1,4 +1,4 @@
-import type { ChatMessage, FaceId, Role, RoomMode, Side, SignalView } from '@cubic/shared';
+import type { AiVoice, ChatMessage, FaceId, Role, RoomMode, Side, SignalView } from '@cubic/shared';
 import { noteText } from '../net/notes';
 
 // THE UI HOOK INTERFACE.
@@ -40,6 +40,8 @@ export interface UIActions {
   onDrop(): void;
   /** 1 to 4: say a fixed line. `index` is 0..3 into QUICK_CHATS. */
   onQuickChat(index: number): void;
+  /** Settings: play one greeting in this AI partner voice (a key of AI_VOICES). */
+  onPreviewVoice?(voice: AiVoice): void;
 }
 
 export type LobbyStatus =

@@ -335,6 +335,9 @@ ${ICONS.map((name, i) => `.cu-ico.${name} { background-position: -${i * 16}u 0; 
 /* the controls tab: an action and the key it is on. Click the key, press a new one. */
 .cu-key { ${nine('ui/field.png', 4)} height: var(--row-h); min-width: 30t; padding: 0 3t; line-height: 7t; flex: none; background: none; color: ${ROLE.ink}; white-space: nowrap; outline: none; display: flex; align-items: center; justify-content: center; }
 .cu-key > span { display: block; margin-top: -3t; }
+/* the Partner voice row holds a label, two names and Play: all three are a little tighter */
+.cu-key.cu-preview { min-width: 0; padding: 0 1t; margin-left: -2t; }
+.cu-seg[data-key="aiVoice"] span { padding: 0 2t; }
 .cu-key:hover { border-image-source: ${url('ui/field-active.png')}; }
 .cu-key.cap { border-image-source: ${url('ui/field-active.png')}; color: ${ROLE.in.deep}; }
 /* the other row of a swap: marked for a moment */

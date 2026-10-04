@@ -1,4 +1,4 @@
-import { VOICE_RAMP_MS, type TtsChain, type TtsClip, type VoiceChunk } from '@cubic/shared';
+import { VOICE_RAMP_MS, type TtsChain, type TtsClip, type VoiceChunk, type VoicePreview } from '@cubic/shared';
 import { audioContext } from '../game/sfx';
 import type { VoiceState } from '../ui/hooks';
 import { STUN_ONLY, hasTurn, iceConfig } from './ice';
@@ -592,6 +592,36 @@ export class Voice {
     } catch (e) {
       console.warn('[voice] could not play the AI relay line', e);
       fallback?.();
+    }
+  }
+
+  private previewSrc: AudioBufferSourceNode | null = null;
+  /**
+   * The settings panel's preview of an AI voice: one greeting, at full volume and not
+   * through the proximity gain (there is no partner on a menu). Call it from the click, so
+   * the audio may start. A new preview stops the one that is playing. No clip for that voice
+   * (its bank is not there): the browser voice reads the line.
+   */
+  async playPreview(pending: Promise<VoicePreview | null>): Promise<void> {
+    try {
+      const ac = audioContext(); // resumes it, inside the gesture
+      const preview = await pending;
+      if (!preview) return;
+      this.previewSrc?.stop();
+      this.previewSrc = null;
+      if (!preview.data) {
+        if (typeof speechSynthesis === 'undefined') return;
+        speechSynthesis.cancel();
+        speechSynthesis.speak(new SpeechSynthesisUtterance(preview.text));
+        return;
+      }
+      const src = ac.createBufferSource();
+      src.buffer = await ac.decodeAudioData(preview.data.slice(0));
+      src.connect(ac.destination);
+      src.start();
+      this.previewSrc = src;
+    } catch (e) {
+      console.warn('[voice] could not play the voice preview', e);
     }
   }
 

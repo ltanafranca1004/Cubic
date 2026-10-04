@@ -31,6 +31,8 @@ const app = createApp({
   turn,
   info: () => ({ aiAvailable: true, ttsAvailable: true, ttsMode: ai.ttsMode }),
   devCommands: devCommandsEnabled(env),
+  onAiVoice: (room, voice) => ai.setVoice(room, voice),
+  voicePreview: (voice) => ai.preview(voice),
   onAiRoom: (room, humanSide) => void ai.join(room, humanSide, (r, event, msg) => void app.io.to(r.code).emit(event, ...([msg] as never))),
 });
 

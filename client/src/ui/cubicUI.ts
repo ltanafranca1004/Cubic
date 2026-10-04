@@ -162,7 +162,7 @@ export const cubicUI: UIHost = {
       },
       leave: () => actions.onLeaveRoom(),
     });
-    const panel = createSettingsPanel(el, { sizeDiffers: (a, b) => textScale(scaleNow(), a) !== textScale(scaleNow(), b) });
+    const panel = createSettingsPanel(el, { sizeDiffers: (a, b) => textScale(scaleNow(), a) !== textScale(scaleNow(), b), previewVoice: (v) => actions.onPreviewVoice?.(v) });
     const settingsEl = $('cu-settings');
     $('cu-gear').addEventListener('click', () => panel.toggle());
     const gearOff = panel.onToggle((open) => {

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { VOCAB } from '@cubic/shared';
+import { AI_VOICES, DEFAULT_AI_VOICE, VOCAB, type AiVoice } from '@cubic/shared';
 import type { Budget } from './budget';
 import type { Persona } from './prompt';
 import { fixedLines } from './scripted';
@@ -22,11 +22,22 @@ import { fixedLines } from './scripted';
 //     characters for the whole server, and the ELEVENLABS_ENABLED kill switch. A refusal,
 //     a miss or a failure gives null and the caller uses the browser voice.
 // Nothing here blocks the game: the caller does not wait for a clip before moving.
+//
+// VOICES. The player picks the partner's voice in Settings (AI_VOICES in
+// shared/src/aiVoices.ts). Every voice has its own committed bank folder: the default voice
+// in server/tts/bank, any other in server/tts/bank-<key> (bankDirFor). A room only ever
+// asks for its own voice, and a voice's clips are read from disk the first time each is
+// asked for (then kept): the other bank is never read until a player picks that voice.
+// A voice whose clip is missing falls through like any other miss: cache, live, browser.
 // API: POST /v1/text-to-speech/{voice_id}
 // (https://elevenlabs.io/docs/api-reference/text-to-speech/convert)
 
-/** The partner's one voice, for every banked clip and every live line. Override with ELEVENLABS_VOICE_ID. */
-export const DEFAULT_VOICE_ID = 'r1KmysJdVYZjJCm4mL3b';
+/**
+ * The id of the default voice (Jessica), for its banked clips and its live lines.
+ * ELEVENLABS_VOICE_ID replaces the id behind that default voice only; the other voices of
+ * the picker keep their own ids.
+ */
+export const DEFAULT_VOICE_ID: string = AI_VOICES.find((v) => v.key === DEFAULT_AI_VOICE)!.id;
 /** Live lines (Gemini's own). Flash v2.5: half the per-character price of the standard models, low latency. */
 export const DEFAULT_TTS_MODEL = 'eleven_flash_v2_5';
 /** Banked clips: bought once, so the highest quality model. Override with ELEVENLABS_BANK_MODEL. */
@@ -36,8 +47,10 @@ export const ttsModels = (env: Record<string, string | undefined>) => ({ modelId
 export const TTS_CACHE_DIR = fileURLToPath(new URL('../../.tts-cache', import.meta.url));
 /** Extra generic lines for the bank, on top of the scripted partner's own lines. */
 export const TTS_BANK_FILE = fileURLToPath(new URL('../../tts/bank-lines.txt', import.meta.url));
-/** The committed clips. */
+/** The committed clips of the default voice. */
 export const TTS_BANK_DIR = fileURLToPath(new URL('../../tts/bank', import.meta.url));
+/** The bank folder of a voice: `base` itself for the default voice, `<base>-<key>` for any other. */
+export const bankDirFor = (voice: AiVoice, base: string = TTS_BANK_DIR): string => (voice === DEFAULT_AI_VOICE ? base : `${base}-${voice}`);
 const OUTPUT_FORMAT = 'mp3_44100_64';
 const TIMEOUT_MS = 10_000;
 /** A banked clip is made once, with the slow best model: it may take its time. */
@@ -96,13 +109,14 @@ export const clipFileName = (voiceId: string, modelId: string, text: string) => 
 export interface TtsOptions {
   /** Without a key only cached clips can be served. */
   apiKey?: string;
+  /** The id behind the DEFAULT voice (ELEVENLABS_VOICE_ID). The other voices keep the ids of AI_VOICES. */
   voiceId?: string;
   /** The model of live lines. */
   modelId?: string;
   /** The model of banked clips. */
   bankModelId?: string;
   cacheDir?: string;
-  /** Where the committed clips are. */
+  /** Where the committed clips of the default voice are; another voice's are in `<bankDir>-<key>` (bankDirFor). */
   bankDir?: string;
   /** Asked before every bought line (bank and cache hits are free and never ask). Without it nothing is capped. */
   budget?: Budget;
@@ -120,15 +134,18 @@ export interface Tts {
   /**
    * MP3 for a line, or null if it cannot be produced (the caller falls back to the browser
    * voice). `cacheOnly` never calls the API. `session` is the room, for the usage log.
+   * `voice`: the voice the room's player picked (the default one when left out).
    */
-  speak(text: string, session: string, opts?: { cacheOnly?: boolean }): Promise<SpeakResult | null>;
+  speak(text: string, session: string, opts?: { cacheOnly?: boolean; voice?: AiVoice }): Promise<SpeakResult | null>;
   /**
    * Make sure a line is in the bank (the tts:bank script). 'banked' = already there,
    * 'copied' = taken from the local cache for free, 'new' = bought from the API.
    */
   bank(text: string): Promise<'banked' | 'copied' | 'new' | null>;
-  /** The banked clip of this exact line or vocabulary piece, or null. Never calls anything. */
-  banked(text: string): Buffer | null;
+  /** The banked clip of this exact line or vocabulary piece in that voice (the default one when left out), or null. Never calls anything. */
+  banked(text: string, voice?: AiVoice): Buffer | null;
+  /** Banked clips of that voice held in memory: 0 until a clip of it was asked for. */
+  loaded(voice: AiVoice): number;
   /** Where a line's clip is already: the bank (its file name), the local cache, or nowhere (null = it would be bought). */
   where(text: string): { source: 'bank' | 'cache'; file: string } | null;
   /** The file name a newly banked line gets. */
@@ -143,6 +160,8 @@ export interface Tts {
 
 export function createTts(opts: TtsOptions = {}): Tts {
   const voiceId = opts.voiceId || DEFAULT_VOICE_ID;
+  /** The ElevenLabs id of a voice. Only keys of AI_VOICES get here: an id is never taken from outside. */
+  const idOf = (voice: AiVoice): string => (voice === DEFAULT_AI_VOICE ? voiceId : AI_VOICES.find((v) => v.key === voice)!.id);
   const modelId = opts.modelId || DEFAULT_TTS_MODEL;
   const bankModelId = opts.bankModelId || DEFAULT_BANK_MODEL;
   const dir = opts.cacheDir ?? TTS_CACHE_DIR;
@@ -153,16 +172,33 @@ export function createTts(opts: TtsOptions = {}): Tts {
   let totalChars = 0;
   const costs = new Map<string, number>();
 
-  const fileFor = (text: string) => join(dir, `${createHash('sha256').update(`${voiceId}\n${modelId}\n${text}`).digest('hex')}.mp3`);
-  const bankNew = (text: string) => join(bankDir, clipFileName(voiceId, bankModelId, text));
+  const fileFor = (text: string, voice: AiVoice = DEFAULT_AI_VOICE) => join(dir, `${createHash('sha256').update(`${idOf(voice)}\n${modelId}\n${text}`).digest('hex')}.mp3`);
+  const bankNew = (text: string, voice: AiVoice = DEFAULT_AI_VOICE) => join(bankDirFor(voice, bankDir), clipFileName(idOf(voice), bankModelId, text));
   /** Where this line's clip is in the bank, or null. Only a clip of this voice and bank model counts. */
-  const bankFor = (text: string): string | null => (existsSync(bankNew(text)) ? bankNew(text) : null);
+  const bankFor = (text: string, voice: AiVoice = DEFAULT_AI_VOICE): string | null => (existsSync(bankNew(text, voice)) ? bankNew(text, voice) : null);
+  /** The banked clips read so far, per voice: a voice has no entry until one of its clips is asked for. */
+  const memory = new Map<AiVoice, Map<string, Buffer>>();
+  /** The banked clip of a line in a voice, or null: no such clip (or it cannot be read). Read once, then kept. */
+  function bankClip(text: string, voice: AiVoice): Buffer | null {
+    const file = bankNew(text, voice);
+    const held = memory.get(voice)?.get(file);
+    if (held) return held;
+    try {
+      if (!existsSync(file)) return null;
+      const audio = readFileSync(file);
+      if (!memory.has(voice)) memory.set(voice, new Map());
+      memory.get(voice)!.set(file, audio);
+      return audio;
+    } catch {
+      return null; // unreadable: the same as missing
+    }
+  }
 
-  async function generate(text: string, file: string, session: string, model: string = modelId): Promise<Buffer | null> {
+  async function generate(text: string, file: string, session: string, model: string = modelId, voice: AiVoice = DEFAULT_AI_VOICE): Promise<Buffer | null> {
     try {
       totalChars += text.length;
       if (!opts.budget) log(`[eleven] room=${session} chars=${text.length} total=${totalChars}`);
-      const res = await fetchFn(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=${OUTPUT_FORMAT}`, {
+      const res = await fetchFn(`https://api.elevenlabs.io/v1/text-to-speech/${idOf(voice)}?output_format=${OUTPUT_FORMAT}`, {
         method: 'POST',
         headers: { 'xi-api-key': opts.apiKey!, 'content-type': 'application/json', accept: 'audio/mpeg' },
         body: JSON.stringify({ text, model_id: model }),
@@ -193,27 +229,25 @@ export function createTts(opts: TtsOptions = {}): Tts {
       const mine = new Set(bankLines().map((l) => clipFileName(voiceId, bankModelId, l)));
       return readdirSync(bankDir).filter((f) => mine.has(f)).length;
     },
-    async speak(text, session, { cacheOnly = false } = {}) {
-      // The committed bank first: it is always there.
-      const banked = bankFor(text);
-      if (banked) return { audio: readFileSync(banked), source: 'bank' };
-      const file = fileFor(text);
+    async speak(text, session, { cacheOnly = false, voice = DEFAULT_AI_VOICE } = {}) {
+      // The committed bank of this voice first: it is always there (once it was bought).
+      const banked = bankClip(text, voice);
+      if (banked) return { audio: banked, source: 'bank' };
+      const file = fileFor(text, voice);
       if (existsSync(file)) return { audio: readFileSync(file), source: 'cache' };
       if (cacheOnly || !opts.apiKey) return null;
       let job = inFlight.get(file);
       if (!job) {
         // The caps and the kill switch: a refusal is logged there, and the browser reads the line.
         if (opts.budget && opts.budget.eleven(session, text.length) !== null) return null;
-        job = generate(text, file, session).finally(() => inFlight.delete(file));
+        job = generate(text, file, session, modelId, voice).finally(() => inFlight.delete(file));
         inFlight.set(file, job);
       }
       const audio = await job;
       return audio ? { audio, source: 'api' } : null;
     },
-    banked(text) {
-      const file = bankFor(text);
-      return file ? readFileSync(file) : null;
-    },
+    banked: (text, voice = DEFAULT_AI_VOICE) => bankClip(text, voice),
+    loaded: (voice) => memory.get(voice)?.size ?? 0,
     where(text) {
       const file = bankFor(text);
       if (file) return { source: 'bank', file: basename(file) };

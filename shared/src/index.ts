@@ -6,5 +6,6 @@ export * from './puzzles';
 export * from './game';
 export * from './bot';
 export * from './voice';
+export * from './aiVoices';
 export * from './signals';
 export * from './pace';
