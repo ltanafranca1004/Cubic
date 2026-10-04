@@ -10,7 +10,7 @@ import { Budget, DEFAULT_ELEVEN_DAILY_CHARS, DEFAULT_GEMINI_DAILY_CAP, ELEVEN_PE
 import { DEFAULT_GEMINI_MODEL, MAX_OUTPUT_TOKENS, geminiBrain, isQuotaError, thinkingConfig, type Brain, type GeminiClient } from '../src/ai/gemini';
 import { CHAT_LINES, REPLY_SCHEMA, estimateTokens, systemPrompt, turnPrompt } from '../src/ai/prompt';
 import { RELAY_GAP_MS, relayPieces } from '../src/ai/relay';
-import { eventLine, fixedLines } from '../src/ai/scripted';
+import { eventLine, fixedLines, lineText } from '../src/ai/scripted';
 import { bankFileName, bankLines, createTts } from '../src/ai/tts';
 import { createAiPartner, type Send } from '../src/ai/wire';
 import { LIMITS, Rooms } from '../src/rooms';
@@ -428,7 +428,8 @@ test('stuck, strike: with no Gemini the script says its own line', async (t) => 
   const pass = clock(t);
   const room = rooms.create('ai');
   room.sit('out');
-  const ai = new AiPlayer(room, 'in', null, { log: () => {} });
+  // no puzzle scripts: the generic strike line is for a strike no script speaks about
+  const ai = new AiPlayer(room, 'in', null, { scripts: [], log: () => {} });
   const said = () => room.chat.filter((m) => m.isAI).map((m) => m.text);
   await pass(STUCK_MS + 2000);
   assert.ok(said().includes(eventLine('default', 'stuck')));
@@ -440,6 +441,29 @@ test('stuck, strike: with no Gemini the script says its own line', async (t) => 
   assert.ok(said().includes(eventLine('default', 'strike')));
   assert.equal(ai.calls, 0);
   for (const p of ['default', 'tsundere'] as const) for (const k of ['strike', 'stuck'] as const) assert.ok(fixedLines().includes(eventLine(p, k)) && eventLine(p, k).length <= 80);
+});
+
+test('strike: a puzzle script that speaks on the strike replaces the generic strike line, and its Gemini call', async (t) => {
+  const pass = clock(t);
+  const room = rooms.create('ai');
+  room.sit('out');
+  const prompts: { event: string }[] = [];
+  const brain: Brain = {
+    async think(turn) {
+      prompts.push(JSON.parse(turn) as { event: string });
+      return { text: JSON.stringify({ say: 'Oh no.', heard: '' }), tokens: { input: 300, output: 20 } };
+    },
+  };
+  // the real scripts: both players start on face 1, where the keypad script speaks on a strike
+  const ai = new AiPlayer(room, 'in', brain, { budget: new Budget({ log: () => {} }), log: () => {} });
+  const said = () => room.chat.filter((m) => m.isAI).map((m) => m.text);
+  await pass(3000);
+  strike(room);
+  await pass(8000);
+  assert.ok(said().includes(lineText('default', 'hidden-code.wrong')), said().join(' | '));
+  assert.ok(!said().includes(eventLine('default', 'strike')));
+  assert.deepEqual(prompts.map((p) => p.event), []);
+  assert.equal(ai.calls, 0);
 });
 
 test('per game: after 25 Gemini calls the rest of the game is scripted; a restart of the game gets 25 again', async (t) => {

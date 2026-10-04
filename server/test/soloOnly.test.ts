@@ -205,9 +205,10 @@ test('control: the same solo room with both switches on DOES reach both spies, s
     },
   );
   const { sent } = await soloGame({ ai, gemini, eleven, logs: [] }, pass);
-  assert.deepEqual(gemini.map((g) => (JSON.parse(g) as { event: string }).event), ['chat', 'strike', 'stuck', 'solved', 'chat']);
+  // (no 'strike': the keypad script of face 1 speaks on the strike, so the generic line is not asked for)
+  assert.deepEqual(gemini.map((g) => (JSON.parse(g) as { event: string }).event), ['chat', 'stuck', 'solved', 'chat']);
   // ElevenLabs only ever gets Gemini's own lines, never a line of the script.
-  assert.deepEqual(eleven, [1, 2, 3, 4, 5].map((n) => `A line of my own, number ${n}.`));
-  assert.equal(sent.filter((x) => x.event === 'tts').length >= 5, true);
-  assert.deepEqual([ai.budget.summary().geminiCalls, ai.budget.summary().elevenCalls], [5, 5]);
+  assert.deepEqual(eleven, [1, 2, 3, 4].map((n) => `A line of my own, number ${n}.`));
+  assert.equal(sent.filter((x) => x.event === 'tts').length >= 4, true);
+  assert.deepEqual([ai.budget.summary().geminiCalls, ai.budget.summary().elevenCalls], [4, 4]);
 });

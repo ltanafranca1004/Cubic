@@ -1,5 +1,6 @@
 import {
   CHAT_MAX_LEN,
+  PUZZLE_SCRIPTS,
   decide,
   newMind,
   nextStep,
@@ -272,7 +273,10 @@ export class AiPlayer {
       const more = room.state.strikes > this.strikes;
       this.strikes = room.state.strikes;
       this.stir(now);
-      if (more) this.event('strike', now);
+      // A puzzle script that speaks on the strike says what went wrong and what to do: its
+      // line stands, and the generic one (and its Gemini call) is dropped.
+      const own = (this.opts.scripts ?? PUZZLE_SCRIPTS).flatMap((s) => s.lines);
+      if (more && !d.say.some((s) => own.includes(s.key))) this.event('strike', now);
     }
     if (room.state.wonAt !== null) this.stir(now);
     else if (!this.stuckAsked && now - this.quietSince >= STUCK_MS) {

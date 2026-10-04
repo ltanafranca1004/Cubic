@@ -435,7 +435,8 @@ sockets with both API clients replaced by throwing spies).
   `finishReason: MAX_TOKENS` logs `[gemini] warning ...`.
 - Called ONLY on four events (`AiPlayer`), never on a timer and never per move:
   `chat` (a human line that is not plain protocol words), `solved` (rewords `solved` /
-  `win`), `strike` (the strike counter went up), `stuck` (no solve, no strike and no human
+  `win`), `strike` (the strike counter went up and no puzzle script spoke on it: a script's own
+  strike line replaces the generic one), `stuck` (no solve, no strike and no human
   chat line for 60 s while the human is connected and the game is not won; once per quiet
   period, and the time the human is disconnected does not count). The greeting is scripted.
 - Refused = the scripted line, at once. No queue (the old "pending" message is gone), no retry.
