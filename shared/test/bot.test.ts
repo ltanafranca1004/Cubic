@@ -36,7 +36,7 @@ function run(state: GameState, side: Side, steps: BotStep[]) {
 test('observe() never leaks what only the other side can see', () => {
   const s = createGame(0);
   const inside = JSON.stringify(observe(s, 'in'));
-  for (const hidden of ['door', 'crystal', 'rose', 'target', 'Meadow', 'T']) assert.ok(!inside.includes(`"${hidden}"`), `inside sees ${hidden}`);
+  for (const hidden of ['door', 'crystal', 'rose', 'target', 'Grass', 'T']) assert.ok(!inside.includes(`"${hidden}"`), `inside sees ${hidden}`);
   assert.ok(!/[T~]/.test(observe(s, 'in').grid.join('')), 'inside grid shows outside terrain');
   assert.ok(inside.includes('"plate"'));
 
