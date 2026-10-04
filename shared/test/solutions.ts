@@ -1,4 +1,4 @@
-import type { FaceId, Side } from '../src/index';
+import { visibleObjects, type FaceId, type Side } from '../src/index';
 import type { SolutionScript, Solver } from './harness';
 
 // ONE SOLUTION SCRIPT PER PUZZLE, keyed by the module's `id`.
@@ -34,7 +34,17 @@ export const SOLUTIONS: Record<string, SolutionScript> = {
   // ---------- end face 2 ----------
 
   // ---------- face 3: mirrored-glyph ----------
-  'mirrored-glyph': stub(3),
+  // Outside reads the symbol off the snow; inside flips every tile that is not yet as the
+  // symbol says, row by row in a snake so the walk stays short.
+  'mirrored-glyph': (t) => {
+    const symbol = new Set(visibleObjects(t.state, 'out', 3, t.env).filter((o) => o.type === 'f3-glyph').map((o) => `${o.x},${o.y}`));
+    const wrong = visibleObjects(t.state, 'in', 3, t.env).filter((o) => o.type === 'f3-tile' && (o.state !== 'off') !== symbol.has(`${o.x},${o.y}`));
+    wrong.sort((a, b) => a.y - b.y || (a.y % 2 ? b.x - a.x : a.x - b.x));
+    for (const o of wrong) {
+      t.go('in', { face: 3, x: o.x, y: o.y });
+      t.interact('in');
+    }
+  },
   // ---------- end face 3 ----------
 
   // ---------- face 4: botanical-mirror ----------

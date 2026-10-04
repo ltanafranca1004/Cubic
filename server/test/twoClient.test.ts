@@ -240,7 +240,7 @@ test('two clients play a whole game online', async () => {
   room.state.items.parcel = { id: 'parcel', kind: 'parcel', side: 'out', face: a.pose.face, x: a.pose.x, y: a.pose.y, carriedBy: null, placedOn: null, props: {} };
   await a.interact();
   assert.equal(a.last.state.players.out.carrying, 'parcel');
-  await a.walkTo(find('out', 3, 'crystal'));
+  await a.walkTo({ face: 3, x: 5, y: 5 });
   assert.equal(a.last.state.players.out.carrying, 'parcel'); // it crossed the edges with them
   await a.interact();
   await b2.until(() => b2.events.some((e) => e.type === 'drop' && e.side === 'out'), 'the drop reaches both');
@@ -248,7 +248,15 @@ test('two clients play a whole game online', async () => {
   delete room.state.items.parcel;
 
   // ---------- face 3: mirrored-glyph ----------
-  await a.interact();
+  // outside reads the symbol off the snow, inside flips those tiles (a snake, row by row)
+  const { visibleObjects } = await import('@cubic/shared');
+  const symbol = visibleObjects(a.last.state, 'out', 3).filter((o) => o.type === 'f3-glyph');
+  assert.deepEqual(visibleObjects(b2.last.state, 'in', 3).filter((o) => o.type === 'f3-glyph'), []); // the inside player cannot see it
+  symbol.sort((p, q) => p.y - q.y || (p.y % 2 ? q.x - p.x : p.x - q.x));
+  for (const o of symbol) {
+    await b2.walkTo({ face: 3, x: o.x, y: o.y });
+    await b2.interact();
+  }
   await solved(3);
   // ---------- end face 3 ----------
 
