@@ -31,12 +31,12 @@ const ASSETS = new URL('../public/assets/', import.meta.url);
 
 test('every outside face has its own effects and sound; every room shares the inside set', () => {
   const out = (face: 1 | 2 | 3 | 4 | 5 | 6) => facePlan('out', face, FULL);
-  assert.deepEqual(out(1).effects, ['tufts', 'flowers', 'butterflies', 'wind', 'waterGlints']);
-  assert.deepEqual(out(2).effects, ['sand', 'shimmer', 'tumbleweed', 'waterGlints']);
-  assert.deepEqual(out(3).effects, ['snow', 'breath', 'iceSparkle']);
-  assert.deepEqual(out(4).effects, ['fireflies', 'leaves', 'birds', 'waterGlints']);
-  assert.deepEqual(out(5).effects, ['cloudShadows', 'gulls', 'flags', 'waterGlints']);
-  assert.deepEqual(out(6).effects, ['drips', 'crystals', 'waterGlints']);
+  assert.deepEqual(out(1).effects, ['tufts', 'flowers', 'butterflies', 'wind', 'waterGlints', 'wade', 'canopy']);
+  assert.deepEqual(out(2).effects, ['sand', 'shimmer', 'tumbleweed', 'waterGlints', 'canopy']);
+  assert.deepEqual(out(3).effects, ['snow', 'breath', 'iceSparkle', 'footprints', 'canopy']);
+  assert.deepEqual(out(4).effects, ['fireflies', 'leaves', 'birds', 'waterGlints', 'canopy']);
+  assert.deepEqual(out(5).effects, ['cloudShadows', 'gulls', 'flags', 'waterGlints', 'canopy']);
+  assert.deepEqual(out(6).effects, ['drips', 'crystals', 'waterGlints', 'canopy']);
   assert.deepEqual(FACES.map((f) => out(f).loop), ['grass', 'desert', 'snow', 'forest', 'rooftop', 'cave']);
   assert.deepEqual(FACES.map((f) => out(f).surface), ['grass', 'sand', 'snow', 'leaves', 'roof', 'stone']);
   for (const face of FACES) {
@@ -50,7 +50,7 @@ test('every outside face has its own effects and sound; every room shares the in
 });
 
 test('particle caps: what a face asks for always fits, and reduce motion asks for less', () => {
-  const still: EffectId[] = ['tufts', 'flowers', 'flags', 'crystals', 'wallLights', 'tint', 'breath'];
+  const still: EffectId[] = ['tufts', 'flowers', 'flags', 'crystals', 'wallLights', 'tint', 'breath', 'canopy', 'wade', 'footprints'];
   for (const side of SIDES) {
     for (const face of FACES) {
       for (const motion of [FULL, REDUCED]) {
@@ -58,7 +58,7 @@ test('particle caps: what a face asks for always fits, and reduce motion asks fo
         assert.equal(plan.cap, motion.reduceMotion ? PARTICLE_CAP_REDUCED : PARTICLE_CAP);
         const moving = plan.effects.filter((e) => !still.includes(e)).reduce((n, e) => n + effectCount(e, motion), 0);
         assert.ok(moving <= plan.cap - 4, `${side} ${face}: ${moving} moving things leave room for footsteps under ${plan.cap}`);
-        const decor = plan.effects.filter((e) => still.includes(e) && e !== 'tint' && e !== 'breath').reduce((n, e) => n + effectCount(e, motion), 0);
+        const decor = plan.effects.filter((e) => still.includes(e) && e !== 'tint' && e !== 'breath' && e !== 'canopy' && e !== 'wade').reduce((n, e) => n + effectCount(e, motion), 0);
         assert.ok(decor <= DECOR_CAP, `${side} ${face}: ${decor} decorations`);
       }
     }

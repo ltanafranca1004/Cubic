@@ -1,7 +1,10 @@
 import type Phaser from 'phaser';
-import { TILE_PX, type FaceId, type Side, type TileKind } from '@cubic/shared';
+import { TILE_PX, defaultEnv, type FaceId, type Side, type TileKind, type Vec } from '@cubic/shared';
 import type { ArtProvider } from '../game/art';
+import { dressed } from '../world/biomes/decor';
+import { dressFace } from '../world/biomes/dress';
 import { asset } from './assets';
+import { settings } from './settings';
 import { TIME } from './tokens';
 
 // REAL ART for the game view. Reads assets/manifest.json and cuts the sheets it lists into
@@ -16,6 +19,8 @@ interface Manifest {
   objects?: Record<string, { image: string; frames: Record<string, Frames>; sides?: Partial<Record<Side, Record<string, Frames>>> }>;
   items?: Record<string, { image: string; frame: number }>;
   players?: Partial<Record<Side, { image: string; idle?: number[]; walk: number[] }>>;
+  /** The biome layer of the outside faces: see world/biomes. */
+  biomes?: { props: { image: string }; water: { image: string } };
 }
 
 const T = TILE_PX;
@@ -44,6 +49,7 @@ export class SheetArt implements ArtProvider {
       for (const o of Object.values(manifest.objects ?? {})) paths.add(o.image);
       for (const i of Object.values(manifest.items ?? {})) paths.add(i.image);
       for (const p of Object.values(manifest.players ?? {})) if (p) paths.add(p.image);
+      if (manifest.biomes) paths.add(manifest.biomes.props.image).add(manifest.biomes.water.image);
       await Promise.all(
         [...paths].map(
           (path) =>
@@ -84,7 +90,18 @@ export class SheetArt implements ArtProvider {
     return typeof frames === 'number' ? frames : (frames[tick % frames.length] ?? null);
   }
 
+  /** The two biome sheets, once both have loaded. */
+  private biomeSheets(): { props: HTMLImageElement; water: HTMLImageElement } | null {
+    const b = this.manifest?.biomes;
+    const props = b && this.sheets.get(b.props.image);
+    const water = b && this.sheets.get(b.water.image);
+    return props && water ? { props, water } : null;
+  }
+
   tile(side: Side, face: FaceId, kind: TileKind, x: number, y: number, frame: number): string {
+    // Outside, water and anything with a biome skin (a tree, a landmark) is plain ground
+    // here: dress() draws the real thing on top of it.
+    if (side === 'out' && kind !== 'floor' && this.biomeSheets() && dressed(defaultEnv.world.out[face].tiles, face, x, y)) kind = 'floor';
     const set = this.manifest?.tilesets?.[`${side}-${face}`];
     const list = set?.tiles[kind];
     if (set && list?.length) {
@@ -127,6 +144,11 @@ export class SheetArt implements ArtProvider {
       if (key) return key;
     }
     return this.fallback.player(side, step);
+  }
+
+  dress(g: CanvasRenderingContext2D, side: Side, face: FaceId, up: Vec, frame: number): void {
+    const sheets = side === 'out' ? this.biomeSheets() : null;
+    if (sheets) dressFace(g, sheets, face, up, frame, settings().reduceMotion);
   }
 
   playerFrame(side: Side, index: number): string | null {

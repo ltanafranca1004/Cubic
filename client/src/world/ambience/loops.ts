@@ -132,6 +132,28 @@ export const STEP_SOUND: Record<Surface, { freq: number; q: number; dur: number;
   room: { freq: 380, q: 1.2, dur: 0.06, gain: 0.04 },
 };
 
+/** A drop landing in the cave: one short falling note, quieter than a footstep. `water` rings a little longer. */
+export function dripSound(water: boolean): void {
+  if (!audio.unlocked) return;
+  try {
+    const ac = audioContext();
+    const osc = ac.createOscillator();
+    const gain = ac.createGain();
+    const t = ac.currentTime;
+    const dur = water ? 0.16 : 0.09;
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(water ? 1250 : 1700, t);
+    osc.frequency.exponentialRampToValueAtTime(water ? 520 : 900, t + dur);
+    gain.gain.setValueAtTime(0.016, t);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    osc.connect(gain).connect(audio.sfxBus());
+    osc.start(t);
+    osc.stop(t + dur + 0.02);
+  } catch {
+    // audio not available: stay silent
+  }
+}
+
 let noiseBuffer: AudioBuffer | null = null;
 
 export function stepSound(surface: Surface): void {

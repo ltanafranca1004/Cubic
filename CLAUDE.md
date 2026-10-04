@@ -163,6 +163,23 @@ Every owned folder has a README that says exactly what goes there.
 Both load into the same `FaceMap { side, face, tiles[y][x], objects[] }`. Objects never
 block by themselves; a puzzle's `isBlocked` decides.
 
+## Biome layer (client only, outside faces)
+
+`client/src/world/biomes` dresses the outside faces; it only looks, the map decides what
+blocks. `decor.ts` (pure data): `TREES` says what a `T` is on each face (bush, cactus, a
+palm beside water, snowy pine, oak, planter, stalagmite), `DECOR` is one 12x12 string map
+per face of non-blocking floor things (tall grass, mushrooms, drifts, puddles, drip
+points) plus landmark skins on solid tiles (`*` = the snowman). `dress.ts` paints it into
+the face texture from `GameScene.paint` (through `ArtProvider.dress`), in screen space:
+props stay upright when the face is turned and water gets a bank on every land side.
+Tall props (two tiles high) may only stand on solid tiles with no puzzle object on any
+neighbour; `client/test/biomes.test.ts` fails if a decor tile, a crown or a landmark ever
+covers a puzzle object, an item or the forest clearing. Sprites: `tools/art/biomes.ts`
+(cell order in `world/biomes/sheet.ts`). Sway follows one gust across the screen (250 ms
+steps, off with reduce motion). The ambience layer draws what goes OVER the player: the
+crown of a tree they stand behind (dithered), tall grass over their feet, drips, snow.
+When you move a map tile, run `npm test`: the biome test tells you what it now covers.
+
 ## Items (carryable)
 
 - Map object `type: "item"`, `name` = unique id, prop `kind` (e.g. `rose`). Press **E** to

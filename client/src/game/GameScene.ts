@@ -109,6 +109,8 @@ export class GameScene extends Phaser.Scene {
     this.fromG = layer();
     this.toG = layer();
     this.add.image(0, 0, FACE_KEY).setOrigin(0, 0);
+    // Dev only: the checks in tools/screens read the painted face without the sprites on top of it.
+    if (import.meta.env.DEV) Object.assign(window, { __cubicFace: () => this.face.canvas });
     this.shadow = this.add.rectangle(0, 0, 10, 2, 0x000000, 0.25).setOrigin(0, 0).setVisible(false);
     this.hero = this.add.image(0, 0, this.art.player('out', 0)).setOrigin(0, 0).setVisible(false);
     this.carried = this.add.image(0, 0, this.art.item('rose')).setOrigin(0, 0).setVisible(false);
@@ -245,6 +247,7 @@ export class GameScene extends Phaser.Scene {
         put(this.art.tile(me, face, tileAt(world, me, face, x, y), x, y, this.frame), sx, sy);
       }
     }
+    this.art.dress?.(g, me, face, up, this.frame);
     const objects = visibleObjects(state, me, face);
     for (const o of objects) {
       const [sx, sy] = canonToScreen(me, face, up, o.x, o.y);
