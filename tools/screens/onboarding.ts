@@ -12,7 +12,7 @@ import { FACE_SIZE } from '../../shared/src/types';
 
 const BASE = process.env.BASE ?? 'http://localhost:5407';
 const OUT = new URL('../../docs/screens/onboarding/', import.meta.url).pathname;
-const SIZE = { width: 1280, height: 720 };
+const SIZE = process.env.SIZE === '1920' ? { width: 1920, height: 1080 } : { width: 1280, height: 720 }; // SIZE=1920 for the large window
 mkdirSync(OUT, { recursive: true });
 
 interface Cubic {
@@ -104,11 +104,17 @@ async function run(browser: Browser, tag: 'webgl' | 'canvas'): Promise<void> {
   // ---- game start: side card, controls hint, the narrator's intro line ----
   await expect('outside: side card, controls and narrator are up', async () => {
     const s = await shown(a);
-    return /^You're ON the cube ?Your partner is in the same spot on the other side\. Their left is your right\.$/.test(s.card ?? '') && /WASD\/Arrows ?move ?E ?interact ?Q ?drop ?Enter ?chat ?V ?talk$/.test(s.keys ?? '') && !!s.cap && s.hint === null;
+    return /^You're ON the cube ?Got it ?Your partner is in the same spot on the other side\. Their left is your right\.$/.test(s.card ?? '') && /WASD\/Arrows ?move ?E ?interact ?Q ?drop ?Enter ?chat ?V ?talk$/.test(s.keys ?? '') && !!s.cap && s.hint === null;
   });
   await expect('inside: the card says INSIDE', async () => /^You're INSIDE the cube/.test((await shown(b)).card ?? ''));
   await shot(a, '01-start-card-controls-narrator-out');
   await shot(b, '01-start-card-controls-narrator-in');
+
+  // ---- the card has a real way out: GOT IT (inside), while the other one is left to go by itself ----
+  await b.locator('.cu-onb-card button').click();
+  await expect('inside: GOT IT closes the card at once', async () => (await shown(b)).card === null, 1000);
+  await expect('inside: the controls hint and the narrator stay', async () => !!(await shown(b)).keys && !!(await shown(b)).cap, 1000);
+  await expect('outside: its card is still up (each player closes their own)', async () => !!(await shown(a)).card, 1000);
 
   // ---- the card goes by itself, then the cube hint ----
   await expect('outside: the cube hint follows the card', hintIs(a, /^This is the cube\. Your face is the one in front\.$/), 12_000);
@@ -182,7 +188,10 @@ async function run(browser: Browser, tag: 'webgl' | 'canvas'): Promise<void> {
   // ---- hints off: a fresh session (offline game), the toggle takes everything away ----
   const c = await open(browser, `?mock=game${tag === 'canvas' ? '&renderer=canvas' : ''}`, `${tag} off`);
   await expect('fresh session: card and controls are up', async () => !!(await shown(c)).card && !!(await shown(c)).keys);
-  await c.locator('#cu-gear').click();
+  await c.keyboard.press('ArrowDown'); // (a key that is not a click: the card stays up)
+  await c.locator('#cu-gear').focus();
+  await c.keyboard.press('Enter');
+  await c.locator('#cu-settings [data-tab="access"]').click();
   await c.waitForTimeout(300);
   await shot(c, '08-settings-hints-row');
   await c.locator('.cu-toggle[data-key="hints"]').click();
@@ -199,6 +208,7 @@ async function run(browser: Browser, tag: 'webgl' | 'canvas'): Promise<void> {
   });
   await shot(c, '09-hints-off');
   await c.locator('#cu-gear').click();
+  await c.locator('#cu-settings [data-tab="access"]').click();
   await c.locator('.cu-toggle[data-key="hints"]').click();
   await press(c, 'Escape');
   await expect('hints back on: the controls hint and the cube hint are still owed', async () => !!(await shown(c)).keys && /This is the cube/.test((await shown(c)).hint ?? ''));
@@ -208,7 +218,7 @@ async function run(browser: Browser, tag: 'webgl' | 'canvas'): Promise<void> {
 
 const browser = await chromium.launch();
 try {
-  for (const tag of ['webgl', 'canvas'] as const) await run(browser, tag);
+  for (const tag of ['webgl', 'canvas'] as const) if (!process.env.RENDERER || process.env.RENDERER === tag) await run(browser, tag); // RENDERER=webgl or canvas: only that one
 } catch (e) {
   let n = 0;
   for (const context of browser.contexts()) for (const page of context.pages()) await page.screenshot({ path: `${OUT}_failed-${++n}.png` }).catch(() => {});

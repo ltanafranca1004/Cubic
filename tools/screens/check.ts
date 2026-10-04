@@ -8,6 +8,11 @@
 // the fade to side select, the fade into the game and the fade back out), which must
 // never leave the menus stuck between two screens. First of all it loads the page cold and
 // touches nothing: only the menu track (one format) may be downloaded before the first click.
+// heroes land back where they started however fast the sides are switched. And that no
+// click on a DOM overlay reaches another DOM control under it either: the veil over the
+// gear or LEAVE, the controls tab, the side card's GOT IT, COPY, the win screen.
+//
+//   one of the four runs:  SIZE=1920 RENDERER=webgl npx tsx screens/check.ts
 //
 //   needs:  npm run dev (server :3001, client :5173)      BASE overrides the client URL
 //   run:    cd tools && npx tsx screens/check.ts            (add "resize" for the resize steps only)
@@ -50,6 +55,7 @@ interface StageProbe {
   /** Time stamp of the last press the stage's Phaser input saw. */
   lastDown: number;
 }
+declare const navigator: { clipboard: { readText(): Promise<string> } };
 declare const window: { __cubicJoinCode(): string | null; __cubicModeStatus(): string; __cubic: Cubic; __cubicButtons(): Btn[]; __cubicStage(): StageProbe; __cubicHeroes(): { out: Spot; in: Spot } };
 
 const problems: string[] = [];
@@ -59,7 +65,8 @@ const fail = (msg: string) => {
 };
 
 async function open(browser: Browser, size: { width: number; height: number }, query: string, tag: string): Promise<Page> {
-  const page = await browser.newPage({ viewport: size, deviceScaleFactor: 2 });
+  const context = await browser.newContext({ viewport: size, deviceScaleFactor: 2, permissions: ['clipboard-read', 'clipboard-write'] });
+  const page = await context.newPage();
   page.on('pageerror', (e) => fail(`${tag}: page error: ${e.message}`));
   page.on('console', (m) => {
     if (m.type() === 'error') fail(`${tag}: console error: ${m.text().slice(0, 200)}`);
@@ -498,6 +505,19 @@ async function run(browser: Browser, size: { width: number; height: number }, re
   await a.waitForTimeout(900);
   await shot(a, '4-side-select-host');
 
+  // COPY next to the room code: a DOM button over the stage. It copies, says COPIED, and
+  // the click reaches nothing behind it.
+  {
+    const before = await stage(a);
+    await mouseClick(a, await middle(a, '#cu-copy'));
+    await a.waitForTimeout(300);
+    if (!/copied/i.test((await a.locator('#cu-copy').textContent()) ?? '')) fail(`${tag}: COPY does not say COPIED`);
+    if ((await a.evaluate(() => navigator.clipboard.readText())) !== code) fail(`${tag}: COPY did not copy the room code`);
+    if ((await stage(a)).lastDown !== before.lastDown) fail(`${tag}: the click on COPY reached the canvas behind`);
+    if ((await net(a, (c) => c.room?.phase)) !== 'lobby') fail(`${tag}: the click on COPY left the lobby`);
+    await shot(a, '4a-side-select-copied');
+  }
+
   // switch sides 20 times, fast: each hero hops when its side is picked and must land
   // exactly where it started (it used to end a little higher every time)
   const start = await heroes(a);
@@ -543,6 +563,17 @@ async function run(browser: Browser, size: { width: number; height: number }, re
   await shot(a, '7-game-outside');
   await shot(b, '7-game-inside');
 
+  // the side card (still up for the guest): GOT IT closes it and the click goes nowhere else
+  {
+    const before = await stage(b);
+    if (!(await b.evaluate(() => !!document.querySelector('.cu-onb-card.on')))) fail(`${tag}: the side card is not up at the start of the game`);
+    await mouseClick(b, await middle(b, '.cu-onb-card button'));
+    await b.waitForTimeout(500);
+    if (await b.evaluate(() => !!document.querySelector('.cu-onb-card.on'))) fail(`${tag}: GOT IT did not close the side card`);
+    if ((await stage(b)).lastDown !== before.lastDown) fail(`${tag}: the click on GOT IT reached the canvas behind`);
+    if ((await screenOf(b)) !== 'game' || (await b.evaluate(() => !!document.querySelector('.cu-modal.on')))) fail(`${tag}: the click on GOT IT did more than close the card`);
+  }
+
   // settings open from the gear in game
   await a.locator('#cu-gear').click();
   await a.waitForTimeout(400);
@@ -573,6 +604,49 @@ async function run(browser: Browser, size: { width: number; height: number }, re
   if (await isOn('cu-pause')) fail(`${tag}: Resume did not close the pause menu`);
   await a.waitForTimeout(200);
   if (!(await stage(a)).input) fail(`${tag}: the stage input did not come back after the pause menu closed`);
+  // DOM under DOM: the veil lies over the gear and LEAVE. A click on it there closes the
+  // settings and must not ALSO press what is under it (the gear would open them again).
+  const gear = await middle(a, '#cu-gear');
+  await a.mouse.click(gear.x, gear.y);
+  await a.waitForTimeout(300);
+  if (!(await isOn('cu-settings'))) fail(`${tag}: the gear did not open the settings`);
+  await a.mouse.move(gear.x, gear.y);
+  await a.mouse.down();
+  await a.waitForTimeout(60);
+  if (!(await isOn('cu-settings'))) fail(`${tag}: the settings closed on the press (the release would then land on the gear under the veil)`);
+  await a.mouse.up();
+  await a.waitForTimeout(300);
+  if (await isOn('cu-settings')) fail(`${tag}: a click on the veil over the gear closed the settings and opened them again`);
+  await a.mouse.click(gear.x, gear.y);
+  await a.waitForTimeout(300);
+  await quiet('a click on the settings veil over LEAVE', async () => mouseClick(a, await middle(a, '#cu-leave')));
+  if (await isOn('cu-settings')) fail(`${tag}: a click on the veil did not close the settings`);
+  // the controls tab: its tab, a key button (it waits for a key; Esc takes it back), DONE
+  await a.mouse.click(gear.x, gear.y);
+  await a.waitForTimeout(300);
+  await quiet('the CONTROLS tab', async () => mouseClick(a, await middle(a, '#cu-settings [data-tab="controls"]')));
+  await quiet('a key button in the controls tab', async () => mouseClick(a, await middle(a, '#cu-settings [data-bind="drop"]')));
+  if (!/press a key/i.test((await a.locator('#cu-settings [data-bind="drop"]').textContent()) ?? '')) fail(`${tag}: a click on a key button does not wait for a key`);
+  await a.keyboard.press('Escape');
+  if (!(await isOn('cu-settings'))) fail(`${tag}: Esc on a waiting key button closed the settings`);
+  await quiet('DONE on the controls tab', async () => mouseClick(a, await middle(a, '#cu-settings [data-close]')));
+  if (await isOn('cu-settings')) fail(`${tag}: DONE did not close the settings`);
+  // the pause veil over the gear and LEAVE: nothing happens at all
+  await a.keyboard.press('Escape');
+  await a.waitForTimeout(300);
+  for (const under of ['#cu-gear', '#cu-leave']) {
+    await quiet(`a click on the pause veil over ${under}`, async () => mouseClick(a, await middle(a, under)));
+    if (!(await isOn('cu-pause')) || (await isOn('cu-settings'))) fail(`${tag}: a click on the pause veil over ${under} went through to it`);
+  }
+  await a.keyboard.press('Escape');
+  await a.waitForTimeout(300);
+  // the win screen (shown here by hand: nobody has won): its veil and its panel take the click
+  await a.evaluate(() => (document.querySelector('#cu-win') as unknown as { classList: { add(c: string): void } }).classList.add('on'));
+  await a.waitForTimeout(300);
+  await quiet('a click on the win screen veil over LEAVE', async () => mouseClick(a, await middle(a, '#cu-leave')));
+  await quiet('a click on the win screen panel', async () => mouseClick(a, await middle(a, '#cu-win h2')));
+  await a.evaluate(() => (document.querySelector('#cu-win') as unknown as { classList: { remove(c: string): void } }).classList.remove('on'));
+  await a.waitForTimeout(300);
   await quiet('a click in the chat field', async () => mouseClick(a, await middle(a, '#cu-chat')));
   await a.keyboard.press('Escape');
   await a.waitForTimeout(200);
