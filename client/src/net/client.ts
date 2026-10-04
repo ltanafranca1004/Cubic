@@ -28,6 +28,7 @@ import {
 } from '@cubic/shared';
 import { soloLeftUntil, type Saved } from './left';
 import { viewerNote } from './notes';
+import { WAKE, socketOptions, type WakeState } from './wake';
 
 // Socket client + move prediction. The local player's input is applied at once to a
 // predicted copy of the state with the same /shared code the server runs; every server
@@ -116,6 +117,11 @@ export class Net {
    * same as a cold start: waiting will not help, so the menus say so.
    */
   blocked = false;
+  /**
+   * Not online: since when we have been trying (our clock), and whether we stopped (the
+   * menus then show RETRY). Null while online. See `wake.ts` for the numbers.
+   */
+  wake: WakeState | null = null;
   info: ServerInfo = { aiAvailable: false, ttsAvailable: false, ttsMode: 'browser' };
   code: string | null = null;
   /** Our member id in the room: who we are in `room.members`. */
@@ -141,6 +147,7 @@ export class Net {
   private activityAt = 0;
   /** The AI partner's voice (Settings), as the server was last told. Null = never set: the server's default. */
   private aiVoice: AiVoice | null = null;
+  private wakeTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private h: NetHandlers,
@@ -168,22 +175,18 @@ export class Net {
       this.h.onChange();
       return;
     }
-    // wakes a sleeping server; and each time the socket is refused, asks why
-    const probe = () =>
-      void serverBlocksUs().then((blocked) => {
-        if (this.online || blocked === this.blocked) return;
-        this.blocked = blocked;
-        this.h.onChange();
-      });
+    const probe = () => this.probe();
+    this.wait();
     probe();
-    // WebSocket first; where a network blocks it (some campus and office networks), HTTP
-    // long-polling. Without tryAllTransports the client would never try the second one.
-    const options = { transports: ['websocket', 'polling'], tryAllTransports: true };
+    const options = socketOptions();
     const socket = (this.socket = SERVER_URL ? io(SERVER_URL, options) : io(options));
     socket.on('connect_error', probe); // the socket keeps retrying by itself
     socket.on('connect', () => {
       this.online = true;
       this.blocked = false;
+      this.wake = null;
+      if (this.wakeTimer) clearTimeout(this.wakeTimer);
+      this.wakeTimer = null;
       this.h.onChange();
       // before the rejoin, so a solo room that takes us back speaks in our voice at once
       if (this.aiVoice) socket.emit('ai:voice', { voice: this.aiVoice });
@@ -191,12 +194,19 @@ export class Net {
     });
     socket.on('disconnect', (reason) => {
       this.online = false;
+      this.wait();
       this.h.onChange();
       // The server closed this socket (our seat was opened in another tab, see `removed`):
       // socket.io does not reconnect after that by itself. We have no seat any more, so
       // connecting again only puts the menus back online.
       if (reason === 'io server disconnect') socket.connect();
     });
+    // Back from the background, or the network is back: try now instead of sitting out a
+    // pause (a phone that was locked finds its socket dead, and its timers were frozen).
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && this.nudge());
+      window.addEventListener('online', () => this.nudge());
+    }
     socket.on('info', (info) => {
       this.info = info;
       this.h.onChange();
@@ -245,6 +255,65 @@ export class Net {
     socket.on('tts', (c) => this.h.onTts(c));
     socket.on('tts:chain', (c) => this.h.onTtsChain?.(c));
     socket.on('speak', (m) => this.h.onSpeak(m.text));
+  }
+
+  /**
+   * Ask /health: it wakes a sleeping server, and each time the socket is refused it says
+   * whether that is a cold start or a server that refuses this site.
+   */
+  private probe(): void {
+    void serverBlocksUs().then((blocked) => {
+      if (this.online || blocked === this.blocked) return;
+      this.blocked = blocked;
+      this.h.onChange();
+    });
+  }
+
+  /** We are not online from now: the wait starts, and with it the clock to the give-up. */
+  private wait(): void {
+    this.wake = { since: Date.now(), failed: false };
+    if (this.wakeTimer) clearTimeout(this.wakeTimer);
+    this.wakeTimer = setTimeout(() => this.waited(), WAKE.giveUpMs);
+  }
+
+  /**
+   * The wait is over and the server never answered: stop, and let the menus offer RETRY.
+   * Never in a room: the seat may still be held, so the socket goes on by itself (the
+   * game and the lobby say "reconnecting"); we look again once the room is gone.
+   */
+  private waited(): void {
+    this.wakeTimer = null;
+    if (this.online || !this.wake || this.wake.failed) return;
+    // (nor while the server refuses this site: that line says it is retrying, and it is)
+    if (this.code || this.blocked) {
+      this.wakeTimer = setTimeout(() => this.waited(), WAKE.retryMaxMs);
+      return;
+    }
+    this.wake = { ...this.wake, failed: true };
+    this.socket?.disconnect(); // ends the retries; `retry` starts them again
+    this.h.onChange();
+  }
+
+  /** One attempt right now, whatever pause the socket was in. Not while it is connected. */
+  private attempt(): void {
+    if (!this.socket || this.online) return;
+    this.probe();
+    this.socket.disconnect().connect();
+  }
+
+  /** RETRY on the menus: the whole wait again, from zero. */
+  retry(): void {
+    if (!this.socket || this.online) return;
+    this.wait();
+    this.attempt();
+    this.h.onChange();
+  }
+
+  /** The page is visible again or the network came back: try at once (after a give-up, start over). */
+  private nudge(): void {
+    if (!this.socket || this.online) return;
+    if (this.wake?.failed) this.retry();
+    else this.attempt();
   }
 
   private repredict(): void {

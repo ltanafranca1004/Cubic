@@ -22,7 +22,8 @@ test('solo: the mode screen offers PLAY SOLO as the third choice, in the same li
   assert.deepEqual([...items.matchAll(/label: '([A-Z ]+)'/g)].map((m) => m[1]), ['CREATE LOBBY', 'JOIN LOBBY', 'PLAY SOLO']);
   // one loop makes all three: the same Button, variant, size, focus list and press
   assert.match(mode, /items\.forEach\(\(item, i\) => \{[^}]*new Button\(this, \{ label: item\.label, variant: 'in', width: bw, height: bh, onClick: item\.onClick \}\)/);
-  assert.match(mode, /return \[\.\.\.this\.buttons, this\.back\];/);
+  // (RETRY joins the list only while it is shown: the server never answered)
+  assert.match(mode, /return \[\.\.\.this\.buttons, \.\.\.\(this\.retry\.root\.visible \? \[this\.retry\] : \[\]\), this\.back\];/);
   assert.doesNotMatch(mode + popup, /PLAY WITH AI/);
   assert.match(popup, /'PLAY SOLO'/);
 });

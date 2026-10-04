@@ -33,6 +33,7 @@ const app = createApp({
   devCommands: devCommandsEnabled(env),
   onAiVoice: (room, voice) => ai.setVoice(room, voice),
   voicePreview: (voice) => ai.preview(voice),
+  log: (line) => console.log(line),
   onAiRoom: (room, humanSide) => void ai.join(room, humanSide, (r, event, msg) => void app.io.to(r.code).emit(event, ...([msg] as never))),
 });
 
