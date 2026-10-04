@@ -128,9 +128,26 @@ export class AudioManager {
 
   // ----- internals -----
 
+  private armed = false;
+
   private arm(): void {
-    onFirstGesture(window, () => this.unlock());
+    if (this.armed) return;
+    this.armed = true;
+    onFirstGesture(window, () => {
+      this.armed = false;
+      this.unlock();
+    });
+    // A phone stops the AudioContext when the page goes to the background (and iOS after a
+    // call): when the page is back, the next tap starts it again.
+    if (!this.watching) {
+      this.watching = true;
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible' && this.mixer.isUnlocked) this.arm();
+      });
+    }
   }
+
+  private watching = false;
 
   /** First user gesture: the AudioContext may run now. Starts the queued track. */
   private unlock(): void {

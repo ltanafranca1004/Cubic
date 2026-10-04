@@ -203,6 +203,10 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
     if (next === callState) return;
     callState = next;
     if (next !== 'on') voice.hangUp(next !== 'held');
+    // The mic is never opened on the title screen or in an empty lobby. With a partner in
+    // the room it comes back by itself if this browser already allowed it; otherwise the
+    // player presses Enable mic (or TALK on a touch screen).
+    else if (!offlineSide) void voice.resumeMic();
   }
 
   function render(): void {
@@ -226,8 +230,9 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
   // Dev only: lets tests and the console inspect the client state.
   if (import.meta.env.DEV) Object.assign(window, { __cubic: net, __cubicVoice: voice, __cubicAudio: audio });
   Object.assign(devHooks, { net, render });
+  // iOS only lets sound start from a tap: every tap keeps the voice path allowed to play.
+  window.addEventListener('touchend', () => voice.prime(), true);
   net.start();
-  if (!offlineSide) void voice.resumeMic();
   render();
   setInterval(render, 500); // keeps the clock ticking
   setInterval(() => {
