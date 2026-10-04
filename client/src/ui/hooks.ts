@@ -1,4 +1,5 @@
 import type { ChatMessage, FaceId, Role, RoomMode, Side, SignalView } from '@cubic/shared';
+import { noteText } from '../net/notes';
 
 // THE UI HOOK INTERFACE.
 // Everything outside the Phaser canvas (lobby, HUD, chat, voice controls, win screen) is a
@@ -150,7 +151,7 @@ export interface UIState {
   partnerAway?: { kind: 'reconnecting' | 'left'; until: number } | null;
   /**
    * Lobby (it has no chat): the system line to show, i.e. a running inactivity countdown
-   * or "left due to inactivity" for a few seconds. In a game these are in `chat`.
+   * or "Your partner left due to inactivity" for a few seconds. In a game these are in `chat`.
    */
   notice?: string | null;
   /**
@@ -167,13 +168,13 @@ export interface UIState {
 
 /**
  * The words of a system chat line right now. A countdown (`idle`) is one line whose time
- * runs down from `system.until` (this clock); every other line is the server's text.
+ * runs down from `system.until` (this clock); every other line is the text as it came.
+ * The text is already worded for this player (`viewerNote` in `net/notes.ts`): "Your
+ * partner is inactive, removed in m:ss" about the other player, "[name] inactive, removed
+ * in m:ss" about yourself. Only the clock at its end is rewritten here.
  */
 export function chatText(m: ChatMessage, now: number): string {
-  const s = m.system;
-  if (s?.kind !== 'idle' || s.until === undefined) return m.text;
-  const secs = Math.max(0, Math.ceil((s.until - now) / 1000));
-  return `${s.who} inactive, removed in ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
+  return noteText(m, now);
 }
 
 export interface UIHandle {

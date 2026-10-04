@@ -103,6 +103,10 @@ function keepActive(page: Page, keys: string[]): () => Promise<void> {
 }
 
 const COUNTDOWN = (who: string) => new RegExp(`^${who} inactive, removed in 0:0[1-5]$`);
+/** What the player who STAYS reads about the other one: never a label (P1 / P2 shift when the host is removed). */
+const PARTNER = /^Your partner is inactive, removed in 0:0[1-5]$/;
+const PARTNER_LEFT = 'Your partner left due to inactivity';
+const PARTNER_BACK = 'Your partner is back';
 
 /** Host page `idle` and guest page `active` in one lobby (the host outside, the guest inside), both on the mode screen first. */
 async function pair(browser: Browser, query?: string): Promise<{ idle: Page; active: Page }> {
@@ -121,7 +125,7 @@ async function lobby(browser: Browser): Promise<void> {
   const { idle: b, active: a } = await pair(browser);
   const code = (await view(a)).code!;
   const stop = keepActive(a, ['d']); // A already stands on the inside: the key changes nothing, it is only a key
-  await until('the countdown in both lobbies', async () => COUNTDOWN('P1').test((await view(a)).banner) && YOU.test((await view(b)).banner), IDLE + 4000);
+  await until('the countdown in both lobbies', async () => PARTNER.test((await view(a)).banner) && YOU.test((await view(b)).banner), IDLE + 4000);
   log(`A sees "${(await view(a)).banner}", B sees "${(await view(b)).banner}"`);
   await shot(a, '1-lobby-countdown-A');
   await shot(b, '1-lobby-countdown-B');
@@ -134,7 +138,7 @@ async function lobby(browser: Browser): Promise<void> {
   const va = await view(a);
   check(va.code === code && va.phase === 'lobby' && va.side === 'in' && (await has(a, 'LEAVE')), `A is still in lobby ${code}, with the pick kept (${va.side})`);
   check(va.role === 'host', 'A became the host (START button)');
-  check(va.banner === 'P1 left due to inactivity', `A sees "${va.banner}"`);
+  check(va.banner === PARTNER_LEFT, `A sees "${va.banner}"`);
   await shot(a, '1-lobby-after-A');
   // a new player joins with the code
   const c = await open(browser);
@@ -161,7 +165,7 @@ async function game(browser: Browser): Promise<void> {
   await toGame(b, a);
   const before = await view(a);
   const stop = keepActive(a, ['a', 'd']);
-  await until('the countdown in both chats', async () => (await view(a)).sys.some((t) => COUNTDOWN('OUTSIDE').test(t)) && (await view(b)).sys.some((t) => COUNTDOWN('OUTSIDE').test(t)), IDLE + 6000);
+  await until('the countdown in both chats', async () => (await view(a)).sys.some((t) => PARTNER.test(t)) && (await view(b)).sys.some((t) => COUNTDOWN('OUTSIDE').test(t)), IDLE + 6000);
   log(`A's chat: ${JSON.stringify((await view(a)).sys)}, B's chat: ${JSON.stringify((await view(b)).sys)}`);
   const own = (await view(b)).banner;
   check(YOU.test(own) && (await view(a)).banner === '', `B, the idle one, also gets the banner "${own}"; A has no banner`);
@@ -174,7 +178,7 @@ async function game(browser: Browser): Promise<void> {
   await until('B back on the mode screen', async () => (await view(b)).mode === REMOVED, WARN + 5000);
   await sleep(700);
   await shot(b, '2-game-removed-B');
-  await until('A to see B leave', async () => (await view(a)).sys.includes('OUTSIDE left due to inactivity'), 3000);
+  await until('A to see B leave', async () => (await view(a)).sys.includes(PARTNER_LEFT), 3000);
   const va = await view(a);
   check(va.screen === 'game' && va.code === before.code && va.side === 'in' && va.online, `A is still in game ${va.code} on the same side`);
   check(va.role === 'host', 'A became the host');
@@ -196,13 +200,13 @@ async function cancel(browser: Browser): Promise<void> {
   const { idle: b, active: a } = await pair(browser);
   await toGame(b, a);
   const stop = keepActive(a, ['a', 'd']);
-  await until('the countdown in both chats', async () => (await view(a)).sys.some((t) => COUNTDOWN('OUTSIDE').test(t)) && (await view(b)).sys.some((t) => COUNTDOWN('OUTSIDE').test(t)), IDLE + 6000);
+  await until('the countdown in both chats', async () => (await view(a)).sys.some((t) => PARTNER.test(t)) && (await view(b)).sys.some((t) => COUNTDOWN('OUTSIDE').test(t)), IDLE + 6000);
   await shot(b, '3-cancel-countdown-B');
   await b.locator('#cu-chat').fill('sorry, I am here');
   await b.locator('#cu-chat').press('Enter');
-  await until('"is back" in both chats', async () => (await view(a)).sys.includes('OUTSIDE is back') && (await view(b)).sys.includes('OUTSIDE is back'), 3000);
+  await until('"is back" in both chats', async () => (await view(a)).sys.includes(PARTNER_BACK) && (await view(b)).sys.includes('OUTSIDE is back'), 3000);
   const va = await view(a);
-  check(va.sys.length === 1 && va.log.some((t) => t!.includes('sorry, I am here')), `the countdown line became "OUTSIDE is back" and the message arrived: ${JSON.stringify(va.log)}`);
+  check(va.sys.length === 1 && va.log.some((t) => t!.includes('sorry, I am here')), `the countdown line became "${PARTNER_BACK}" and the message arrived: ${JSON.stringify(va.log)}`);
   await shot(a, '3-cancel-back-A');
   await sleep(WARN + 1500); // past where the countdown would have ended
   const vb = await view(b);
@@ -235,7 +239,7 @@ async function background(browser: Browser): Promise<void> {
       check(false, `A was kicked after ${Math.round((Date.now() - start) / 1000)} s: ${JSON.stringify(va)}`);
     }
     checks++;
-    if (!bGone && va.sys.includes('OUTSIDE left due to inactivity')) {
+    if (!bGone && va.sys.includes(PARTNER_LEFT)) {
       bGone = Date.now() - start;
       log(`after ${(bGone / 1000).toFixed(0)} s B (frozen, idle) was removed by the rules; A's chat: ${JSON.stringify(va.sys)}`);
       await shot(a, '4-background-B-removed-A');
@@ -262,7 +266,10 @@ async function both(browser: Browser): Promise<void> {
   await toGame(b, a);
   const code = (await view(a)).code!;
   await until('both countdowns in both chats', async () => (await view(a)).sys.length === 2 && (await view(b)).sys.length === 2, IDLE + 6000);
-  log(`A's chat: ${JSON.stringify((await view(a)).sys)}`);
+  const [sa, sb] = [(await view(a)).sys, (await view(b)).sys];
+  log(`A's chat: ${JSON.stringify(sa)}`);
+  check(sa.some((t) => PARTNER.test(t)) && sa.some((t) => COUNTDOWN('INSIDE').test(t)), 'A (inside) reads one line about the partner and one about itself');
+  check(sb.some((t) => PARTNER.test(t)) && sb.some((t) => COUNTDOWN('OUTSIDE').test(t)), `B (outside) reads the same the other way round: ${JSON.stringify(sb)}`);
   await shot(a, '5-both-countdown-A');
   await until('both back on the mode screen', async () => (await view(a)).mode === REMOVED && (await view(b)).mode === REMOVED, WARN + 6000);
   await sleep(700);
