@@ -243,9 +243,13 @@ test('two clients play a whole game online', async () => {
   // --- items online: outside picks one up, carries it over an edge and drops it
   const room = app.rooms.get(seatA.code)!;
   // (the test owns the room: the items of the real game are handed out by the puzzles)
+  // (a start flower may lie on this very tile, by the seed: E would pick that up instead, so it steps aside for the pickup)
+  const under = Object.values(room.state.items).filter((i) => !i.carriedBy && i.side === 'out' && i.face === a.pose.face && i.x === a.pose.x && i.y === a.pose.y);
+  for (const item of under) delete room.state.items[item.id];
   room.state.items.parcel = { id: 'parcel', kind: 'parcel', side: 'out', face: a.pose.face, x: a.pose.x, y: a.pose.y, carriedBy: null, placedOn: null, props: {} };
   await a.interact();
   assert.equal(a.last.state.players.out.carrying, 'parcel');
+  for (const item of under) room.state.items[item.id] = item;
   await a.walkTo({ face: 3, x: 5, y: 5 });
   assert.equal(a.last.state.players.out.carrying, 'parcel'); // it crossed the edges with them
   await a.interact();
