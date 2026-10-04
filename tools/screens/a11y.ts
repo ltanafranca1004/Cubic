@@ -12,7 +12,9 @@ import { chromium, type Browser, type Page } from 'playwright';
 
 const BASE = process.env.BASE ?? 'http://localhost:5403';
 const OUT = new URL('../../docs/screens/a11y/', import.meta.url).pathname;
-const SIZE = { width: 1280, height: 720 };
+/** SIZE=1920x1080 runs at another window size. */
+const [SIZE_W, SIZE_H] = (process.env.SIZE ?? '1280x720').split('x').map(Number);
+const SIZE = { width: SIZE_W!, height: SIZE_H! };
 mkdirSync(OUT, { recursive: true });
 
 interface Pose {
@@ -387,7 +389,7 @@ const browser = await chromium.launch();
 try {
   if (!ONLY || ONLY === 'menus') {
     await menus(browser, 'webgl');
-    await menus(browser, 'canvas');
+    if (process.env.RENDERER !== 'webgl') await menus(browser, 'canvas'); // RENDERER=webgl skips the Canvas pass
   }
   if (!ONLY || ONLY === 'game') await game(browser);
   if (!ONLY || ONLY === 'items') await items(browser);

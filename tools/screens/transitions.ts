@@ -24,10 +24,13 @@ import { FACE_SIZE } from '../../shared/src/index';
 const BASE = process.env.BASE ?? 'http://localhost:5402';
 const OUT = new URL('../../docs/screens/transitions/', import.meta.url).pathname;
 const FFMPEG = process.env.FFMPEG ?? 'ffmpeg';
-const SIZE = { width: 1280, height: 720 };
+/** SIZE=1920x1080 runs at another window size. */
+const [SIZE_W, SIZE_H] = (process.env.SIZE ?? '1280x720').split('x').map(Number);
+const SIZE = { width: SIZE_W!, height: SIZE_H! };
 const ONLY = process.argv[2]; // live | gifs
-const RENDERERS = ['webgl', 'canvas'] as const;
-type Renderer = (typeof RENDERERS)[number];
+/** RENDERER=webgl (or canvas) runs one renderer only. */
+const RENDERERS = (['webgl', 'canvas'] as const).filter((r) => !process.env.RENDERER || process.env.RENDERER === r);
+type Renderer = 'webgl' | 'canvas';
 
 mkdirSync(OUT, { recursive: true });
 
