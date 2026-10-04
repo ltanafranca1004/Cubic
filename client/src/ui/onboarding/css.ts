@@ -1,5 +1,6 @@
 import { ROLE } from '../../style/tokens';
 import { units } from '../css';
+import { FADE_MS } from './rules';
 
 // The onboarding layer's own stylesheet. Same rules as ../css.ts: sizes in art pixels
 // ("4u"), the kit's 9-slices, the m5x7 font inherited from .cu. Every panel here is the
@@ -8,8 +9,8 @@ import { units } from '../css';
 const RAW = `
 .cu-onb { position: absolute; inset: 0; pointer-events: none; z-index: 6; display: none; }
 .cu[data-screen="game"] .cu-onb { display: block; }
-.cu-onb > * { position: absolute; left: 0; top: 0; margin: 0; opacity: 0; visibility: hidden; transition: opacity 0.32s steps(4), visibility 0s 0.32s; }
-.cu-onb > .on { opacity: 1; visibility: visible; transition: opacity 0.32s steps(4); }
+.cu-onb > * { position: absolute; left: 0; top: 0; margin: 0; opacity: 0; visibility: hidden; transition: opacity ${FADE_MS}ms steps(4), visibility 0s ${FADE_MS}ms; }
+.cu-onb > .on { opacity: 1; visibility: visible; transition: opacity ${FADE_MS}ms steps(4); }
 .cu-onb.still > * { transition: none; }
 .cu-onb .cu-panel { text-transform: none; }
 .cu-onb b { font-weight: normal; }
