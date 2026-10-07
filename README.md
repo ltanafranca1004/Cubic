@@ -99,8 +99,13 @@ The game runs without any API key. The environment variables below are all optio
 - `ELEVENLABS_VOICE_ID` (server): the partner's voice.
 - `TURN_URLS`, `TURN_USERNAME`, `TURN_CREDENTIAL` (server): a TURN relay for voice on strict networks. Set all three or none.
 - `VITE_SERVER_URL` (client): the game server URL. Leave it unset locally. The Vercel build needs it.
+- `VITE_POSTHOG_KEY`, `VITE_POSTHOG_HOST` (client): PostHog usage stats. Leave them unset locally: without a key nothing is sent.
 
 Other commands: `npm test`, `npm run typecheck`, `npm run lint`, `npm run build`.
+
+## Privacy
+
+Cubic uses [PostHog](https://posthog.com) for anonymous usage stats: visits, time played and how far a game gets. No names, chat or voice are collected. Players can turn it off in Settings ("Share anonymous usage stats").
 
 ## Credits
 

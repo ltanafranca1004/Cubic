@@ -431,6 +431,23 @@ greets, follows, talks, stays off hot lava and says it does not know the puzzle)
 puzzle block in `prompt.ts` is still a placeholder (between the `PUZZLES V2 PLACEHOLDER`
 markers). Its body can press E (`use` action). The interfaces, exactly: `docs/ai-partner.md`.
 
+## Usage stats (client only, PostHog)
+
+- `client/src/analytics/analytics.ts` is the ONLY file that imports `posthog-js`:
+  `initAnalytics(enabled)`, `track(event, props)`, `setAnalyticsEnabled(on)`. No
+  `VITE_POSTHOG_KEY` (dev, tests, local builds) = every call is a no-op and the library is
+  never loaded. It is its own chunk, fetched after startup, and not at all for a player who
+  switched "Share anonymous usage stats" off (Settings, `shareStats`).
+- The PostHog project is shared with another site: every event carries `app = 'cubic'`.
+- Never send a name, chat text, voice data or anything typed (a key binding's value
+  included). Room codes are fine. Nothing in there may throw.
+- The events come from `client/src/analytics/session.ts` (driven by `app.ts`: it reads the
+  Net and the game events, it decides nothing) and `mode_selected` from `ModeScene`:
+  `mode_selected`, `lobby_created`, `lobby_joined`, `side_picked`, `game_started`,
+  `face_solved`, `strike` (own side only), `game_won`, `game_left` (with a `reason`),
+  `ai_voice_picked`, `settings_changed` (the setting's name only). Not for `?mock`.
+- Tests: `client/test/analytics.test.ts` (a fake posthog handed to `createAnalytics`).
+
 ## Inactivity
 
 - Each connected human has their own clock in `Room` (`server/src/rooms.ts`, section

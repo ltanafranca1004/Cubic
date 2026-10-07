@@ -136,6 +136,8 @@ export class Net {
   state: GameState | null = null;
   error: string | null = null;
   busy = false;
+  /** Why the server last took us out of a room (for the usage stats). Null in a room, and after a Leave. */
+  lost: 'inactive' | 'replaced' | 'room_gone' | null = null;
 
   private socket: Socket<ServerToClient, ClientToServer> | null = null;
   private server: GameState | null = null;
@@ -240,6 +242,7 @@ export class Net {
       // is no seat to come back to (nothing is kept for "continue"), and when another tab
       // took the seat the room is not told anything, the token is that tab's now.
       this.error = msg?.reason === 'replaced' ? 'This seat was opened in another tab.' : 'You were removed for inactivity.';
+      this.lost = msg?.reason === 'replaced' ? 'replaced' : 'inactive';
       try {
         if (saved(LEFT_KEY)?.code === this.code) sessionStorage.removeItem(LEFT_KEY);
       } catch {
@@ -362,6 +365,7 @@ export class Net {
       return;
     }
     this.error = null;
+    this.lost = null;
     this.code = res.code;
     this.id = res.id;
     this.setRoom(res.room);
@@ -390,6 +394,7 @@ export class Net {
       if (res.ok) this.adopt(res);
       else {
         this.error = res.error; // the room is gone (it emptied, or the server restarted): say why we are back on the menu
+        this.lost = 'room_gone';
         this.forget();
       }
     });

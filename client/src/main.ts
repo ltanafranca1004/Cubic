@@ -1,9 +1,16 @@
+import { initAnalytics, setAnalyticsEnabled } from './analytics/analytics';
 import { startApp } from './app';
 import { audio, type SfxId, type TrackId } from './audio/AudioManager';
 import { setAudioApi } from './style/audioApi';
 import { mountFitDebug } from './style/fitDebug';
+import { onSettings, settings } from './style/settings';
 import { ui } from './ui';
 import { mockActions, mockGameUIState, mockLobbyState, mockMenuState } from './ui/mock';
+
+// Anonymous usage stats (analytics/analytics.ts): nothing without a key, and off when the
+// player switched "Share anonymous usage stats" off in the settings.
+initAnalytics(settings().shareStats);
+onSettings((s) => setAnalyticsEnabled(s.shareStats));
 
 // The settings panel's volume sliders drive the real AudioManager.
 setAudioApi({

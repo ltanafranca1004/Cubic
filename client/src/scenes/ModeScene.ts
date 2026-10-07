@@ -1,4 +1,5 @@
 import type Phaser from 'phaser';
+import { track } from '../analytics/analytics';
 import { ENABLE_AI } from '../config';
 import { menuAction, pasteCode, stepFocus, typeCode } from '../input/keymap';
 import { overlayOwnsInput } from '../input/overlay';
@@ -61,11 +62,11 @@ export class ModeScene extends MenuScene {
     const bh = 26;
     const gap = 8;
     const items: { label: string; ai?: boolean; onClick(): void }[] = [
-      { label: 'CREATE LOBBY', onClick: () => actions.onCreateRoom() },
-      { label: 'JOIN LOBBY', onClick: () => this.openJoin() },
+      { label: 'CREATE LOBBY', onClick: () => this.pick('coop', () => actions.onCreateRoom()) },
+      { label: 'JOIN LOBBY', onClick: () => this.pick('coop', () => this.openJoin()) },
     ];
     // Solo: the AI partner takes the other side (config.ts switches it off).
-    if (ENABLE_AI) items.push({ label: 'PLAY SOLO', ai: true, onClick: () => this.openSolo() });
+    if (ENABLE_AI) items.push({ label: 'PLAY SOLO', ai: true, onClick: () => this.pick('solo', () => this.openSolo()) });
     const menuH = items.length * bh + (items.length - 1) * gap;
     const top = cy - Math.round(menuH / 2) + 8;
     // a small title and one clear vertical menu, on a panel
@@ -172,6 +173,12 @@ export class ModeScene extends MenuScene {
         if (s.error) this.popup.fail(s.error);
       }
     }
+  }
+
+  /** A menu choice: counted in the usage stats (analytics), then done. */
+  private pick(mode: 'coop' | 'solo', then: () => void): void {
+    track('mode_selected', { mode });
+    then();
   }
 
   /** Open the join popup. `draft`: letters to start with, when a resize rebuilt the scene under it. */

@@ -20,6 +20,7 @@ import {
   type QuickChat,
   type Side,
 } from '@cubic/shared';
+import { createSessionStats } from './analytics/session';
 import { audio, musicForScreen } from './audio/AudioManager';
 import { heardSfx } from './audio/hearing';
 import { createGameView, type GameHandle } from './game';
@@ -27,6 +28,7 @@ import { transitionKind, transitionMs } from './game/transition';
 import { sfx } from './game/sfx';
 import { Net } from './net/client';
 import { ending } from './scenes/ending/run';
+import { device, layout } from './style/scale';
 import { onSettings, settings } from './style/settings';
 import { setPartnerLevel, showCaption } from './ui/captions';
 import { tileLabel } from './ui/label';
@@ -92,6 +94,7 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
         if (net.side && net.state) for (const id of heardSfx(events, net.side, net.state, (key) => key in sfx)) audio.playSfx(id);
         if (events.some((e) => e.type === 'solve')) audio.playSfx('solved');
         game?.handle(events);
+        stats?.events(events);
         const shown = viewSide();
         if (shown && events.some((e) => e.type === 'flip' && e.side === shown)) {
           const ms = transitionMs(transitionKind(shown, settings().reduceMotion));
@@ -141,6 +144,9 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
     offlineSide,
   );
 
+  // Usage stats (analytics/session.ts). Not for ?mock: that is no real game.
+  const stats = offlineSide ? null : createSessionStats(net, () => ({ layout: layout() === 'compact' ? 'compact' : 'full', touch: device().touch }), settings());
+
   /** The host has started the game (or it is an AI game): we are past the lobby. */
   const playing = () => net.room?.phase === 'playing';
   /** How well the players hear each other right now (0 when there is no partner). */
@@ -161,15 +167,30 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
   );
 
   const actions: UIActions = {
-    onCreateRoom: () => net.createRoom(),
-    onJoinRoom: (code) => net.joinRoom(code),
-    onPlayWithAI: (side) => net.playWithAI(side),
+    onCreateRoom: () => {
+      stats?.lobby('created');
+      net.createRoom();
+    },
+    onJoinRoom: (code) => {
+      stats?.lobby('joined');
+      net.joinRoom(code);
+    },
+    onPlayWithAI: (side) => {
+      stats?.sidePicked(side, 'solo');
+      net.playWithAI(side);
+    },
     onResumeSolo: () => net.resumeSolo(),
     onRetryConnect: () => net.retry(),
-    onPickSide: (side) => net.pickSide(side),
+    onPickSide: (side) => {
+      if (side) stats?.sidePicked(side, 'coop');
+      net.pickSide(side);
+    },
     onSetReady: (ready) => net.setReady(ready),
     onStartGame: () => net.startGame(),
-    onLeaveRoom: () => net.leave(),
+    onLeaveRoom: () => {
+      stats?.left('leave');
+      net.leave();
+    },
     onSendChat: (text) => net.sendChat(text),
     onEnableMic: () => void voice.enableMic(),
     onSetMuted: (muted) => voice.setMuted(muted),
@@ -260,6 +281,7 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
 
   function render(): void {
     syncVoice();
+    stats?.sync();
     const state = uiState();
     const playing = state.screen === 'game';
     gameEl.style.visibility = playing ? 'visible' : 'hidden';
@@ -286,7 +308,12 @@ export function startApp(root: HTMLElement, ui: UIHost, offlineSide: Side | null
   // The AI partner's voice (Settings): the server is told the key now, on every reconnect
   // and whenever it changes, and uses it from the AI's next line.
   net.setAiVoice(settings().aiVoice);
-  onSettings((s) => net.setAiVoice(s.aiVoice));
+  onSettings((s) => {
+    net.setAiVoice(s.aiVoice);
+    stats?.settings(s);
+  });
+  // The tab is closed (or reloaded) in the middle of a game.
+  window.addEventListener('pagehide', () => stats?.left('tab_closed', true));
   net.start();
   render();
   setInterval(render, 500); // keeps the clock ticking

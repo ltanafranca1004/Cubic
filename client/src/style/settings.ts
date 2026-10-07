@@ -30,6 +30,8 @@ export interface Settings {
   keys: Bindings;
   /** The voice the AI partner speaks with (solo games): a key of AI_VOICES. The server is told by app.ts. */
   aiVoice: AiVoice;
+  /** Share anonymous usage stats (analytics/analytics.ts). main.ts tells the analytics. */
+  shareStats: boolean;
 }
 
 /** The volumes match the AudioManager's own defaults, so nothing jumps when the UI mounts. */
@@ -48,6 +50,7 @@ export const DEFAULT_SETTINGS: Readonly<Settings> = {
   hints: true,
   keys: { ...DEFAULT_BINDINGS },
   aiVoice: DEFAULT_AI_VOICE,
+  shareStats: true,
 };
 
 /** Where the voice settings go: the existing Voice class, through the UI actions. */

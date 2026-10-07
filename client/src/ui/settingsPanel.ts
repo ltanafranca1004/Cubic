@@ -58,6 +58,8 @@ const ROWS: Row[] = [
   { section: 'motion', kind: 'toggle', key: 'reduceMotion', label: 'Reduce motion', icon: 'hand' },
   { section: 'motion', kind: 'toggle', key: 'screenShake', label: 'Screen shake' },
   { section: 'motion', kind: 'toggle', key: 'hints', label: 'Hints' },
+  // PostHog (analytics/analytics.ts): no names, chat or voice. Off = nothing is sent.
+  { section: 'motion', kind: 'toggle', key: 'shareStats', label: 'Share anonymous usage stats' },
 ];
 
 function control(row: Row): string {
