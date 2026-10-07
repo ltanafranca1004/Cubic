@@ -13,6 +13,7 @@
   "dependencies": {
     "@cubic/shared": "*",
     "phaser": "^4.2.1",
+    "posthog-js": "^1.438.2",
     "socket.io-client": "^4.8.4"
   },
   "devDependencies": {
